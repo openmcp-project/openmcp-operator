@@ -9,6 +9,7 @@ vars:
   REPO_URL: 'https://github.com/openmcp-project/openmcp-operator'
   GENERATE_DOCS_INDEX: "true"
   CHART_COMPONENTS: ""
+  LINTER_VERSION: "v1.64.4"
 
 includes:
   shared:
@@ -24,3 +25,4 @@ includes:
       REPO_URL: 'https://github.com/openmcp-project/openmcp-operator'
       GENERATE_DOCS_INDEX: "true"
       CHART_COMPONENTS: ""
+      LINTER_VERSION: "v1.64.4"

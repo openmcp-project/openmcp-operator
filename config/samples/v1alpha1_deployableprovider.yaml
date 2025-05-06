@@ -1,0 +1,9 @@
+apiVersion: openmcp.cloud/v1alpha1
+kind: DeployableProvider
+metadata:
+  labels:
+    app.kubernetes.io/name: openmcp-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: deployableprovider-sample
+spec:
+  # TODO(user): Add fields here
