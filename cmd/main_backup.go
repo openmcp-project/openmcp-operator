@@ -202,10 +202,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.DeployableProviderReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	if err = (&controller.DeployableReconciler{
+		PlatformClient: mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+	}).SetupWithManager(mgr, nil); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "DeployableProvider")
 		os.Exit(1)
 	}

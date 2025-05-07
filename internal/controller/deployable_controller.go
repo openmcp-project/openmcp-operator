@@ -19,18 +19,20 @@ package controller
 import (
 	"context"
 
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-
-	openmcpcloudv1alpha1 "github.com/openmcp-project/openmcp-operator/api/v1alpha1"
 )
 
-// DeployableProviderReconciler reconciles a DeployableProvider object
-type DeployableProviderReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
+// DeployableReconciler reconciles a DeployableProvider object
+type DeployableReconciler struct {
+	PlatformClient client.Client
+	Scheme         *runtime.Scheme
+	Reconcilers    []*GVKReconciler
 }
 
 // +kubebuilder:rbac:groups=openmcp.cloud,resources=deployableproviders,verbs=get;list;watch;create;update;patch;delete
@@ -46,18 +48,35 @@ type DeployableProviderReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
-func (r *DeployableProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *DeployableReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
-
-	// TODO(user): your logic here
-
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *DeployableProviderReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&openmcpcloudv1alpha1.DeployableProvider{}).
-		Named("deployableprovider").
-		Complete(r)
+func (r *DeployableReconciler) SetupWithManager(mgr ctrl.Manager, gvkList []schema.GroupVersionKind) error {
+	allErrs := field.ErrorList{}
+
+	r.Reconcilers = make([]*GVKReconciler, len(gvkList))
+
+	for i, gvk := range gvkList {
+		r.Reconcilers[i] = &GVKReconciler{
+			Name:             gvk.String(),
+			GroupVersionKind: gvk,
+			Client:           mgr.GetClient(),
+		}
+
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(gvk)
+
+		err := ctrl.NewControllerManagedBy(mgr).
+			For(obj).
+			Named(r.Reconcilers[i].Name).
+			Complete(r.Reconcilers[i])
+		if err != nil {
+			allErrs = append(allErrs, field.InternalError(field.NewPath(gvk.String()), err))
+		}
+	}
+
+	return allErrs.ToAggregate()
 }

@@ -40,6 +40,19 @@ spec:
           spec:
             description: DeployableProviderSpec defines the desired state of DeployableProvider.
             properties:
+              deploymentSpec:
+                description: DeployableSpec defines the desired state of DeployableProvider.
+                properties:
+                  image:
+                    description: Image is the image of the provider to be deployed.
+                    type: string
+                  imagePullPolicy:
+                    type: string
+                  imagePullSecrets:
+                    items:
+                      type: string
+                    type: array
+                type: object
               foo:
                 description: Foo is an example field of DeployableProvider. Edit deployableprovider_types.go
                   to remove/update
@@ -47,6 +60,10 @@ spec:
             type: object
           status:
             description: DeployableProviderStatus defines the observed state of DeployableProvider.
+            properties:
+              deploymentStatus:
+                description: DeployableStatus defines the observed state of DeployableProvider.
+                type: object
             type: object
         type: object
     served: true

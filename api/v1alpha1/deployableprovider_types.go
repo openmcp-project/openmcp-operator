@@ -28,6 +28,8 @@ type DeployableProviderSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	DeploymentSpec DeployableSpec `json:"deploymentSpec,omitempty"`
+
 	// Foo is an example field of DeployableProvider. Edit deployableprovider_types.go to remove/update
 	Foo string `json:"foo,omitempty"`
 }
@@ -36,6 +38,8 @@ type DeployableProviderSpec struct {
 type DeployableProviderStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	DeploymentStatus DeployableStatus `json:"deploymentStatus,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -68,9 +68,9 @@ var _ = Describe("DeployableProvider Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &DeployableProviderReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+			controllerReconciler := &DeployableReconciler{
+				PlatformClient: k8sClient,
+				Scheme:         k8sClient.Scheme(),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
