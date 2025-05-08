@@ -42,6 +42,7 @@ type ServiceProviderStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster
+// +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
 
 // ServiceProvider is the Schema for the serviceproviders API.
 type ServiceProvider struct {

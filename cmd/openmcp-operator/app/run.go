@@ -30,7 +30,7 @@ func NewRunCommand(_ context.Context) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "run",
-		Short: "Start openmcp-operator",
+		Short: "Start the openmcp-operator",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := options.complete(); err != nil {
 				fmt.Print(err)
@@ -55,7 +55,7 @@ type runOptions struct {
 }
 
 func (o *runOptions) addFlags(fs *flag.FlagSet) {
-	// register flag '--platform-cluster' for the path to the kubeconfig of the onboarding cluster
+	// register flag '--platform-cluster' for the path to the kubeconfig of the platform cluster
 	o.PlatformCluster.RegisterConfigPathFlag(fs)
 
 	logging.InitFlags(fs)
