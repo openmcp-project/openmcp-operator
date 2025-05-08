@@ -32,8 +32,9 @@ type DeploymentSpec struct {
 
 // DeploymentStatus defines the observed state of a provider.
 type DeploymentStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	ObservedGeneration int64 `json:"observedGeneration"`
+
+	Phase string `json:"phase,omitempty"`
 }
 
 type ObjectReference struct {

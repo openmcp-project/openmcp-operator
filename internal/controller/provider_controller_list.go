@@ -39,9 +39,8 @@ func (r *ProviderReconcilerList) SetupWithManager(mgr ctrl.Manager, providerGKVL
 
 	for i, gvk := range providerGKVList {
 		r.Reconcilers[i] = &ProviderReconciler{
-			Name:             gvk.String(),
 			GroupVersionKind: gvk,
-			Client:           mgr.GetClient(),
+			PlatformClient:   mgr.GetClient(),
 		}
 
 		obj := &unstructured.Unstructured{}
@@ -49,7 +48,7 @@ func (r *ProviderReconcilerList) SetupWithManager(mgr ctrl.Manager, providerGKVL
 
 		err := ctrl.NewControllerManagedBy(mgr).
 			For(obj).
-			Named(r.Reconcilers[i].Name).
+			Named(r.Reconcilers[i].ControllerName()).
 			Complete(r.Reconcilers[i])
 		if err != nil {
 			allErrs = append(allErrs, field.InternalError(field.NewPath(gvk.String()), err))

@@ -15,42 +15,51 @@ import (
 )
 
 type ProviderReconciler struct {
-	Name string
 	schema.GroupVersionKind
-	client.Client
+	PlatformClient client.Client
+}
+
+func (r *ProviderReconciler) ControllerName() string {
+	return r.GroupVersionKind.String()
 }
 
 func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	log := logging.FromContextOrPanic(ctx).WithName(r.Name)
+	log := logging.FromContextOrPanic(ctx).WithName(r.ControllerName())
+	ctx = logging.NewContext(ctx, log)
+	log.Debug("Starting reconcile")
 
-	deployable := &unstructured.Unstructured{}
-	deployable.SetGroupVersionKind(r.GroupVersionKind)
+	provider := &unstructured.Unstructured{}
+	provider.SetGroupVersionKind(r.GroupVersionKind)
 
-	if err := r.Get(ctx, req.NamespacedName, deployable); err != nil {
-		return ctrl.Result{}, err
+	if err := r.PlatformClient.Get(ctx, req.NamespacedName, provider); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get provider resource: %w", err)
 	}
 
-	deployableOrig := deployable.DeepCopy()
+	providerOrig := provider.DeepCopy()
 
-	log.Info("Reconciling deployable")
-
-	deployableSpec := v1alpha1.DeploymentSpec{}
-	deploymentSpecRaw, found, err := unstructured.NestedFieldNoCopy(deployable.Object, "spec", "deploymentSpec")
+	deploymentSpec := v1alpha1.DeploymentSpec{}
+	deploymentSpecRaw, found, err := unstructured.NestedFieldNoCopy(provider.Object, "spec")
 	if !found {
-		return ctrl.Result{}, fmt.Errorf("deploymentSpec not found")
+		return ctrl.Result{}, fmt.Errorf("provider spec not found")
 	}
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("failed to get provider spec: %w", err)
 	}
 
-	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(deploymentSpecRaw.(map[string]interface{}), &deployableSpec); err != nil {
-		return ctrl.Result{}, err
+	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(deploymentSpecRaw.(map[string]interface{}), &deploymentSpec); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to convert provider spec: %w", err)
 	}
 
-	log.Info("DeployableSpec", "deployableSpec", deployableSpec)
+	log.Info("DeployableSpec", "deploymentSpec", deploymentSpec)
+
+	//if provider.GetDeletionTimestamp().IsZero() {
+	//	res, err = r.handleCreateUpdateOperation(ctx, provider)
+	//} else {
+	//	res, err = r.handleDeleteOperation(ctx, provider)
+	//}
 
 	deployableStatus := v1alpha1.DeploymentStatus{}
-	deploymentStatusRaw, found, _ := unstructured.NestedFieldNoCopy(deployable.Object, "status", "deploymentStatus")
+	deploymentStatusRaw, found, _ := unstructured.NestedFieldNoCopy(provider.Object, "status", "deploymentStatus")
 	if found {
 		if err = runtime.DefaultUnstructuredConverter.FromUnstructured(deploymentStatusRaw.(map[string]interface{}), &deployableStatus); err != nil {
 			return ctrl.Result{}, err
@@ -65,22 +74,30 @@ func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	statusRaw, found, _ := unstructured.NestedFieldNoCopy(deployable.Object, "status")
+	statusRaw, found, _ := unstructured.NestedFieldNoCopy(provider.Object, "status")
 	if !found {
 		statusRaw = map[string]interface{}{}
-		if err = unstructured.SetNestedField(deployable.Object, statusRaw.(map[string]interface{}), "status"); err != nil {
+		if err = unstructured.SetNestedField(provider.Object, statusRaw.(map[string]interface{}), "status"); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	if err = unstructured.SetNestedField(deployable.Object, deploymentSpecRaw, "status", "deploymentStatus"); err != nil {
+	if err = unstructured.SetNestedField(provider.Object, deploymentSpecRaw, "status", "deploymentStatus"); err != nil {
 		return ctrl.Result{}, err
 	}
 
 	// patch the status
-	if err = r.Status().Patch(ctx, deployable, client.MergeFrom(deployableOrig)); err != nil {
+	if err = r.PlatformClient.Status().Patch(ctx, provider, client.MergeFrom(providerOrig)); err != nil {
 		return ctrl.Result{}, err
 	}
 
+	return ctrl.Result{}, nil
+}
+
+func (r *ProviderReconciler) handleCreateUpdateOperation(ctx context.Context, provider *unstructured.Unstructured) (ctrl.Result, error) {
+	return ctrl.Result{}, nil
+}
+
+func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider *unstructured.Unstructured) (ctrl.Result, error) {
 	return ctrl.Result{}, nil
 }
