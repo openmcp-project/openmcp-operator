@@ -17,12 +17,18 @@ limitations under the License.
 package provider
 
 import (
+	"github.com/openmcp-project/controller-utils/pkg/controller"
+	v1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider/install"
 )
 
 type ProviderReconcilerList struct {
@@ -49,6 +55,10 @@ func (r *ProviderReconcilerList) SetupWithManager(mgr ctrl.Manager, providerGKVL
 		err := ctrl.NewControllerManagedBy(mgr).
 			For(obj).
 			Named(r.Reconcilers[i].ControllerName()).
+			Watches(&v1.Job{},
+				handler.EnqueueRequestsFromMapFunc(r.Reconcilers[i].HandleJob),
+				builder.WithPredicates(controller.HasAnnotationPredicate(install.ProviderKindLabel, "")),
+				builder.WithPredicates(controller.HasAnnotationPredicate(install.ProviderNameLabel, ""))).
 			Complete(r.Reconcilers[i])
 		if err != nil {
 			allErrs = append(allErrs, field.InternalError(field.NewPath(gvk.String()), err))

@@ -16,6 +16,10 @@ limitations under the License.
 
 package v1alpha1
 
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -32,6 +36,10 @@ type DeploymentSpec struct {
 
 // DeploymentStatus defines the observed state of a provider.
 type DeploymentStatus struct {
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// ObservedGeneration is the last observed generation.
 	ObservedGeneration int64 `json:"observedGeneration"`
 
 	Phase string `json:"phase,omitempty"`
