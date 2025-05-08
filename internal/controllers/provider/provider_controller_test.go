@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package provider
 
 import (
 	"context"
@@ -22,34 +22,31 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	openmcpcloudv1alpha1 "github.com/openmcp-project/openmcp-operator/api/v1alpha1"
+	openmcpcloudv1alpha1 "github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
-var _ = Describe("DeployableProvider Controller", func() {
+var _ = Describe("Provider Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
 		ctx := context.Background()
 
 		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Name: resourceName,
 		}
-		deployableprovider := &openmcpcloudv1alpha1.DeployableProvider{}
+		deployableprovider := &openmcpcloudv1alpha1.ServiceProvider{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind DeployableProvider")
 			err := k8sClient.Get(ctx, typeNamespacedName, deployableprovider)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &openmcpcloudv1alpha1.DeployableProvider{
+				resource := &openmcpcloudv1alpha1.ServiceProvider{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
+						Name: resourceName,
 					},
 					// TODO(user): Specify other spec details if needed.
 				}
@@ -59,18 +56,19 @@ var _ = Describe("DeployableProvider Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &openmcpcloudv1alpha1.DeployableProvider{}
+			resource := &openmcpcloudv1alpha1.ServiceProvider{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
 			By("Cleanup the specific resource instance DeployableProvider")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
+
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &DeployableReconciler{
-				PlatformClient: k8sClient,
-				Scheme:         k8sClient.Scheme(),
+			controllerReconciler := &ProviderReconciler{
+				GroupVersionKind: openmcpcloudv1alpha1.ServiceProviderGKV(),
+				PlatformClient:   k8sClient,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

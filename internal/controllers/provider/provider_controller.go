@@ -1,4 +1,4 @@
-package controller
+package provider
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openmcp-project/openmcp-operator/api/v1alpha1"
+	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
 type ProviderReconciler struct {

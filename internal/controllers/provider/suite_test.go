@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package provider
 
 import (
 	"context"
@@ -32,7 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	openmcpcloudv1alpha1 "github.com/openmcp-project/openmcp-operator/api/v1alpha1"
+	openmcpcloudv1alpha1 "github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

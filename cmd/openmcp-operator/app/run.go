@@ -19,8 +19,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
-	"github.com/openmcp-project/openmcp-operator/api/v1alpha1"
-	"github.com/openmcp-project/openmcp-operator/internal/controller"
+	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
 )
 
 func NewRunCommand(_ context.Context) *cobra.Command {
@@ -118,7 +118,7 @@ func (o *runOptions) run() error {
 	utilruntime.Must(clientgoscheme.AddToScheme(mgr.GetScheme()))
 	utilruntime.Must(api.AddToScheme(mgr.GetScheme()))
 
-	if err = (&controller.ProviderReconcilerList{
+	if err = (&provider.ProviderReconcilerList{
 		PlatformClient: mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
 	}).SetupWithManager(mgr, o.ProviderGVKList); err != nil {
