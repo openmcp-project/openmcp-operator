@@ -18,51 +18,52 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// DeployableProviderSpec defines the desired state of DeployableProvider.
-type DeployableProviderSpec struct {
+// PlatformServiceSpec defines the desired state of PlatformService.
+type PlatformServiceSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	DeploymentSpec DeployableSpec `json:"deploymentSpec,omitempty"`
-
-	// Foo is an example field of DeployableProvider. Edit deployableprovider_types.go to remove/update
+	// Foo is an example field of PlatformService. Edit platformservice_types.go to remove/update
 	Foo string `json:"foo,omitempty"`
 }
 
-// DeployableProviderStatus defines the observed state of DeployableProvider.
-type DeployableProviderStatus struct {
+// PlatformServiceStatus defines the observed state of PlatformService.
+type PlatformServiceStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
-	DeploymentStatus DeployableStatus `json:"deploymentStatus,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
 
-// DeployableProvider is the Schema for the deployableproviders API.
-type DeployableProvider struct {
+// PlatformService is the Schema for the platformservices API.
+type PlatformService struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   DeployableProviderSpec   `json:"spec,omitempty"`
-	Status DeployableProviderStatus `json:"status,omitempty"`
+	Spec              DeploymentSpec   `json:"spec,omitempty"`
+	Status            DeploymentStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// DeployableProviderList contains a list of DeployableProvider.
-type DeployableProviderList struct {
+// PlatformServiceList contains a list of PlatformService.
+type PlatformServiceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []DeployableProvider `json:"items"`
+	Items           []PlatformService `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&DeployableProvider{}, &DeployableProviderList{})
+	SchemeBuilder.Register(&PlatformService{}, &PlatformServiceList{})
+}
+
+func PlatformServiceGKV() schema.GroupVersionKind {
+	return GroupVersion.WithKind("PlatformService")
 }

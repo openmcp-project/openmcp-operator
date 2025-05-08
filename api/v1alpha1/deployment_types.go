@@ -19,19 +19,25 @@ package v1alpha1
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// DeployableSpec defines the desired state of DeployableProvider.
-type DeployableSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+// DeploymentSpec defines the desired state of a provider.
+type DeploymentSpec struct {
+	// Image is the name of the image of a provider.
+	// +kubebuilder:validation:MinLength=1
+	Image string `json:"image"`
 
-	// Image is the image of the provider to be deployed.
-	Image            string   `json:"image,omitempty"`
-	ImagePullSecrets []string `json:"imagePullSecrets,omitempty"`
-	ImagePullPolicy  string   `json:"imagePullPolicy,omitempty"`
+	// ImagePullSecrets are secrets in the same namespace.
+	// They can be used to fetch provider images from private registries.
+	ImagePullSecrets []ObjectReference `json:"imagePullSecrets,omitempty"`
 }
 
-// DeployableStatus defines the observed state of DeployableProvider.
-type DeployableStatus struct {
+// DeploymentStatus defines the observed state of a provider.
+type DeploymentStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+}
+
+type ObjectReference struct {
+	// Name is the name of the referenced resource.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
 }

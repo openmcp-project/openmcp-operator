@@ -10,6 +10,24 @@ repo: github.com/openmcp-project/openmcp-operator
 resources:
 - api:
     crdVersion: v1
+  domain: openmcp.cloud
+  kind: ClusterProvider
+  path: github.com/openmcp-project/openmcp-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+  domain: openmcp.cloud
+  kind: ServiceProvider
+  path: github.com/openmcp-project/openmcp-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
+  domain: openmcp.cloud
+  kind: PlatformService
+  path: github.com/openmcp-project/openmcp-operator/api/v1alpha1
+  version: v1alpha1
+- api:
+    crdVersion: v1
     namespaced: true
   controller: true
   domain: openmcp.cloud

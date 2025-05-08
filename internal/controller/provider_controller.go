@@ -14,13 +14,13 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/v1alpha1"
 )
 
-type GVKReconciler struct {
+type ProviderReconciler struct {
 	Name string
 	schema.GroupVersionKind
 	client.Client
 }
 
-func (r *GVKReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(r.Name)
 
 	deployable := &unstructured.Unstructured{}
@@ -34,7 +34,7 @@ func (r *GVKReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	log.Info("Reconciling deployable")
 
-	deployableSpec := v1alpha1.DeployableSpec{}
+	deployableSpec := v1alpha1.DeploymentSpec{}
 	deploymentSpecRaw, found, err := unstructured.NestedFieldNoCopy(deployable.Object, "spec", "deploymentSpec")
 	if !found {
 		return ctrl.Result{}, fmt.Errorf("deploymentSpec not found")
@@ -49,7 +49,7 @@ func (r *GVKReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 
 	log.Info("DeployableSpec", "deployableSpec", deployableSpec)
 
-	deployableStatus := v1alpha1.DeployableStatus{}
+	deployableStatus := v1alpha1.DeploymentStatus{}
 	deploymentStatusRaw, found, _ := unstructured.NestedFieldNoCopy(deployable.Object, "status", "deploymentStatus")
 	if found {
 		if err = runtime.DefaultUnstructuredConverter.FromUnstructured(deploymentStatusRaw.(map[string]interface{}), &deployableStatus); err != nil {

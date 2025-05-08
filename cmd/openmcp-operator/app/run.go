@@ -19,6 +19,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
+	"github.com/openmcp-project/openmcp-operator/api/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/internal/controller"
 )
 
@@ -49,7 +50,7 @@ func NewRunCommand(_ context.Context) *cobra.Command {
 
 type runOptions struct {
 	PlatformCluster *clusters.Cluster
-	GVKList         []schema.GroupVersionKind
+	ProviderGVKList []schema.GroupVersionKind
 	Log             logging.Logger
 }
 
@@ -94,9 +95,10 @@ func (o *runOptions) setupPlatformClusterClient() error {
 }
 
 func (o *runOptions) setupGVKList() {
-	o.GVKList = []schema.GroupVersionKind{
-		{Group: "openmcp.cloud", Version: "v1alpha1", Kind: "ClusterProvider"},
-		{Group: "openmcp.cloud", Version: "v1alpha1", Kind: "MCPServiceProvider"},
+	o.ProviderGVKList = []schema.GroupVersionKind{
+		v1alpha1.ClusterProviderGKV(),
+		v1alpha1.PlatformServiceGKV(),
+		v1alpha1.ServiceProviderGKV(),
 	}
 }
 
@@ -116,11 +118,11 @@ func (o *runOptions) run() error {
 	utilruntime.Must(clientgoscheme.AddToScheme(mgr.GetScheme()))
 	utilruntime.Must(api.AddToScheme(mgr.GetScheme()))
 
-	if err = (&controller.DeployableReconciler{
+	if err = (&controller.ProviderReconcilerList{
 		PlatformClient: mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
-	}).SetupWithManager(mgr, o.GVKList); err != nil {
-		return fmt.Errorf("unable to create controller: %w", err)
+	}).SetupWithManager(mgr, o.ProviderGVKList); err != nil {
+		return fmt.Errorf("unable to setup provider controllers: %w", err)
 	}
 
 	o.Log.Info("starting manager")

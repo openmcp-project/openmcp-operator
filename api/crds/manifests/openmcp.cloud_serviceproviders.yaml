@@ -4,21 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.3
-  name: deployableproviders.openmcp.cloud
+  name: serviceproviders.openmcp.cloud
 spec:
   group: openmcp.cloud
   names:
-    kind: DeployableProvider
-    listKind: DeployableProviderList
-    plural: deployableproviders
-    singular: deployableprovider
-  scope: Namespaced
+    kind: ServiceProvider
+    listKind: ServiceProviderList
+    plural: serviceproviders
+    singular: serviceprovider
+  scope: Cluster
   versions:
   - name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: DeployableProvider is the Schema for the deployableproviders
-          API.
+        description: ServiceProvider is the Schema for the serviceproviders API.
         properties:
           apiVersion:
             description: |-
@@ -38,32 +37,31 @@ spec:
           metadata:
             type: object
           spec:
-            description: DeployableProviderSpec defines the desired state of DeployableProvider.
+            description: DeploymentSpec defines the desired state of a provider.
             properties:
-              deploymentSpec:
-                description: DeployableSpec defines the desired state of DeployableProvider.
-                properties:
-                  image:
-                    description: Image is the image of the provider to be deployed.
-                    type: string
-                  imagePullPolicy:
-                    type: string
-                  imagePullSecrets:
-                    items:
-                      type: string
-                    type: array
-                type: object
-              foo:
-                description: Foo is an example field of DeployableProvider. Edit deployableprovider_types.go
-                  to remove/update
+              image:
+                description: Image is the name of the image of a provider.
+                minLength: 1
                 type: string
+              imagePullSecrets:
+                description: |-
+                  ImagePullSecrets are secrets in the same namespace.
+                  They can be used to fetch provider images from private registries.
+                items:
+                  properties:
+                    name:
+                      description: Name is the name of the referenced resource.
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+            required:
+            - image
             type: object
           status:
-            description: DeployableProviderStatus defines the observed state of DeployableProvider.
-            properties:
-              deploymentStatus:
-                description: DeployableStatus defines the observed state of DeployableProvider.
-                type: object
+            description: DeploymentStatus defines the observed state of a provider.
             type: object
         type: object
     served: true
