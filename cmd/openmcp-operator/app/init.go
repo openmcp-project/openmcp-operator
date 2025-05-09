@@ -3,134 +3,142 @@ package app
 import (
 	"context"
 	"errors"
-	goflag "flag"
 	"fmt"
-	"os"
 
-	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	ctrlutil "github.com/openmcp-project/controller-utils/pkg/controller"
-	"github.com/openmcp-project/controller-utils/pkg/logging"
 	"github.com/openmcp-project/controller-utils/pkg/resources"
 	"github.com/spf13/cobra"
-	flag "github.com/spf13/pflag"
 	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
+	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/api/crds"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 )
 
-const (
-	clusterLabel    = "openmcp.cloud/cluster"
-	clusterPlatform = "platform"
-)
-
-func NewInitCommand(ctx context.Context) *cobra.Command {
-	options := &initOptions{
-		PlatformCluster: clusters.New("platform"),
+func NewInitCommand(so *SharedOptions) *cobra.Command {
+	opts := &InitOptions{
+		SharedOptions: so,
 	}
-
 	cmd := &cobra.Command{
 		Use:   "init",
-		Short: "Initialize the openmcp-operator",
+		Short: "Initialize the openMCP Operator",
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := options.complete(); err != nil {
-				fmt.Print(err)
-				os.Exit(1)
+			opts.PrintRawOptions(cmd)
+			if err := opts.Complete(cmd.Context()); err != nil {
+				panic(fmt.Errorf("error completing options: %w", err))
 			}
-			if err := options.run(ctx); err != nil {
-				options.Log.Error(err, "unable to initialize the openmcp-operator")
-				os.Exit(1)
+			opts.PrintCompletedOptions(cmd)
+			if opts.DryRun {
+				cmd.Println("=== END OF DRY RUN ===")
+				return
+			}
+			if err := opts.Run(cmd.Context()); err != nil {
+				panic(err)
 			}
 		},
 	}
-
-	options.addFlags(cmd.Flags())
+	opts.AddFlags(cmd)
 
 	return cmd
 }
 
-type initOptions struct {
-	PlatformCluster *clusters.Cluster
-	Log             logging.Logger
+type InitOptions struct {
+	*SharedOptions
+	RawInitOptions
 }
 
-func (o *initOptions) addFlags(fs *flag.FlagSet) {
-	// register flag '--platform-cluster' for the path to the kubeconfig of the platform cluster
-	o.PlatformCluster.RegisterConfigPathFlag(fs)
-
-	logging.InitFlags(fs)
-	flag.CommandLine.AddGoFlagSet(goflag.CommandLine)
+type RawInitOptions struct {
+	SkipPlatformCRDs   bool `json:"skip-platform-crds"`
+	SkipOnboardingCRDs bool `json:"skip-onboarding-crds"`
 }
 
-func (o *initOptions) complete() (err error) {
-	if err = o.setupLogger(); err != nil {
-		return err
-	}
-	if err = o.setupPlatformClusterClient(); err != nil {
+func (o *InitOptions) AddFlags(cmd *cobra.Command) {
+	cmd.Flags().BoolVar(&o.SkipPlatformCRDs, "skip-platform-crds", false, "Won't install CRDs for the platform cluster, if true.")
+	cmd.Flags().BoolVar(&o.SkipOnboardingCRDs, "skip-onboarding-crds", false, "Won't install CRDs for the onboarding cluster, if true.")
+}
+
+func (o *InitOptions) Complete(ctx context.Context) error {
+	if err := o.SharedOptions.Complete(); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (o *initOptions) setupLogger() error {
-	log, err := logging.GetLogger()
-	if err != nil {
+func (o *InitOptions) Run(ctx context.Context) error {
+	if err := o.Clusters.Onboarding.InitializeClient(install.InstallCRDAPIs(runtime.NewScheme())); err != nil {
 		return err
 	}
-	o.Log = log
-	ctrl.SetLogger(log.Logr())
-	return nil
-}
-
-func (o *initOptions) setupPlatformClusterClient() error {
-	if err := o.PlatformCluster.InitializeRESTConfig(); err != nil {
-		return fmt.Errorf("unable to initialize onboarding cluster rest config: %w", err)
-	}
-	if err := o.PlatformCluster.InitializeClient(install.InstallCRDAPIs(runtime.NewScheme())); err != nil {
-		return fmt.Errorf("unable to initialize onboarding cluster client: %w", err)
-	}
-	return nil
-}
-
-func (o *initOptions) run(ctx context.Context) error {
-	o.Log.Info("initializing openmcp-operator", "platform-cluster", o.PlatformCluster.ConfigPath())
-
-	if err := o.createOrUpdateCRDs(ctx); err != nil {
+	if err := o.Clusters.Platform.InitializeClient(install.InstallCRDAPIs(runtime.NewScheme())); err != nil {
 		return err
 	}
 
-	o.Log.Info("finished init command")
-	return nil
-}
+	log := o.Log.WithName("main")
+	log.Info("Environment", "value", o.Environment)
 
-func (o *initOptions) createOrUpdateCRDs(ctx context.Context) error {
+	// apply CRDs
 	crdList := crds.CRDs()
 	var errs error
 	for _, crd := range crdList {
-		c, err := o.clusterForCRD(crd)
-		if err != nil {
-			return err
+		var c client.Client
+		clusterLabel, _ := ctrlutil.GetLabel(crd, clustersv1alpha1.ClusterLabel)
+		switch clusterLabel {
+		case clustersv1alpha1.PURPOSE_ONBOARDING:
+			if o.SkipOnboardingCRDs {
+				c = nil
+			} else {
+				c = o.Clusters.Onboarding.Client()
+			}
+		case clustersv1alpha1.PURPOSE_PLATFORM:
+			if o.SkipPlatformCRDs {
+				c = nil
+			} else {
+				c = o.Clusters.Platform.Client()
+			}
+		default:
+			return fmt.Errorf("missing cluster label '%s' or unsupported value '%s' for CRD '%s'", clustersv1alpha1.ClusterLabel, clusterLabel, crd.Name)
 		}
-
-		o.Log.Info("creating/updating CRD", "name", crd.Name, "cluster", c.ID())
-		err = resources.CreateOrUpdateResource(ctx, c.Client(), resources.NewCRDMutator(crd, nil, nil))
+		if c == nil {
+			log.Info("Skipping CRD", "name", crd.Name, "cluster", clusterLabel)
+			continue
+		}
+		actual := &apiextv1.CustomResourceDefinition{}
+		actual.Name = crd.Name
+		log.Info("Creating/updating CRD", "name", crd.Name, "cluster", clusterLabel)
+		err := resources.CreateOrUpdateResource(ctx, c, resources.NewCRDMutator(crd, crd.Labels, crd.Annotations))
 		errs = errors.Join(errs, err)
 	}
 	if errs != nil {
 		return fmt.Errorf("error creating/updating CRDs: %w", errs)
 	}
+
+	log.Info("Finished init command")
 	return nil
 }
 
-func (o *initOptions) clusterForCRD(crd *apiextv1.CustomResourceDefinition) (*clusters.Cluster, error) {
-	purpose, _ := ctrlutil.GetLabel(crd, clusterLabel)
-	switch purpose {
-	case clusterPlatform:
-		return o.PlatformCluster, nil
-	default:
-		return nil, fmt.Errorf("missing cluster label '%s' or unsupported value '%s' for CRD '%s'",
-			clusterLabel, purpose, crd.Name)
+func (o *InitOptions) PrintRaw(cmd *cobra.Command) {
+	data, err := yaml.Marshal(o.RawInitOptions)
+	if err != nil {
+		cmd.Println(fmt.Errorf("error marshalling raw options: %w", err).Error())
+		return
 	}
+	cmd.Print(string(data))
+}
+
+func (o *InitOptions) PrintRawOptions(cmd *cobra.Command) {
+	cmd.Println("########## RAW OPTIONS START ##########")
+	o.SharedOptions.PrintRaw(cmd)
+	o.PrintRaw(cmd)
+	cmd.Println("########## RAW OPTIONS END ##########")
+}
+
+func (o *InitOptions) PrintCompleted(cmd *cobra.Command) {}
+
+func (o *InitOptions) PrintCompletedOptions(cmd *cobra.Command) {
+	cmd.Println("########## COMPLETED OPTIONS START ##########")
+	o.SharedOptions.PrintCompleted(cmd)
+	o.PrintCompleted(cmd)
+	cmd.Println("########## COMPLETED OPTIONS END ##########")
 }
