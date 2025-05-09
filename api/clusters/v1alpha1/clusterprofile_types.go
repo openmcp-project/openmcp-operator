@@ -29,7 +29,7 @@ type SupportedK8sVersion struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Cluster,shortName=cprof;profile
 // +kubebuilder:metadata:labels="openmcp.cloud/cluster=onboarding"
 // +kubebuilder:selectablefield:JSONPath=".spec.environment"
 // +kubebuilder:selectablefield:JSONPath=".spec.providerRef.name"

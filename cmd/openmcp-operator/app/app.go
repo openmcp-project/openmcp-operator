@@ -39,10 +39,11 @@ func NewOpenMCPOperatorCommand(ctx context.Context) *cobra.Command {
 }
 
 type RawSharedOptions struct {
-	Environment                     string `json:"environment"`
-	DryRun                          bool   `json:"dry-run"`
-	OnboardingClusterKubeconfigPath string `json:"onboarding-cluster"` // dummy for printing, actual path is in Clusters
-	PlatformClusterKubeconfigPath   string `json:"platform-cluster"`   // dummy for printing, actual path is in Clusters
+	Environment                     string   `json:"environment"`
+	DryRun                          bool     `json:"dry-run"`
+	ConfigPaths                     []string `json:"configPaths"`
+	OnboardingClusterKubeconfigPath string   `json:"onboarding-cluster"` // dummy for printing, actual path is in Clusters
+	PlatformClusterKubeconfigPath   string   `json:"platform-cluster"`   // dummy for printing, actual path is in Clusters
 }
 
 type SharedOptions struct {
@@ -50,7 +51,8 @@ type SharedOptions struct {
 	Clusters *Clusters
 
 	// fields filled in Complete()
-	Log logging.Logger
+	Log    logging.Logger
+	Config *config.Config
 }
 
 func (o *SharedOptions) AddPersistentFlags(cmd *cobra.Command) {
@@ -61,6 +63,9 @@ func (o *SharedOptions) AddPersistentFlags(cmd *cobra.Command) {
 	o.Clusters.Platform.RegisterConfigPathFlag(cmd.PersistentFlags())
 	// environment
 	cmd.PersistentFlags().StringVar(&o.Environment, "environment", "", "Environment name. Required. This is used to distinguish between different environments that are watching the same Onboarding cluster. Must be globally unique.")
+	// config
+	cmd.PersistentFlags().StringSliceVar(&o.ConfigPaths, "config", nil, "Paths to the config files (separate with comma or specify flag multiple times). Each path can be a file or directory. In the latter case, all files within with '.yaml', '.yml', and '.json' extensions are evaluated. The config is merged together from the different sources, with later configs overriding earlier ones.")
+	// misc
 	cmd.PersistentFlags().BoolVar(&o.DryRun, "dry-run", false, "If set, the command aborts after evaluation of the given flags.")
 }
 
@@ -78,12 +83,33 @@ func (o *SharedOptions) Complete() error {
 	o.Log = log
 	ctrl.SetLogger(o.Log.Logr())
 
+	// construct cluster clients
 	if err := o.Clusters.Platform.InitializeRESTConfig(); err != nil {
 		return err
 	}
-
 	if err := o.Clusters.Onboarding.InitializeRESTConfig(); err != nil {
 		return err
+	}
+
+	// load config
+	if len(o.ConfigPaths) > 0 {
+		cfg, err := config.LoadFromFiles(o.ConfigPaths...)
+		if err != nil {
+			return fmt.Errorf("error loading config from files: %w", err)
+		}
+		if err := cfg.Default(); err != nil {
+			_ = cfg.Dump(os.Stderr)
+			return fmt.Errorf("error defaulting config: %w", err)
+		}
+		if err := cfg.Validate(); err != nil {
+			_ = cfg.Dump(os.Stderr)
+			return fmt.Errorf("config is invalid: %w", err)
+		}
+		if err := cfg.Complete(); err != nil {
+			_ = cfg.Dump(os.Stderr)
+			return fmt.Errorf("error completing config: %w", err)
+		}
+		o.Config = cfg
 	}
 
 	return nil
@@ -113,6 +139,7 @@ func (o *SharedOptions) PrintCompleted(cmd *cobra.Command) {
 			"onboarding": o.Clusters.Onboarding.APIServerEndpoint(),
 			"platform":   o.Clusters.Platform.APIServerEndpoint(),
 		},
+		"config": o.Config,
 	}
 	data, err := yaml.Marshal(raw)
 	if err != nil {

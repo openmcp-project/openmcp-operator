@@ -10,19 +10,20 @@ import (
 
 // ClusterSpec defines the desired state of Cluster
 type ClusterSpec struct {
-	// ClusterProfileRef is a reference to the cluster provider.
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterProfileRef is immutable"
-	ClusterProfileRef ObjectReference `json:"clusterProfileRef"`
+	// Profile is a reference to the cluster provider.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="profile is immutable"
+	Profile string `json:"profile"`
 
 	// ClusterConfigRef is a reference to a cluster configuration.
 	// +optional
 	ClusterConfigRef *ClusterConfigRef `json:"clusterConfigRef,omitempty"`
 
 	// Kubernetes configuration for the cluster.
-	Kubernetes K8sConfiguration `json:"kubernetes"`
+	Kubernetes K8sConfiguration `json:"kubernetes,omitempty"`
 
 	// Purposes lists the purposes this cluster is intended for.
-	Purposes []string `json:"purposes"`
+	// +kubebuilder:validation:MinItems=1
+	Purposes []string `json:"purposes,omitempty"`
 
 	// Tenancy is the tenancy model of the cluster.
 	// +kubebuilder:validation:Enum=Exclusive;Shared
@@ -45,7 +46,7 @@ type ClusterConfigRef struct {
 
 type K8sConfiguration struct {
 	// Version is the k8s version of the cluster.
-	Version string `json:"version"`
+	Version string `json:"version,omitempty"`
 }
 
 // ClusterStatus defines the observed state of Cluster

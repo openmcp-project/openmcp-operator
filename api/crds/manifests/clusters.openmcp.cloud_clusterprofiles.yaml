@@ -13,6 +13,9 @@ spec:
     kind: ClusterProfile
     listKind: ClusterProfileList
     plural: clusterprofiles
+    shortNames:
+    - cprof
+    - profile
     singular: clusterprofile
   scope: Cluster
   versions:

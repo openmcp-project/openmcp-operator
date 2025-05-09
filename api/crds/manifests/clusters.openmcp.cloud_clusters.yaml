@@ -93,33 +93,25 @@ spec:
                 - apiGroup
                 - kind
                 type: object
-              clusterProfileRef:
-                description: ClusterProfileRef is a reference to the cluster provider.
-                properties:
-                  name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
-                    type: string
-                required:
-                - name
-                type: object
-                x-kubernetes-validations:
-                - message: clusterProfileRef is immutable
-                  rule: self == oldSelf
               kubernetes:
                 description: Kubernetes configuration for the cluster.
                 properties:
                   version:
                     description: Version is the k8s version of the cluster.
                     type: string
-                required:
-                - version
                 type: object
+              profile:
+                description: Profile is a reference to the cluster provider.
+                type: string
+                x-kubernetes-validations:
+                - message: profile is immutable
+                  rule: self == oldSelf
               purposes:
                 description: Purposes lists the purposes this cluster is intended
                   for.
                 items:
                   type: string
+                minItems: 1
                 type: array
               tenancy:
                 description: Tenancy is the tenancy model of the cluster.
@@ -128,9 +120,7 @@ spec:
                 - Shared
                 type: string
             required:
-            - clusterProfileRef
-            - kubernetes
-            - purposes
+            - profile
             - tenancy
             type: object
           status:
