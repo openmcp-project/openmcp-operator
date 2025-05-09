@@ -4,12 +4,14 @@ go 1.24.2
 
 //godebug default=go1.23
 
+replace github.com/openmcp-project/openmcp-operator/api => ./api
+
 require (
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	github.com/openmcp-project/controller-utils v0.7.0
+	github.com/openmcp-project/openmcp-operator/api v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.9.1
-	github.com/spf13/pflag v1.0.6
 	k8s.io/apiextensions-apiserver v0.33.0
 	k8s.io/apimachinery v0.33.0
 	k8s.io/client-go v0.33.0
@@ -57,6 +59,7 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
+	github.com/spf13/pflag v1.0.6 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect

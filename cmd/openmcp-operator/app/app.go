@@ -12,6 +12,7 @@ import (
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
+
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 )
 
