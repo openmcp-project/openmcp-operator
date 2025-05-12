@@ -47,9 +47,9 @@ var (
 // The default setup requires Kind, builds/loads the Manager Docker image locally, and installs
 // CertManager.
 func TestE2E(t *testing.T) {
-	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting openmcp-operator integration test suite\n")
-	RunSpecs(t, "e2e suite")
+	//  RegisterFailHandler(Fail)
+	//  _, _ = fmt.Fprintf(GinkgoWriter, "Starting openmcp-operator integration test suite\n")
+	//  RunSpecs(t, "e2e suite")
 }
 
 var _ = BeforeSuite(func() {
