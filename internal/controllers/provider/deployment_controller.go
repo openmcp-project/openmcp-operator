@@ -20,25 +20,27 @@ import (
 	"github.com/openmcp-project/controller-utils/pkg/controller"
 	v1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider/install"
 )
 
-type ProviderReconcilerList struct {
-	PlatformClient client.Client
-	Scheme         *runtime.Scheme
-	Reconcilers    []*ProviderReconciler
+// DeploymentController is not a controller, but a collection of controllers reconciling
+// ClusterProviders, ServiceProviders, and PlatformServices.
+type DeploymentController struct {
+	Reconcilers []*ProviderReconciler
+}
+
+func NewDeploymentController() *DeploymentController {
+	return &DeploymentController{}
 }
 
 // SetupWithManager sets up the controllers with the Manager.
-func (r *ProviderReconcilerList) SetupWithManager(mgr ctrl.Manager, providerGKVList []schema.GroupVersionKind) error {
+func (r *DeploymentController) SetupWithManager(mgr ctrl.Manager, providerGKVList []schema.GroupVersionKind) error {
 	allErrs := field.ErrorList{}
 
 	r.Reconcilers = make([]*ProviderReconciler, len(providerGKVList))

@@ -5,13 +5,16 @@ import (
 	"crypto/tls"
 	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
-
 	"github.com/spf13/cobra"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd/api"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -22,6 +25,7 @@ import (
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
 )
 
 var setupLog logging.Logger
@@ -286,6 +290,16 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	// 		return fmt.Errorf("unable to setup cluster controllers: %w", err)
 	// 	}
 	// }
+
+	// setup deployment controller
+	if slices.Contains(o.Controllers, strings.ToLower("deploymentcontroller")) {
+		utilruntime.Must(clientgoscheme.AddToScheme(mgr.GetScheme()))
+		utilruntime.Must(api.AddToScheme(mgr.GetScheme()))
+
+		if err = provider.NewDeploymentController().SetupWithManager(mgr, o.ProviderGVKList); err != nil {
+			return fmt.Errorf("unable to setup provider controllers: %w", err)
+		}
+	}
 
 	if o.MetricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")

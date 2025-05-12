@@ -13,8 +13,7 @@ import (
 )
 
 type jobMutator struct {
-	name           string
-	namespace      string
+	values         *Values
 	deploymentSpec *v1alpha1.DeploymentSpec
 	meta           resources.Mutator[client.Object]
 }
@@ -22,22 +21,19 @@ type jobMutator struct {
 var _ resources.Mutator[*v1.Job] = &jobMutator{}
 
 func newJobMutator(
-	name string,
-	namespace string,
+	values *Values,
 	deploymentSpec *v1alpha1.DeploymentSpec,
-	labels map[string]string,
 	annotations map[string]string,
 ) resources.Mutator[*v1.Job] {
 	return &jobMutator{
-		name:           name,
-		namespace:      namespace,
+		values:         values,
 		deploymentSpec: deploymentSpec,
-		meta:           resources.NewMetadataMutator(labels, annotations),
+		meta:           resources.NewMetadataMutator(values.LabelsInitJob(), annotations),
 	}
 }
 
 func (m *jobMutator) String() string {
-	return fmt.Sprintf("job %s/%s", m.namespace, m.name)
+	return fmt.Sprintf("job %s/%s", m.values.Namespace(), m.values.NamespacedResourceName(initPrefix))
 }
 
 func (m *jobMutator) Empty() *v1.Job {
@@ -47,8 +43,8 @@ func (m *jobMutator) Empty() *v1.Job {
 			Kind:       "Job",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      m.name,
-			Namespace: m.namespace,
+			Name:      m.values.NamespacedResourceName(initPrefix),
+			Namespace: m.values.Namespace(),
 		},
 	}
 }
@@ -57,35 +53,24 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 	j.Spec = v1.JobSpec{
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: m.name,
+				Labels: m.values.LabelsInitJob(),
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
 					{
 						Name:            "init",
-						Image:           m.deploymentSpec.Image,
+						Image:           m.values.Image(),
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						Command: []string{
-							"/service-provider-landscaper",
+						Args: []string{
 							"init",
-							"--verbosity=info",
 						},
 					},
 				},
-				ImagePullSecrets: m.imagePullSecrets(),
-				RestartPolicy:    corev1.RestartPolicyNever,
+				ServiceAccountName: m.values.NamespacedResourceName(initPrefix),
+				ImagePullSecrets:   m.values.ImagePullSecrets(),
+				RestartPolicy:      corev1.RestartPolicyNever,
 			},
 		},
 	}
 	return m.meta.Mutate(j)
-}
-
-func (m *jobMutator) imagePullSecrets() []corev1.LocalObjectReference {
-	secrets := make([]corev1.LocalObjectReference, len(m.deploymentSpec.ImagePullSecrets))
-	for i, s := range m.deploymentSpec.ImagePullSecrets {
-		secrets[i] = corev1.LocalObjectReference{
-			Name: s.Name,
-		}
-	}
-	return secrets
 }

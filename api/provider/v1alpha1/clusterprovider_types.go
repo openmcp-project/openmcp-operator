@@ -26,11 +26,7 @@ import (
 
 // ClusterProviderSpec defines the desired state of ClusterProvider.
 type ClusterProviderSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of ClusterProvider. Edit clusterprovider_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	DeploymentSpec `json:",inline"`
 }
 
 // ClusterProviderStatus defines the observed state of ClusterProvider.
@@ -48,8 +44,8 @@ type ClusterProviderStatus struct {
 type ClusterProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              DeploymentSpec   `json:"spec,omitempty"`
-	Status            DeploymentStatus `json:"status,omitempty"`
+	Spec              ClusterProviderSpec `json:"spec,omitempty"`
+	Status            DeploymentStatus    `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
