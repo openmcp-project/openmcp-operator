@@ -24,9 +24,8 @@ type SchedulerConfig struct {
 	Strategy Strategy `json:"strategy"`
 
 	// +optional
-	// TODO: validate that all templates' labels actually match the selector
-	Selector          *metav1.LabelSelector `json:"selector,omitempty"`
-	ConvertedSelector labels.Selector       `json:"-"`
+	Selectors          *SchedulerSelectors         `json:"selectors,omitempty"`
+	CompletedSelectors CompletedSchedulerSelectors `json:"-"`
 
 	PurposeMappings map[string]ClusterDefinition `json:"purposeMappings"`
 }
@@ -60,6 +59,15 @@ type ClusterTemplate struct {
 	Spec              clustersv1alpha1.ClusterSpec `json:"spec"`
 }
 
+type SchedulerSelectors struct {
+	Clusters        *metav1.LabelSelector `json:"clusters,omitempty"`
+	ClusterRequests *metav1.LabelSelector `json:"clusterRequests,omitempty"`
+}
+type CompletedSchedulerSelectors struct {
+	Clusters        labels.Selector
+	ClusterRequests labels.Selector
+}
+
 func (c *SchedulerConfig) Default(_ *field.Path) error {
 	if c.Scope == "" {
 		c.Scope = SCOPE_NAMESPACED
@@ -86,13 +94,21 @@ func (c *SchedulerConfig) Validate(fldPath *field.Path) error {
 		errs = append(errs, field.NotSupported(fldPath.Child("strategy"), string(c.Strategy), validStrategies))
 	}
 
-	// validate label selector
-	var ls labels.Selector
-	if c.Selector != nil {
-		var err error
-		ls, err = metav1.LabelSelectorAsSelector(c.Selector)
-		if err != nil {
-			errs = append(errs, field.Invalid(fldPath.Child("selector"), c.Selector, err.Error()))
+	// validate label selectors
+	var cls labels.Selector
+	if c.Selectors != nil {
+		if c.Selectors.Clusters != nil {
+			var err error
+			cls, err = metav1.LabelSelectorAsSelector(c.Selectors.Clusters)
+			if err != nil {
+				errs = append(errs, field.Invalid(fldPath.Child("selectors").Child("clusters"), c.Selectors.Clusters, err.Error()))
+			}
+		}
+		if c.Selectors.ClusterRequests != nil {
+			_, err := metav1.LabelSelectorAsSelector(c.Selectors.ClusterRequests)
+			if err != nil {
+				errs = append(errs, field.Invalid(fldPath.Child("selectors").Child("clusterRequests"), c.Selectors.ClusterRequests, err.Error()))
+			}
 		}
 	}
 
@@ -120,20 +136,35 @@ func (c *SchedulerConfig) Validate(fldPath *field.Path) error {
 		if definition.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_EXCLUSIVE && definition.TenancyCount != 0 {
 			errs = append(errs, field.Invalid(pPath.Child("tenancyCount"), definition.TenancyCount, fmt.Sprintf("tenancyCount must be 0 if the template specifies '%s' tenancy", string(clustersv1alpha1.TENANCY_EXCLUSIVE))))
 		}
-		if ls != nil && !ls.Matches(labels.Set(definition.Template.Labels)) {
-			errs = append(errs, field.Invalid(pPath.Child("template").Child("metadata").Child("labels"), definition.Template.Labels, "labels do not match specified selector"))
+		if cls != nil && !cls.Matches(labels.Set(definition.Template.Labels)) {
+			errs = append(errs, field.Invalid(pPath.Child("template").Child("metadata").Child("labels"), definition.Template.Labels, "labels do not match specified cluster selector"))
 		}
 	}
 	return errs.ToAggregate()
 }
 
 func (c *SchedulerConfig) Complete(fldPath *field.Path) error {
-	if c.Selector != nil {
-		var err error
-		c.ConvertedSelector, err = metav1.LabelSelectorAsSelector(c.Selector)
-		if err != nil {
-			return field.Invalid(fldPath.Child("selector"), c.Selector, err.Error())
+	if c.Selectors != nil {
+		if c.Selectors.Clusters != nil {
+			var err error
+			c.CompletedSelectors.Clusters, err = metav1.LabelSelectorAsSelector(c.Selectors.Clusters)
+			if err != nil {
+				return field.Invalid(fldPath.Child("selectors").Child("clusters"), c.Selectors.Clusters, err.Error())
+			}
 		}
+		if c.Selectors.ClusterRequests != nil {
+			var err error
+			c.CompletedSelectors.ClusterRequests, err = metav1.LabelSelectorAsSelector(c.Selectors.ClusterRequests)
+			if err != nil {
+				return field.Invalid(fldPath.Child("selectors").Child("clusterRequests"), c.Selectors.ClusterRequests, err.Error())
+			}
+		}
+	}
+	if c.CompletedSelectors.Clusters == nil {
+		c.CompletedSelectors.Clusters = labels.Everything()
+	}
+	if c.CompletedSelectors.ClusterRequests == nil {
+		c.CompletedSelectors.ClusterRequests = labels.Everything()
 	}
 	return nil
 }

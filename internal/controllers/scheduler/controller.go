@@ -12,14 +12,17 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/controller-utils/pkg/collections/filters"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
+	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
@@ -144,7 +147,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			namespace = cDef.Template.Namespace
 		}
 		clusterList := &clustersv1alpha1.ClusterList{}
-		if err := r.OnboardingCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: r.Config.ConvertedSelector}); err != nil {
+		if err := r.OnboardingCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: r.Config.CompletedSelectors.Clusters}); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonOnboardingClusterInteractionProblem)
 			return rr
 		}
@@ -314,7 +317,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 		// fetch all clusters and filter for the ones that have a finalizer from this request
 		fin := cr.FinalizerForCluster()
 		clusterList := &clustersv1alpha1.ClusterList{}
-		if err := r.OnboardingCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: r.Config.ConvertedSelector}); err != nil {
+		if err := r.OnboardingCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: r.Config.CompletedSelectors.Clusters}); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonOnboardingClusterInteractionProblem)
 			return rr
 		}
@@ -364,9 +367,12 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("clusterrequest").
 		// watch ClusterRequest resources
-		For(&clustersv1alpha1.ClusterRequest{}).
-		WithEventFilter(predicate.And(
+		WatchesRawSource(source.Kind(r.OnboardingCluster.Cluster().GetCache(), &clustersv1alpha1.ClusterRequest{}, handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, ls *clustersv1alpha1.ClusterRequest) []ctrl.Request {
+			return []ctrl.Request{testutils.RequestFromObject(ls)}
+		}), ctrlutils.ToTypedPredicate[*clustersv1alpha1.ClusterRequest](predicate.And(
+			ctrlutils.LabelSelectorPredicate(r.Config.CompletedSelectors.ClusterRequests),
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.GotAnnotationPredicate(clustersv1alpha1.OperationAnnotation, clustersv1alpha1.OperationAnnotationValueReconcile),
@@ -375,6 +381,6 @@ func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.Not(
 				ctrlutils.HasAnnotationPredicate(clustersv1alpha1.OperationAnnotation, clustersv1alpha1.OperationAnnotationValueIgnore),
 			),
-		)).
+		)))).
 		Complete(r)
 }
