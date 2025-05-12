@@ -26,11 +26,7 @@ import (
 
 // ServiceProviderSpec defines the desired state of ServiceProvider.
 type ServiceProviderSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of ServiceProvider. Edit serviceprovider_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	DeploymentSpec `json:",inline"`
 }
 
 // ServiceProviderStatus defines the observed state of ServiceProvider.
@@ -48,8 +44,8 @@ type ServiceProviderStatus struct {
 type ServiceProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              DeploymentSpec   `json:"spec,omitempty"`
-	Status            DeploymentStatus `json:"status,omitempty"`
+	Spec              ServiceProviderSpec `json:"spec,omitempty"`
+	Status            DeploymentStatus    `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

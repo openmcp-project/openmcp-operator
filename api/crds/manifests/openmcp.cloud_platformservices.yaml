@@ -39,7 +39,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: DeploymentSpec defines the desired state of a provider.
+            description: PlatformServiceSpec defines the desired state of PlatformService.
             properties:
               image:
                 description: Image is the name of the image of a provider.

@@ -39,7 +39,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: DeploymentSpec defines the desired state of a provider.
+            description: ClusterProviderSpec defines the desired state of ClusterProvider.
             properties:
               image:
                 description: Image is the name of the image of a provider.

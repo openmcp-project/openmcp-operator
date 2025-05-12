@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/openmcp-project/controller-utils/pkg/controller"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -21,7 +22,6 @@ import (
 )
 
 const (
-	openmcpNamespace           = "openmcp-system"
 	openmcpDomain              = "openmcp.cloud"
 	openmcpFinalizer           = openmcpDomain + "/finalizer"
 	openmcpOperationAnnotation = openmcpDomain + "/operation"
@@ -41,7 +41,39 @@ func (r *ProviderReconciler) ControllerName() string {
 	return r.GroupVersionKind.String()
 }
 
-// HandleJob creates a reconcile request for the provider associated with the job.
+func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, err error) {
+	log := logging.FromContextOrPanic(ctx).WithName(r.ControllerName())
+	ctx = logging.NewContext(ctx, log)
+	log.Debug("Starting reconcile")
+
+	provider := &unstructured.Unstructured{}
+	provider.SetGroupVersionKind(r.GroupVersionKind)
+
+	if err := r.PlatformClient.Get(ctx, req.NamespacedName, provider); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get provider resource: %w", err)
+	}
+
+	providerOrig := provider.DeepCopy()
+
+	if provider.GetDeletionTimestamp().IsZero() {
+		res, err = r.handleCreateUpdateOperation(ctx, provider)
+	} else {
+		deleted := false
+		deleted, res, err = r.handleDeleteOperation(ctx, provider)
+		if deleted {
+			return ctrl.Result{}, nil
+		}
+	}
+
+	// patch the status
+	updateErr := r.PlatformClient.Status().Patch(ctx, provider, client.MergeFrom(providerOrig))
+	err = errors.Join(err, updateErr)
+	return res, err
+}
+
+// HandleJob - the ProviderReconciler reconciles the provider resources (ClusterProviders, ServiceProviders, PlatformServices).
+// During a reconcile, the ProviderReconciler creates the init job of the provider and must wait for it to complete.
+// Therefore, the ProviderReconciler watches also jobs. The present method handles the job events and creates a reconcile request.
 func (r *ProviderReconciler) HandleJob(_ context.Context, job client.Object) []reconcile.Request {
 	providerKind, found := job.GetLabels()[install.ProviderKindLabel]
 	if !found || providerKind != r.GroupVersionKind.Kind {
@@ -60,32 +92,6 @@ func (r *ProviderReconciler) HandleJob(_ context.Context, job client.Object) []r
 			},
 		},
 	}
-}
-
-func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, err error) {
-	log := logging.FromContextOrPanic(ctx).WithName(r.ControllerName())
-	ctx = logging.NewContext(ctx, log)
-	log.Debug("Starting reconcile")
-
-	provider := &unstructured.Unstructured{}
-	provider.SetGroupVersionKind(r.GroupVersionKind)
-
-	if err := r.PlatformClient.Get(ctx, req.NamespacedName, provider); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get provider resource: %w", err)
-	}
-
-	providerOrig := provider.DeepCopy()
-
-	if provider.GetDeletionTimestamp().IsZero() {
-		res, err = r.handleCreateUpdateOperation(ctx, provider)
-	} else {
-		res, err = r.handleDeleteOperation(ctx, provider)
-	}
-
-	// patch the status
-	updateErr := r.PlatformClient.Status().Patch(ctx, provider, client.MergeFrom(providerOrig))
-	err = errors.Join(err, updateErr)
-	return res, err
 }
 
 func (r *ProviderReconciler) handleCreateUpdateOperation(ctx context.Context, provider *unstructured.Unstructured) (ctrl.Result, error) {
@@ -107,8 +113,10 @@ func (r *ProviderReconciler) handleCreateUpdateOperation(ctx context.Context, pr
 
 	// If the provider is not yet in phase ready, we continue with the installation.
 	// If the provider is already in phase ready, we install it again if the generation has changed or if it has a reconcile annotation.
-	// TODO: checkReconcileAnnotation
 
+	if err := r.checkReconcileAnnotation(ctx, provider, deploymentStatus); err != nil {
+		return reconcile.Result{}, err
+	}
 	r.observeGeneration(provider, deploymentStatus)
 
 	if deploymentStatus.Phase == phaseReady {
@@ -136,24 +144,20 @@ func (r *ProviderReconciler) install(
 		PlatformClient: r.PlatformClient,
 		Provider:       provider,
 		DeploymentSpec: deploymentSpec,
-		Namespace:      openmcpNamespace,
 	}
 
 	if !isInitialized(deploymentStatus) {
 		log.Debug("installing init job")
-		_, err := installer.InstallInitJob(ctx)
+		completed, err := installer.InstallInitJob(ctx)
 		if err != nil {
 			log.Error(err, "failed to install init job")
 			apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionInitJobCreationFailed(provider, err))
 			return reconcile.Result{}, err
 		}
-
-		log.Debug("checking init job readiness")
-		if readinessCheckResult := installer.CheckInitJobReadiness(ctx); !readinessCheckResult.IsReady() {
-			log.Debug("init job has not yet finished")
-			apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionInitRunning(provider, readinessCheckResult.Message()))
-			// TODO: RequeueAfter is unnecessary, if we watch jobs
-			return reconcile.Result{RequeueAfter: 30 * time.Second}, nil
+		if !completed {
+			log.Debug("init job has not yet completed")
+			apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionInitRunning(provider, "init job has not yet completed"))
+			return reconcile.Result{}, nil
 		}
 
 		log.Debug("init job completed")
@@ -183,11 +187,11 @@ func (r *ProviderReconciler) install(
 	return reconcile.Result{}, nil
 }
 
-func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider *unstructured.Unstructured) (ctrl.Result, error) {
+func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider *unstructured.Unstructured) (deleted bool, res ctrl.Result, err error) {
 
 	deploymentStatus, err := r.deploymentStatusFromUnstructured(provider)
 	if err != nil {
-		return reconcile.Result{}, err
+		return false, reconcile.Result{}, err
 	}
 
 	installer := install.Installer{
@@ -198,12 +202,50 @@ func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider
 
 	deploymentStatus.Phase = phaseTerminating
 
-	err = installer.UninstallProvider(ctx)
+	deleted, err = installer.UninstallProvider(ctx)
+	if err != nil {
+		conversionErr := r.deploymentStatusIntoUnstructured(deploymentStatus, provider)
+		err = errors.Join(err, conversionErr)
+		return false, reconcile.Result{}, err
 
-	conversionErr := r.deploymentStatusIntoUnstructured(deploymentStatus, provider)
-	err = errors.Join(err, conversionErr)
+	}
 
-	return ctrl.Result{}, err
+	if !deleted {
+		return false, reconcile.Result{Requeue: true}, nil
+	}
+
+	if err = r.removeFinalizer(ctx, provider); err != nil {
+		return false, reconcile.Result{}, err
+	}
+
+	return true, reconcile.Result{}, nil
+}
+
+func (r *ProviderReconciler) checkReconcileAnnotation(
+	ctx context.Context,
+	provider *unstructured.Unstructured,
+	deploymentStatus *v1alpha1.DeploymentStatus,
+) error {
+	if controller.HasAnnotationWithValue(provider, openmcpOperationAnnotation, operationReconcile) && deploymentStatus.Phase == phaseReady {
+		log := logging.FromContextOrPanic(ctx)
+		deploymentStatus.Phase = phaseProgressing
+
+		if err := r.deploymentStatusIntoUnstructured(deploymentStatus, provider); err != nil {
+			log.Error(err, "failed to handle reconcile annotation")
+			return fmt.Errorf("failed to handle reconcile annotation: %w", err)
+		}
+
+		if err := r.PlatformClient.Status().Update(ctx, provider); err != nil {
+			log.Error(err, "failed to handle reconcile annotation: unable to change phase of provider to progressing")
+			return fmt.Errorf("failed to handle reconcile annotation: unable to change phase of provider %s/%s to progressing: %w", provider.GetNamespace(), provider.GetName(), err)
+		}
+
+		if err := controller.EnsureAnnotation(ctx, r.PlatformClient, provider, openmcpOperationAnnotation, operationReconcile, true, controller.DELETE); err != nil {
+			log.Error(err, "failed to remove reconcile annotation from provider")
+			return fmt.Errorf("failed to remove reconcile annotation from provider %s/%s: %w", provider.GetNamespace(), provider.GetName(), err)
+		}
+	}
+	return nil
 }
 
 func (r *ProviderReconciler) ensureFinalizer(ctx context.Context, provider *unstructured.Unstructured) error {
@@ -213,6 +255,18 @@ func (r *ProviderReconciler) ensureFinalizer(ctx context.Context, provider *unst
 			log := logging.FromContextOrPanic(ctx)
 			log.Error(err, "failed to add finalizer to provider")
 			return fmt.Errorf("failed to add finalizer to provider %s: %w", provider.GetName(), err)
+		}
+	}
+	return nil
+}
+
+func (r *ProviderReconciler) removeFinalizer(ctx context.Context, provider *unstructured.Unstructured) error {
+	if controllerutil.ContainsFinalizer(provider, openmcpFinalizer) {
+		controllerutil.RemoveFinalizer(provider, openmcpFinalizer)
+		if err := r.PlatformClient.Update(ctx, provider); err != nil {
+			log := logging.FromContextOrPanic(ctx)
+			log.Error(err, "failed to remove finalizer from provider")
+			return fmt.Errorf("failed to remove finalizer from provider %s: %w", provider.GetName(), err)
 		}
 	}
 	return nil

@@ -26,11 +26,7 @@ import (
 
 // PlatformServiceSpec defines the desired state of PlatformService.
 type PlatformServiceSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of PlatformService. Edit platformservice_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	DeploymentSpec `json:",inline"`
 }
 
 // PlatformServiceStatus defines the observed state of PlatformService.
@@ -48,8 +44,8 @@ type PlatformServiceStatus struct {
 type PlatformService struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              DeploymentSpec   `json:"spec,omitempty"`
-	Status            DeploymentStatus `json:"status,omitempty"`
+	Spec              PlatformServiceSpec `json:"spec,omitempty"`
+	Status            DeploymentStatus    `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

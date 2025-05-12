@@ -7,7 +7,7 @@ import (
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
 	"github.com/openmcp-project/controller-utils/pkg/readiness"
-	"github.com/openmcp-project/controller-utils/pkg/resources"
+	. "github.com/openmcp-project/controller-utils/pkg/resources"
 	v1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -26,7 +26,6 @@ type Installer struct {
 	PlatformClient client.Client
 	Provider       *unstructured.Unstructured
 	DeploymentSpec *v1alpha1.DeploymentSpec
-	Namespace      string
 }
 
 // InstallInitJob installs the init job of a provider.
@@ -35,13 +34,26 @@ type Installer struct {
 // Adds provider generation as annotation to the job.
 func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err error) {
 
-	// Create namespace if it does not exist
-	n := resources.NewNamespaceMutator(a.Namespace, nil, nil)
-	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, n); err != nil {
-		return false, fmt.Errorf("failed to create namespace %s: %w", a.Namespace, err)
+	values := NewValues(a.Provider, a.DeploymentSpec)
+
+	if err := CreateOrUpdateResource(ctx, a.PlatformClient, NewNamespaceMutator(values.Namespace(), nil, nil)); err != nil {
+		return false, err
 	}
 
-	j := newJobMutator(a.Provider.GetName(), a.Namespace, a.DeploymentSpec, nil, map[string]string{
+	if err = CreateOrUpdateResource(ctx, a.PlatformClient, newInitServiceAccountMutator(values)); err != nil {
+		return false, err
+	}
+
+	if err = CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
+		return false, err
+	}
+
+	if err = CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
+		return false, err
+	}
+
+	// Create job
+	j := newJobMutator(values, a.DeploymentSpec, map[string]string{
 		ProviderKindLabel:       a.Provider.GetKind(),
 		ProviderNameLabel:       a.Provider.GetName(),
 		ProviderGenerationLabel: fmt.Sprintf("%d", a.Provider.GetGeneration()),
@@ -52,34 +64,49 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 		if apierrors.IsNotFound(err) {
 			found = false
 		} else {
-			return false, fmt.Errorf("failed to get job %s/%s: %w", a.Namespace, a.Provider.GetName(), err)
+			return false, fmt.Errorf("failed to get job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
 		}
 	}
 
-	if found {
-		// Delete and re-create job if it has an old provider generation or is failed.
-		if !a.isGenerationUpToDate(ctx, job) || a.isJobFailed(job) {
-			if err := resources.DeleteResource(ctx, a.PlatformClient, j); err != nil {
-				return false, fmt.Errorf("failed to delete job %s/%s: %w", a.Namespace, a.Provider.GetName(), err)
-			}
-			if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
-				return false, fmt.Errorf("failed to re-create job %s/%s: %w", a.Namespace, a.Provider.GetName(), err)
-			}
+	if !found {
+		// Job does not exist, create it
+		if err := CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
+			return false, fmt.Errorf("failed to create job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
 		}
+		return false, nil
+
+	} else if !a.isGenerationUpToDate(ctx, job) || a.isJobFailed(job) {
+		// Job exists, but needs to be deleted and re-created
+		if err := DeleteResource(ctx, a.PlatformClient, j); err != nil {
+			return false, fmt.Errorf("failed to delete job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
+		}
+		if err := CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
+			return false, fmt.Errorf("failed to re-create job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
+		}
+		return false, nil
+
 	} else {
-		if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
-			return false, fmt.Errorf("failed to create job %s/%s: %w", a.Namespace, a.Provider.GetName(), err)
-		}
+		// Job exists, check completion
+		return job.Status.Succeeded > 0, nil
 	}
-
-	return true, nil
-}
-
-func (a *Installer) CheckInitJobReadiness(ctx context.Context) readiness.CheckResult {
-	return nil
 }
 
 func (a *Installer) InstallProvider(ctx context.Context) error {
+
+	values := NewValues(a.Provider, a.DeploymentSpec)
+
+	if err := CreateOrUpdateResource(ctx, a.PlatformClient, newProviderServiceAccountMutator(values)); err != nil {
+		return err
+	}
+
+	if err := CreateOrUpdateResource(ctx, a.PlatformClient, newProviderClusterRoleBindingMutator(values)); err != nil {
+		return err
+	}
+
+	if err := CreateOrUpdateResource(ctx, a.PlatformClient, newDeploymentMutator(values)); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -87,8 +114,27 @@ func (a *Installer) CheckProviderReadiness(ctx context.Context) readiness.CheckR
 	return nil
 }
 
-func (a *Installer) UninstallProvider(ctx context.Context) error {
-	return nil
+func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err error) {
+
+	values := NewValues(a.Provider, a.DeploymentSpec)
+
+	if err := DeleteResource(ctx, a.PlatformClient, newJobMutator(values, a.DeploymentSpec, nil)); err != nil {
+		return false, err
+	}
+
+	if err := DeleteResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
+		return false, err
+	}
+
+	if err := DeleteResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
+		return false, err
+	}
+
+	if err := DeleteResource(ctx, a.PlatformClient, newInitServiceAccountMutator(values)); err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 func (a *Installer) isJobFailed(job *v1.Job) bool {
