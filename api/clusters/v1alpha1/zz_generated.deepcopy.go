@@ -339,8 +339,8 @@ func (in *ClusterRequestSpec) DeepCopy() *ClusterRequestSpec {
 func (in *ClusterRequestStatus) DeepCopyInto(out *ClusterRequestStatus) {
 	*out = *in
 	in.CommonStatus.DeepCopyInto(&out.CommonStatus)
-	if in.ClusterRef != nil {
-		in, out := &in.ClusterRef, &out.ClusterRef
+	if in.Cluster != nil {
+		in, out := &in.Cluster, &out.Cluster
 		*out = new(NamespacedObjectReference)
 		**out = **in
 	}

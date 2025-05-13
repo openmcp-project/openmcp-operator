@@ -67,7 +67,7 @@ func (r *ClusterScheduler) Reconcile(ctx context.Context, req reconcile.Request)
 		WithFieldOverride(ctrlutils.STATUS_FIELD_PHASE, "Phase").
 		WithoutFields(ctrlutils.STATUS_FIELD_CONDITIONS).
 		WithPhaseUpdateFunc(func(obj *clustersv1alpha1.ClusterRequest, rr ReconcileResult) (clustersv1alpha1.RequestPhase, error) {
-			if rr.ReconcileError != nil || rr.Object == nil || rr.Object.Status.ClusterRef == nil {
+			if rr.ReconcileError != nil || rr.Object == nil || rr.Object.Status.Cluster == nil {
 				return clustersv1alpha1.REQUEST_PENDING, nil
 			}
 			return clustersv1alpha1.REQUEST_GRANTED, nil
@@ -125,8 +125,8 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 		}
 
 		// check if request is already granted
-		if cr.Status.ClusterRef != nil {
-			log.Info("Request already contains a cluster reference, nothing to do", "clusterName", cr.Status.ClusterRef.Name, "clusterNamespace", cr.Status.ClusterRef.Namespace)
+		if cr.Status.Cluster != nil {
+			log.Info("Request already contains a cluster reference, nothing to do", "clusterName", cr.Status.Cluster.Name, "clusterNamespace", cr.Status.Cluster.Namespace)
 			return rr
 		}
 		log.Debug("Request status does not contain a cluster reference, checking for existing clusters with referencing finalizers")
@@ -178,9 +178,9 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 		}
 		if cluster != nil {
 			log.Info("Recovered cluster from referencing finalizer", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
-			rr.Object.Status.ClusterRef = &clustersv1alpha1.NamespacedObjectReference{}
-			rr.Object.Status.ClusterRef.Name = cluster.Name
-			rr.Object.Status.ClusterRef.Namespace = cluster.Namespace
+			rr.Object.Status.Cluster = &clustersv1alpha1.NamespacedObjectReference{}
+			rr.Object.Status.Cluster.Name = cluster.Name
+			rr.Object.Status.Cluster.Namespace = cluster.Namespace
 			return rr
 		}
 
@@ -312,9 +312,9 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 		}
 
 		// add cluster reference to request
-		rr.Object.Status.ClusterRef = &clustersv1alpha1.NamespacedObjectReference{}
-		rr.Object.Status.ClusterRef.Name = cluster.Name
-		rr.Object.Status.ClusterRef.Namespace = cluster.Namespace
+		rr.Object.Status.Cluster = &clustersv1alpha1.NamespacedObjectReference{}
+		rr.Object.Status.Cluster.Name = cluster.Name
+		rr.Object.Status.Cluster.Namespace = cluster.Namespace
 
 	} else {
 

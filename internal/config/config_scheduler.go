@@ -60,8 +60,8 @@ type ClusterTemplate struct {
 }
 
 type SchedulerSelectors struct {
-	Clusters        *metav1.LabelSelector `json:"clusters,omitempty"`
-	ClusterRequests *metav1.LabelSelector `json:"clusterRequests,omitempty"`
+	Clusters *metav1.LabelSelector `json:"clusters,omitempty"`
+	Requests *metav1.LabelSelector `json:"requests,omitempty"`
 }
 type CompletedSchedulerSelectors struct {
 	Clusters        labels.Selector
@@ -104,10 +104,10 @@ func (c *SchedulerConfig) Validate(fldPath *field.Path) error {
 				errs = append(errs, field.Invalid(fldPath.Child("selectors").Child("clusters"), c.Selectors.Clusters, err.Error()))
 			}
 		}
-		if c.Selectors.ClusterRequests != nil {
-			_, err := metav1.LabelSelectorAsSelector(c.Selectors.ClusterRequests)
+		if c.Selectors.Requests != nil {
+			_, err := metav1.LabelSelectorAsSelector(c.Selectors.Requests)
 			if err != nil {
-				errs = append(errs, field.Invalid(fldPath.Child("selectors").Child("clusterRequests"), c.Selectors.ClusterRequests, err.Error()))
+				errs = append(errs, field.Invalid(fldPath.Child("selectors").Child("requests"), c.Selectors.Requests, err.Error()))
 			}
 		}
 	}
@@ -152,11 +152,11 @@ func (c *SchedulerConfig) Complete(fldPath *field.Path) error {
 				return field.Invalid(fldPath.Child("selectors").Child("clusters"), c.Selectors.Clusters, err.Error())
 			}
 		}
-		if c.Selectors.ClusterRequests != nil {
+		if c.Selectors.Requests != nil {
 			var err error
-			c.CompletedSelectors.ClusterRequests, err = metav1.LabelSelectorAsSelector(c.Selectors.ClusterRequests)
+			c.CompletedSelectors.ClusterRequests, err = metav1.LabelSelectorAsSelector(c.Selectors.Requests)
 			if err != nil {
-				return field.Invalid(fldPath.Child("selectors").Child("clusterRequests"), c.Selectors.ClusterRequests, err.Error())
+				return field.Invalid(fldPath.Child("selectors").Child("requests"), c.Selectors.Requests, err.Error())
 			}
 		}
 	}

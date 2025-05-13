@@ -57,16 +57,16 @@ var _ = Describe("Scheduler", func() {
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).To(BeNil())
+			Expect(req.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).ToNot(BeNil())
+			Expect(req.Status.Cluster).ToNot(BeNil())
 
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(existingClusters.Items).To(HaveLen(1))
 			cluster := existingClusters.Items[0]
-			Expect(cluster.Name).To(Equal(req.Status.ClusterRef.Name))
+			Expect(cluster.Name).To(Equal(req.Status.Cluster.Name))
 			Expect(cluster.Namespace).To(Equal(clusterNamespace))
 			Expect(cluster.Name).To(HavePrefix(fmt.Sprintf("%s-", req.Spec.Purpose)))
 			Expect(cluster.Namespace).To(Equal(sc.Config.PurposeMappings[req.Spec.Purpose].Template.ObjectMeta.Namespace))
@@ -83,18 +83,18 @@ var _ = Describe("Scheduler", func() {
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).To(BeNil())
+			Expect(req.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).ToNot(BeNil())
+			Expect(req.Status.Cluster).ToNot(BeNil())
 
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(existingClusters.Items).To(HaveLen(oldCount + 1))
 			Expect(existingClusters.Items).To(ContainElements(MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
-					"Name":       Equal(req.Status.ClusterRef.Name),
-					"Namespace":  Equal(req.Status.ClusterRef.Namespace),
+					"Name":       Equal(req.Status.Cluster.Name),
+					"Namespace":  Equal(req.Status.Cluster.Namespace),
 					"Finalizers": ContainElements(req.FinalizerForCluster()),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
@@ -113,16 +113,16 @@ var _ = Describe("Scheduler", func() {
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).To(BeNil())
+			Expect(req.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).ToNot(BeNil())
+			Expect(req.Status.Cluster).ToNot(BeNil())
 
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(existingClusters.Items).To(HaveLen(1))
 			cluster := existingClusters.Items[0]
-			Expect(cluster.Name).To(Equal(req.Status.ClusterRef.Name))
+			Expect(cluster.Name).To(Equal(req.Status.Cluster.Name))
 			Expect(cluster.Namespace).To(Equal(clusterNamespace))
 			Expect(cluster.Name).To(HavePrefix(fmt.Sprintf("%s-", req.Spec.Purpose)))
 			Expect(cluster.Namespace).To(Equal(sc.Config.PurposeMappings[req.Spec.Purpose].Template.ObjectMeta.Namespace))
@@ -141,18 +141,18 @@ var _ = Describe("Scheduler", func() {
 			// should use existing cluster
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).To(BeNil())
+			Expect(req.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).ToNot(BeNil())
+			Expect(req.Status.Cluster).ToNot(BeNil())
 
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(existingClusters.Items).To(HaveLen(oldCount))
 			Expect(existingClusters.Items).To(ContainElements(MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
-					"Name":       Equal(req.Status.ClusterRef.Name),
-					"Namespace":  Equal(req.Status.ClusterRef.Namespace),
+					"Name":       Equal(req.Status.Cluster.Name),
+					"Namespace":  Equal(req.Status.Cluster.Namespace),
 					"Finalizers": ContainElements(req.FinalizerForCluster()),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
@@ -164,50 +164,50 @@ var _ = Describe("Scheduler", func() {
 			// should use existing cluster
 			req2 := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared2", "foo"), req2)).To(Succeed())
-			Expect(req2.Status.ClusterRef).To(BeNil())
+			Expect(req2.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req2))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req2), req2)).To(Succeed())
-			Expect(req2.Status.ClusterRef).ToNot(BeNil())
+			Expect(req2.Status.Cluster).ToNot(BeNil())
 
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(existingClusters.Items).To(HaveLen(oldCount))
 			Expect(existingClusters.Items).To(ContainElements(MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
-					"Name":       Equal(req2.Status.ClusterRef.Name),
-					"Namespace":  Equal(req2.Status.ClusterRef.Namespace),
+					"Name":       Equal(req2.Status.Cluster.Name),
+					"Namespace":  Equal(req2.Status.Cluster.Namespace),
 					"Finalizers": ContainElements(req2.FinalizerForCluster()),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
 					"Tenancy": BeEquivalentTo(sc.Config.PurposeMappings[req2.Spec.Purpose].Template.Spec.Tenancy),
 				}),
 			})))
-			Expect(req2.Status.ClusterRef.Name).To(Equal(req.Status.ClusterRef.Name))
+			Expect(req2.Status.Cluster.Name).To(Equal(req.Status.Cluster.Name))
 
 			// third request
 			// should create a new cluster
 			req3 := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared3", "foo"), req3)).To(Succeed())
-			Expect(req3.Status.ClusterRef).To(BeNil())
+			Expect(req3.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req3))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req3), req3)).To(Succeed())
-			Expect(req3.Status.ClusterRef).ToNot(BeNil())
+			Expect(req3.Status.Cluster).ToNot(BeNil())
 
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(existingClusters.Items).To(HaveLen(oldCount + 1))
 			Expect(existingClusters.Items).To(ContainElements(MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
-					"Name":       Equal(req3.Status.ClusterRef.Name),
-					"Namespace":  Equal(req3.Status.ClusterRef.Namespace),
+					"Name":       Equal(req3.Status.Cluster.Name),
+					"Namespace":  Equal(req3.Status.Cluster.Namespace),
 					"Finalizers": ContainElements(req3.FinalizerForCluster()),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
 					"Tenancy": BeEquivalentTo(sc.Config.PurposeMappings[req3.Spec.Purpose].Template.Spec.Tenancy),
 				}),
 			})))
-			Expect(req3.Status.ClusterRef.Name).ToNot(Equal(req.Status.ClusterRef.Name))
-			Expect(req3.Status.ClusterRef.Name).ToNot(Equal(req2.Status.ClusterRef.Name))
+			Expect(req3.Status.Cluster.Name).ToNot(Equal(req.Status.Cluster.Name))
+			Expect(req3.Status.Cluster.Name).ToNot(Equal(req2.Status.Cluster.Name))
 		})
 
 		It("should only create a new cluster if none exists for unlimitedly shared clusters", func() {
@@ -226,15 +226,15 @@ var _ = Describe("Scheduler", func() {
 			}
 			for _, req := range requests {
 				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-				Expect(req.Status.ClusterRef).ToNot(BeNil())
-				Expect(req.Status.ClusterRef.Name).To(Equal(requests[0].Status.ClusterRef.Name))
-				Expect(req.Status.ClusterRef.Namespace).To(Equal(requests[0].Status.ClusterRef.Namespace))
+				Expect(req.Status.Cluster).ToNot(BeNil())
+				Expect(req.Status.Cluster.Name).To(Equal(requests[0].Status.Cluster.Name))
+				Expect(req.Status.Cluster.Namespace).To(Equal(requests[0].Status.Cluster.Namespace))
 			}
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(existingClusters.Items).To(HaveLen(1))
 			cluster := existingClusters.Items[0]
-			Expect(cluster.Name).To(Equal(requests[0].Status.ClusterRef.Name))
+			Expect(cluster.Name).To(Equal(requests[0].Status.Cluster.Name))
 			Expect(cluster.Namespace).To(Equal(clusterNamespace))
 			Expect(cluster.Name).To(Equal(requests[0].Spec.Purpose))
 			Expect(cluster.Namespace).To(Equal(sc.Config.PurposeMappings[requests[0].Spec.Purpose].Template.ObjectMeta.Namespace))
@@ -247,14 +247,14 @@ var _ = Describe("Scheduler", func() {
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).To(BeNil())
+			Expect(req.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).ToNot(BeNil())
+			Expect(req.Status.Cluster).ToNot(BeNil())
 
 			cluster := &clustersv1alpha1.Cluster{}
-			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(req.Status.ClusterRef.Name, req.Status.ClusterRef.Namespace), cluster)).To(Succeed())
+			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(req.Status.Cluster.Name, req.Status.Cluster.Namespace), cluster)).To(Succeed())
 			Expect(cluster.Labels).To(HaveKeyWithValue("foo.bar.baz/foobar", "true"))
 			Expect(cluster.Annotations).To(HaveKeyWithValue("foo.bar.baz/foobar", "false"))
 		})
@@ -265,7 +265,7 @@ var _ = Describe("Scheduler", func() {
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).To(BeNil())
+			Expect(req.Status.Cluster).To(BeNil())
 
 			fooClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, fooClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -279,7 +279,7 @@ var _ = Describe("Scheduler", func() {
 			// because the existing ones' labels don't match the selector
 			env.ShouldReconcile(testutils.RequestFromObject(req))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).ToNot(BeNil())
+			Expect(req.Status.Cluster).ToNot(BeNil())
 			Expect(env.Client().List(env.Ctx, fooClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(fooClusters.Items).To(HaveLen(oldCountFoo + 1))
 			oldCountFoo = len(fooClusters.Items)
@@ -287,25 +287,25 @@ var _ = Describe("Scheduler", func() {
 			// this should create a new cluster in 'bar'
 			req2 := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "bar"), req2)).To(Succeed())
-			Expect(req2.Status.ClusterRef).To(BeNil())
+			Expect(req2.Status.Cluster).To(BeNil())
 			barClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, barClusters, client.InNamespace("bar"))).To(Succeed())
 			oldCountBar := len(barClusters.Items)
 			env.ShouldReconcile(testutils.RequestFromObject(req2))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req2), req2)).To(Succeed())
-			Expect(req2.Status.ClusterRef).ToNot(BeNil())
+			Expect(req2.Status.Cluster).ToNot(BeNil())
 			Expect(env.Client().List(env.Ctx, barClusters, client.InNamespace("bar"))).To(Succeed())
 			Expect(barClusters.Items).To(HaveLen(oldCountBar + 1))
 
 			// this should re-use the existing cluster in 'foo'
 			req3 := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared2", "foo"), req3)).To(Succeed())
-			Expect(req3.Status.ClusterRef).To(BeNil())
+			Expect(req3.Status.Cluster).To(BeNil())
 			env.ShouldReconcile(testutils.RequestFromObject(req3))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req3), req3)).To(Succeed())
-			Expect(req3.Status.ClusterRef).ToNot(BeNil())
-			Expect(req3.Status.ClusterRef.Name).To(Equal(req.Status.ClusterRef.Name))
-			Expect(req3.Status.ClusterRef.Namespace).To(Equal(req.Status.ClusterRef.Namespace))
+			Expect(req3.Status.Cluster).ToNot(BeNil())
+			Expect(req3.Status.Cluster.Name).To(Equal(req.Status.Cluster.Name))
+			Expect(req3.Status.Cluster.Namespace).To(Equal(req.Status.Cluster.Namespace))
 			Expect(env.Client().List(env.Ctx, fooClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			Expect(fooClusters.Items).To(HaveLen(oldCountFoo))
 		})
@@ -319,7 +319,7 @@ var _ = Describe("Scheduler", func() {
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).To(BeNil())
+			Expect(req.Status.Cluster).To(BeNil())
 
 			clusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, clusters)).To(Succeed())
@@ -333,7 +333,7 @@ var _ = Describe("Scheduler", func() {
 			// because the existing ones' labels don't match the selector
 			env.ShouldReconcile(testutils.RequestFromObject(req))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-			Expect(req.Status.ClusterRef).ToNot(BeNil())
+			Expect(req.Status.Cluster).ToNot(BeNil())
 			Expect(env.Client().List(env.Ctx, clusters)).To(Succeed())
 			Expect(clusters.Items).To(HaveLen(oldCount + 1))
 			oldCount = len(clusters.Items)
@@ -341,24 +341,24 @@ var _ = Describe("Scheduler", func() {
 			// this should re-use the existing cluster
 			req2 := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared2", "bar"), req2)).To(Succeed())
-			Expect(req2.Status.ClusterRef).To(BeNil())
+			Expect(req2.Status.Cluster).To(BeNil())
 			env.ShouldReconcile(testutils.RequestFromObject(req2))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req2), req2)).To(Succeed())
-			Expect(req2.Status.ClusterRef).ToNot(BeNil())
-			Expect(req2.Status.ClusterRef.Name).To(Equal(req.Status.ClusterRef.Name))
-			Expect(req2.Status.ClusterRef.Namespace).To(Equal(req.Status.ClusterRef.Namespace))
+			Expect(req2.Status.Cluster).ToNot(BeNil())
+			Expect(req2.Status.Cluster.Name).To(Equal(req.Status.Cluster.Name))
+			Expect(req2.Status.Cluster.Namespace).To(Equal(req.Status.Cluster.Namespace))
 			Expect(env.Client().List(env.Ctx, clusters)).To(Succeed())
 			Expect(clusters.Items).To(HaveLen(oldCount))
 
 			// this should re-use the existing cluster
 			req3 := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared3", "baz"), req3)).To(Succeed())
-			Expect(req3.Status.ClusterRef).To(BeNil())
+			Expect(req3.Status.Cluster).To(BeNil())
 			env.ShouldReconcile(testutils.RequestFromObject(req3))
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req3), req3)).To(Succeed())
-			Expect(req3.Status.ClusterRef).ToNot(BeNil())
-			Expect(req3.Status.ClusterRef.Name).To(Equal(req.Status.ClusterRef.Name))
-			Expect(req3.Status.ClusterRef.Namespace).To(Equal(req.Status.ClusterRef.Namespace))
+			Expect(req3.Status.Cluster).ToNot(BeNil())
+			Expect(req3.Status.Cluster.Name).To(Equal(req.Status.Cluster.Name))
+			Expect(req3.Status.Cluster.Namespace).To(Equal(req.Status.Cluster.Namespace))
 			Expect(env.Client().List(env.Ctx, clusters)).To(Succeed())
 			Expect(clusters.Items).To(HaveLen(oldCount))
 		})

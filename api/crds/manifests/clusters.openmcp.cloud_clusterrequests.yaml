@@ -13,6 +13,10 @@ spec:
     kind: ClusterRequest
     listKind: ClusterRequestList
     plural: clusterrequests
+    shortNames:
+    - cr
+    - creq
+    - request
     singular: clusterrequest
   scope: Namespaced
   versions:
@@ -61,7 +65,7 @@ spec:
             properties:
               clusterRef:
                 description: |-
-                  ClusterRef is the reference to the Cluster that was returned as a result of a granted request.
+                  Cluster is the reference to the Cluster that was returned as a result of a granted request.
                   Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
                 properties:
                   name:
