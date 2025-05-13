@@ -31,14 +31,16 @@ import (
 
 const ControllerName = "Scheduler"
 
-func NewClusterScheduler(setupLog logging.Logger, onboardingCluster *clusters.Cluster, config *config.SchedulerConfig) (*ClusterScheduler, error) {
+func NewClusterScheduler(setupLog *logging.Logger, onboardingCluster *clusters.Cluster, config *config.SchedulerConfig) (*ClusterScheduler, error) {
 	if onboardingCluster == nil {
 		return nil, fmt.Errorf("onboarding cluster must not be nil")
 	}
 	if config == nil {
 		return nil, fmt.Errorf("scheduler config must not be nil")
 	}
-	setupLog.WithName(ControllerName).Info("Initializing cluster scheduler", "scope", string(config.Scope), "strategy", string(config.Strategy), "knownPurposes", strings.Join(sets.List(sets.KeySet(config.PurposeMappings)), ","))
+	if setupLog != nil {
+		setupLog.WithName(ControllerName).Info("Initializing cluster scheduler", "scope", string(config.Scope), "strategy", string(config.Strategy), "knownPurposes", strings.Join(sets.List(sets.KeySet(config.PurposeMappings)), ","))
+	}
 	return &ClusterScheduler{
 		OnboardingCluster: onboardingCluster,
 		Config:            config,
@@ -238,11 +240,6 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 					return rr
 				}
 			}
-
-			// add cluster reference to request
-			rr.Object.Status.ClusterRef = &clustersv1alpha1.NamespacedObjectReference{}
-			rr.Object.Status.ClusterRef.Name = cluster.Name
-			rr.Object.Status.ClusterRef.Namespace = cluster.Namespace
 		} else {
 			cluster = &clustersv1alpha1.Cluster{}
 			// choose a name for the cluster
@@ -254,7 +251,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			// - for exclusive clusters or shared limited:
 			//  1. generateName of template
 			//  2. purpose used as generateName
-			if cDef.TenancyCount == 0 {
+			if cDef.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_SHARED && cDef.TenancyCount == 0 {
 				// there will only be one instance of this cluster
 				if cDef.Template.GenerateName != "" {
 					cluster.SetGenerateName(cDef.Template.GenerateName)
@@ -286,6 +283,11 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			cluster.SetFinalizers([]string{cr.FinalizerForCluster()})
 			// take over labels, annotations, and spec from the template
 			cluster.SetLabels(cDef.Template.Labels)
+			if err := ctrlutils.EnsureLabel(ctx, nil, cluster, clustersv1alpha1.DeleteWithoutRequestsLabel, "true", false); err != nil {
+				if !ctrlutils.IsMetadataEntryAlreadyExistsError(err) {
+					log.Error(err, "error setting label", "label", clustersv1alpha1.DeleteWithoutRequestsLabel, "value", "true")
+				}
+			}
 			cluster.SetAnnotations(cDef.Template.Annotations)
 			cluster.Spec = cDef.Template.Spec
 
@@ -308,6 +310,11 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 				return rr
 			}
 		}
+
+		// add cluster reference to request
+		rr.Object.Status.ClusterRef = &clustersv1alpha1.NamespacedObjectReference{}
+		rr.Object.Status.ClusterRef.Name = cluster.Name
+		rr.Object.Status.ClusterRef.Namespace = cluster.Namespace
 
 	} else {
 

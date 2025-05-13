@@ -1,0 +1,13 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: exclusive-1
+  namespace: exclusive
+spec:
+  profile: test-profile
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  - exclusive
+  tenancy: Exclusive

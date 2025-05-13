@@ -1,0 +1,25 @@
+scheduler:
+  selectors:
+    clusters:
+      matchLabels:
+        foo.bar.baz/foobar: "true"
+  purposeMappings:
+    exclusive:
+      template:
+        metadata:
+          labels:
+            foo.bar.baz/foobar: "true"
+          annotations:
+            foo.bar.baz/foobar: "false"
+        spec:
+          profile: test-profile
+          tenancy: Exclusive
+    shared-unlimited:
+      template:
+        metadata:
+          name: singleton
+          labels:
+            foo.bar.baz/foobar: "true"
+        spec:
+          profile: test-profile
+          tenancy: Shared

@@ -1,0 +1,8 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: shared2
+  namespace: bar
+  uid: bf7d8a52-ea1e-4303-a0f9-bf2ef0cc21ea
+spec:
+  purpose: shared-unlimited
