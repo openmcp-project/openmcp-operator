@@ -9,6 +9,7 @@ import (
 	"github.com/openmcp-project/controller-utils/pkg/readiness"
 	. "github.com/openmcp-project/controller-utils/pkg/resources"
 	v1 "k8s.io/api/batch/v1"
+	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,6 +27,7 @@ type Installer struct {
 	PlatformClient client.Client
 	Provider       *unstructured.Unstructured
 	DeploymentSpec *v1alpha1.DeploymentSpec
+	Environment    string
 }
 
 // InstallInitJob installs the init job of a provider.
@@ -34,7 +36,7 @@ type Installer struct {
 // Adds provider generation as annotation to the job.
 func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err error) {
 
-	values := NewValues(a.Provider, a.DeploymentSpec)
+	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
 	if err := CreateOrUpdateResource(ctx, a.PlatformClient, NewNamespaceMutator(values.Namespace(), nil, nil)); err != nil {
 		return false, err
@@ -52,15 +54,15 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 		return false, err
 	}
 
-	// Create job
 	j := newJobMutator(values, a.DeploymentSpec, map[string]string{
 		ProviderKindLabel:       a.Provider.GetKind(),
 		ProviderNameLabel:       a.Provider.GetName(),
 		ProviderGenerationLabel: fmt.Sprintf("%d", a.Provider.GetGeneration()),
 	})
-	job := j.Empty()
+	var job *v1.Job
 	found := true
-	if err := a.PlatformClient.Get(ctx, client.ObjectKeyFromObject(job), job); err != nil {
+	job, err = GetResource(ctx, a.PlatformClient, j)
+	if err != nil {
 		if apierrors.IsNotFound(err) {
 			found = false
 		} else {
@@ -77,6 +79,10 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 
 	} else if !a.isGenerationUpToDate(ctx, job) || a.isJobFailed(job) {
 		// Job exists, but needs to be deleted and re-created
+		if err := a.cleanupJobPods(ctx, values); err != nil {
+			return false, fmt.Errorf("failed to cleanup job pods %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
+		}
+
 		if err := DeleteResource(ctx, a.PlatformClient, j); err != nil {
 			return false, fmt.Errorf("failed to delete job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
 		}
@@ -93,7 +99,7 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 
 func (a *Installer) InstallProvider(ctx context.Context) error {
 
-	values := NewValues(a.Provider, a.DeploymentSpec)
+	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
 	if err := CreateOrUpdateResource(ctx, a.PlatformClient, newProviderServiceAccountMutator(values)); err != nil {
 		return err
@@ -111,12 +117,31 @@ func (a *Installer) InstallProvider(ctx context.Context) error {
 }
 
 func (a *Installer) CheckProviderReadiness(ctx context.Context) readiness.CheckResult {
-	return nil
+	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
+
+	depl, err := GetResource(ctx, a.PlatformClient, newDeploymentMutator(values))
+	if err != nil {
+		return readiness.NewFailedResult(err)
+	}
+
+	return readiness.CheckDeployment(depl)
 }
 
 func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err error) {
 
-	values := NewValues(a.Provider, a.DeploymentSpec)
+	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
+
+	if err := DeleteResource(ctx, a.PlatformClient, newDeploymentMutator(values)); err != nil {
+		return false, err
+	}
+
+	if err := DeleteResource(ctx, a.PlatformClient, newProviderClusterRoleBindingMutator(values)); err != nil {
+		return false, err
+	}
+
+	if err := DeleteResource(ctx, a.PlatformClient, newProviderServiceAccountMutator(values)); err != nil {
+		return false, err
+	}
 
 	if err := DeleteResource(ctx, a.PlatformClient, newJobMutator(values, a.DeploymentSpec, nil)); err != nil {
 		return false, err
@@ -137,8 +162,35 @@ func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err er
 	return true, nil
 }
 
+func (a *Installer) cleanupJobPods(ctx context.Context, values *Values) error {
+	podList := &core.PodList{}
+	if err := a.PlatformClient.List(ctx, podList,
+		client.InNamespace(values.Namespace()),
+		client.MatchingLabels{
+			"batch.kubernetes.io/job-name": values.NamespacedResourceName(initPrefix),
+		},
+	); err != nil {
+		return fmt.Errorf("failed to list pods for job %s/%s: %w", values.Namespace(), values.NamespacedResourceName(initPrefix), err)
+	}
+
+	for _, pod := range podList.Items {
+		if err := a.PlatformClient.Delete(ctx, &pod); err != nil {
+			return fmt.Errorf("failed to delete pod %s/%s: %w", pod.Namespace, pod.Name, err)
+		}
+	}
+
+	return nil
+}
+
 func (a *Installer) isJobFailed(job *v1.Job) bool {
-	return job.Status.Failed > 0
+	if job != nil {
+		for _, condition := range job.Status.Conditions {
+			if condition.Type == v1.JobFailed && condition.Status == core.ConditionTrue {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (a *Installer) isGenerationUpToDate(ctx context.Context, job *v1.Job) bool {

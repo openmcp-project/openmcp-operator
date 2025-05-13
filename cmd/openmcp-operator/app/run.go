@@ -303,7 +303,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		utilruntime.Must(clientgoscheme.AddToScheme(mgr.GetScheme()))
 		utilruntime.Must(api.AddToScheme(mgr.GetScheme()))
 
-		if err = provider.NewDeploymentController().SetupWithManager(mgr, o.ProviderGVKList); err != nil {
+		if err = provider.NewDeploymentController().SetupWithManager(mgr, o.ProviderGVKList, o.Environment); err != nil {
 			return fmt.Errorf("unable to setup provider controllers: %w", err)
 		}
 	}

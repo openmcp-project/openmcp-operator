@@ -6,15 +6,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/openmcp-project/controller-utils/pkg/resources"
-)
 
-const (
-	deploymentSelectorLabelKey   = "app"
-	deploymentSelectorLabelValue = "openmcp.cloud/deployment"
+	"github.com/openmcp-project/openmcp-operator/api/install"
 )
 
 type deploymentMutator struct {
@@ -44,13 +43,11 @@ func (m *deploymentMutator) Empty() *appsv1.Deployment {
 	}
 }
 
-func (m *deploymentMutator) Mutate(r *appsv1.Deployment) error {
-	r.Spec = appsv1.DeploymentSpec{
+func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
+	d.Spec = appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				deploymentSelectorLabelKey: deploymentSelectorLabelValue,
-			},
+			MatchLabels: m.values.LabelsController(),
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
@@ -64,6 +61,7 @@ func (m *deploymentMutator) Mutate(r *appsv1.Deployment) error {
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Args: []string{
 							"run",
+							"--environment=" + m.values.Environment(),
 						},
 					},
 				},
@@ -72,5 +70,11 @@ func (m *deploymentMutator) Mutate(r *appsv1.Deployment) error {
 			},
 		},
 	}
-	return m.meta.Mutate(r)
+
+	// Set the provider as owner of the deployment, so that the provider controller gets an event if the deployment changes.
+	if err := controllerutil.SetControllerReference(m.values.provider, d, install.InstallOperatorAPIs(runtime.NewScheme())); err != nil {
+		return fmt.Errorf("failed to set deployment controller as owner of deployment: %w", err)
+	}
+
+	return m.meta.Mutate(d)
 }
