@@ -1,0 +1,16 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: shared
+  namespace: foo
+  labels:
+    foo.bar.baz/foobar: "true"
+spec:
+  profile: test-profile
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  - shared
+  - shared2
+  tenancy: Shared

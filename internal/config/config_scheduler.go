@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,10 +25,13 @@ type SchedulerConfig struct {
 	Strategy Strategy `json:"strategy"`
 
 	// +optional
-	Selectors          *SchedulerSelectors         `json:"selectors,omitempty"`
+	Selectors *SchedulerSelectors `json:"selectors,omitempty"`
+	// Note that CompletedSelectors.Clusters holds the global cluster selector.
+	// During Complete(), the local selector is merged with the global one (or set to the global one if nil).
+	// This means that always the local completed selector should be used, unless the task is not tied to a specific ClusterDefinition.
 	CompletedSelectors CompletedSchedulerSelectors `json:"-"`
 
-	PurposeMappings map[string]ClusterDefinition `json:"purposeMappings"`
+	PurposeMappings map[string]*ClusterDefinition `json:"purposeMappings"`
 }
 
 type SchedulerScope string
@@ -51,7 +55,9 @@ type ClusterDefinition struct {
 	// Must be equal to or greater than 0 otherwise, with 0 meaning "unlimited".
 	TenancyCount int `json:"tenancyCount,omitempty"`
 
-	Template ClusterTemplate `json:"template"`
+	Template          ClusterTemplate       `json:"template"`
+	Selector          *metav1.LabelSelector `json:"selector,omitempty"`
+	CompletedSelector labels.Selector       `json:"-"`
 }
 
 type ClusterTemplate struct {
@@ -76,7 +82,7 @@ func (c *SchedulerConfig) Default(_ *field.Path) error {
 		c.Strategy = STRATEGY_BALANCED
 	}
 	if c.PurposeMappings == nil {
-		c.PurposeMappings = map[string]ClusterDefinition{}
+		c.PurposeMappings = map[string]*ClusterDefinition{}
 	}
 	return nil
 }
@@ -118,7 +124,11 @@ func (c *SchedulerConfig) Validate(fldPath *field.Path) error {
 	for purpose, definition := range c.PurposeMappings {
 		pPath := fldPath.Key(purpose)
 		if purpose == "" {
-			errs = append(errs, field.Invalid(pPath, purpose, "purpose must not be empty"))
+			errs = append(errs, field.Invalid(fldPath, purpose, "purpose must not be empty"))
+		}
+		if definition == nil {
+			errs = append(errs, field.Required(pPath, "definition must not be nil"))
+			continue
 		}
 		if definition.TenancyCount < 0 {
 			errs = append(errs, field.Invalid(pPath.Child("tenancyCount"), definition.TenancyCount, "tenancyCount must be greater than or equal to 0"))
@@ -137,7 +147,18 @@ func (c *SchedulerConfig) Validate(fldPath *field.Path) error {
 			errs = append(errs, field.Invalid(pPath.Child("tenancyCount"), definition.TenancyCount, fmt.Sprintf("tenancyCount must be 0 if the template specifies '%s' tenancy", string(clustersv1alpha1.TENANCY_EXCLUSIVE))))
 		}
 		if cls != nil && !cls.Matches(labels.Set(definition.Template.Labels)) {
-			errs = append(errs, field.Invalid(pPath.Child("template").Child("metadata").Child("labels"), definition.Template.Labels, "labels do not match specified cluster selector"))
+			errs = append(errs, field.Invalid(pPath.Child("template").Child("metadata").Child("labels"), definition.Template.Labels, "labels do not match specified global cluster selector"))
+		}
+		var lcls labels.Selector
+		if definition.Selector != nil {
+			var err error
+			lcls, err = metav1.LabelSelectorAsSelector(definition.Selector)
+			if err != nil {
+				errs = append(errs, field.Invalid(pPath.Child("selector"), definition.Selector, err.Error()))
+			}
+		}
+		if lcls != nil && !lcls.Matches(labels.Set(definition.Template.Labels)) {
+			errs = append(errs, field.Invalid(pPath.Child("template").Child("metadata").Child("labels"), definition.Template.Labels, "labels do not match specified local cluster selector"))
 		}
 	}
 	return errs.ToAggregate()
@@ -166,5 +187,37 @@ func (c *SchedulerConfig) Complete(fldPath *field.Path) error {
 	if c.CompletedSelectors.ClusterRequests == nil {
 		c.CompletedSelectors.ClusterRequests = labels.Everything()
 	}
+
+	for purpose, definition := range c.PurposeMappings {
+		pPath := fldPath.Child("purposeMappings").Key(purpose)
+		if definition.Selector != nil {
+			var combinedSelector *metav1.LabelSelector
+			if c.Selectors.Clusters == nil {
+				combinedSelector = definition.Selector
+			} else if definition.Selector == nil {
+				combinedSelector = c.Selectors.Clusters
+			} else {
+				combinedSelector = c.Selectors.Clusters.DeepCopy()
+				if combinedSelector.MatchLabels == nil {
+					combinedSelector.MatchLabels = definition.Selector.MatchLabels
+				} else if definition.Selector.MatchLabels != nil {
+					maps.Insert(combinedSelector.MatchLabels, maps.All(definition.Selector.MatchLabels))
+				}
+				if combinedSelector.MatchExpressions == nil {
+					combinedSelector.MatchExpressions = definition.Selector.MatchExpressions
+				} else if definition.Selector.MatchExpressions != nil {
+					combinedSelector.MatchExpressions = append(combinedSelector.MatchExpressions, definition.Selector.MatchExpressions...)
+				}
+			}
+			var err error
+			definition.CompletedSelector, err = metav1.LabelSelectorAsSelector(combinedSelector)
+			if err != nil {
+				return field.Invalid(pPath.Child("selector"), combinedSelector, fmt.Sprintf("the combination of the global and local selector is invalid: %s", err.Error()))
+			}
+		} else {
+			definition.CompletedSelector = c.CompletedSelectors.Clusters
+		}
+	}
+
 	return nil
 }

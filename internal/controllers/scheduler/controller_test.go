@@ -365,4 +365,38 @@ var _ = Describe("Scheduler", func() {
 
 	})
 
+	It("should combine cluster label selectors correctly", func() {
+		_, env := defaultTestSetup("testdata", "test-04")
+
+		// should use the existing cluster
+		req := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())
+		Expect(req.Status.Cluster).To(BeNil())
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Status.Cluster).ToNot(BeNil())
+		Expect(req.Status.Cluster.Name).To(Equal("shared"))
+		Expect(req.Status.Cluster.Namespace).To(Equal("foo"))
+
+		// should create a new cluster
+		req2 := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared2", "foo"), req2)).To(Succeed())
+		Expect(req2.Status.Cluster).To(BeNil())
+		env.ShouldReconcile(testutils.RequestFromObject(req2))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req2), req2)).To(Succeed())
+		Expect(req2.Status.Cluster).ToNot(BeNil())
+		Expect(req2.Status.Cluster.Name).To(Equal("shared2"))
+		Expect(req2.Status.Cluster.Namespace).To(Equal("foo"))
+
+		// should use the existing cluster
+		req3 := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared3", "foo"), req3)).To(Succeed())
+		Expect(req3.Status.Cluster).To(BeNil())
+		env.ShouldReconcile(testutils.RequestFromObject(req3))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req3), req3)).To(Succeed())
+		Expect(req3.Status.Cluster).ToNot(BeNil())
+		Expect(req3.Status.Cluster.Name).To(Equal("shared2"))
+		Expect(req3.Status.Cluster.Namespace).To(Equal("foo"))
+	})
+
 })

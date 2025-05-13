@@ -149,7 +149,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			namespace = cDef.Template.Namespace
 		}
 		clusterList := &clustersv1alpha1.ClusterList{}
-		if err := r.OnboardingCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: r.Config.CompletedSelectors.Clusters}); err != nil {
+		if err := r.OnboardingCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: cDef.CompletedSelector}); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonOnboardingClusterInteractionProblem)
 			return rr
 		}
