@@ -13,5 +13,5 @@ includes:
       COMPONENTS: 'openmcp-operator'
       REPO_URL: 'https://github.com/openmcp-project/openmcp-operator'
       GENERATE_DOCS_INDEX: "true"
-      CHART_COMPONENTS: ""
+      CHART_COMPONENTS: "[]"
       LINTER_VERSION: "v1.64.4"
