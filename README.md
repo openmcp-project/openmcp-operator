@@ -4,7 +4,7 @@
 
 ## About this project
 
-The `opemcp-operator` is the central and mandatory component of an openMCP landscape.
+The `openmcp-operator` is the central and mandatory component of an openMCP landscape.
 The `openmcp-operator` is a Kubernetes operator that contains resource controllers for the following use cases:
 
 * Deployment Controller: The Deployment Controller is responsible to create Kubernetes deployments and manage the lifecycle for `ClusterProviders`, `ServiceProviders` and `PlatformServices` Kubernetes resources on the platform cluster.
