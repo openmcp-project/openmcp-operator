@@ -6,7 +6,6 @@ import (
 
 	crdutil "github.com/openmcp-project/controller-utils/pkg/crds"
 	"github.com/spf13/cobra"
-	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/yaml"
 
@@ -76,9 +75,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	log.Info("Environment", "value", o.Environment)
 
 	// apply CRDs
-	crdManager := crdutil.NewCRDManager(clustersv1alpha1.ClusterLabel, func() ([]*apiextv1.CustomResourceDefinition, error) {
-		return crds.CRDs(), nil
-	})
+	crdManager := crdutil.NewCRDManager(clustersv1alpha1.ClusterLabel, crds.CRDs)
 
 	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_ONBOARDING, o.Clusters.Onboarding)
 	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_PLATFORM, o.Clusters.Platform)
