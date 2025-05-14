@@ -75,6 +75,10 @@ const (
 	EnvironmentAnnotation = "clusters.openmcp.cloud/environment"
 	// ProviderAnnotation can be used to display the provider of the cluster.
 	ProviderAnnotation = "clusters.openmcp.cloud/provider"
+
+	// DeleteWithoutRequestsLabel marks that the corresponding cluster can be deleted if the scheduler removes the last request pointing to it.
+	// Its value must be "true" for the label to take effect.
+	DeleteWithoutRequestsLabel = "clusters.openmcp.cloud/delete-without-requests"
 )
 
 const (

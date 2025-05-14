@@ -16,20 +16,35 @@ type ClusterRequestStatus struct {
 	CommonStatus `json:",inline"`
 
 	// Phase is the current phase of the request.
+	// +kubebuilder:default=Pending
+	// +kubebuilder:validation:Enum=Pending;Granted;Denied
 	Phase RequestPhase `json:"phase"`
 
-	// ClusterRef is the reference to the Cluster that was returned as a result of a granted request.
+	// Cluster is the reference to the Cluster that was returned as a result of a granted request.
 	// Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable"
-	ClusterRef *NamespacedObjectReference `json:"clusterRef,omitempty"`
+	Cluster *NamespacedObjectReference `json:"clusterRef,omitempty"`
 }
 
 type RequestPhase string
 
+func (p RequestPhase) IsGranted() bool {
+	return p == REQUEST_GRANTED
+}
+
+func (p RequestPhase) IsDenied() bool {
+	return p == REQUEST_DENIED
+}
+
+func (p RequestPhase) IsPending() bool {
+	return p == "" || p == REQUEST_PENDING
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:metadata:labels="openmcp.cloud/cluster=onboarding"
+// +kubebuilder:resource:shortName=cr;creq
+// +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
 // +kubebuilder:selectablefield:JSONPath=".spec.purpose"
 // +kubebuilder:selectablefield:JSONPath=".status.phase"
 // +kubebuilder:printcolumn:JSONPath=".spec.purpose",name="Purpose",type=string

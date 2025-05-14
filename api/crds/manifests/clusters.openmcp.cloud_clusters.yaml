@@ -5,7 +5,7 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.3
   labels:
-    openmcp.cloud/cluster: onboarding
+    openmcp.cloud/cluster: platform
   name: clusters.clusters.openmcp.cloud
 spec:
   group: clusters.openmcp.cloud
@@ -29,15 +29,11 @@ spec:
     - jsonPath: .metadata.annotations["clusters.openmcp.cloud/profile"]
       name: Profile
       type: string
-    - jsonPath: .metadata.labels["environment.clusters.openmcp.cloud"]
-      name: Env
-      priority: 10
-      type: string
     - jsonPath: .metadata.labels["provider.clusters.openmcp.cloud"]
       name: Provider
       priority: 10
       type: string
-    - jsonPath: .spec.clusterProfileRef.name
+    - jsonPath: .spec.profile
       name: ProfileRef
       priority: 10
       type: string
@@ -194,7 +190,7 @@ spec:
             type: object
         type: object
     selectableFields:
-    - jsonPath: .spec.clusterProfileRef.name
+    - jsonPath: .spec.profile
     served: true
     storage: true
     subresources:

@@ -5,7 +5,7 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.3
   labels:
-    openmcp.cloud/cluster: onboarding
+    openmcp.cloud/cluster: platform
   name: accessrequests.clusters.openmcp.cloud
 spec:
   group: clusters.openmcp.cloud
@@ -13,10 +13,17 @@ spec:
     kind: AccessRequest
     listKind: AccessRequestList
     plural: accessrequests
+    shortNames:
+    - ar
+    - areq
     singular: accessrequest
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: AccessRequest is the Schema for the accessrequests API
@@ -125,9 +132,30 @@ spec:
                   - rules
                   type: object
                 type: array
+              requestRef:
+                description: |-
+                  RequestRef is the reference to the ClusterRequest for whose Cluster access is requested.
+                  Exactly one of clusterRef or requestRef must be set.
+                  This value is immutable.
+                properties:
+                  name:
+                    description: Name is the name of the referenced resource.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the referenced resource.
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+                x-kubernetes-validations:
+                - message: requestRef is immutable
+                  rule: self == oldSelf
             required:
             - clusterRef
             - permissions
+            - requestRef
             type: object
           status:
             description: AccessRequestStatus defines the observed state of AccessRequest
@@ -181,18 +209,40 @@ spec:
                 format: int64
                 type: integer
               phase:
+                default: Pending
                 description: Phase is the current phase of the request.
+                enum:
+                - Pending
+                - Granted
+                - Denied
                 type: string
               reason:
                 description: Reason is expected to contain a CamelCased string that
                   provides further information in a machine-readable format.
                 type: string
+              secretRef:
+                description: SecretRef holds the reference to the secret that contains
+                  the actual credentials.
+                properties:
+                  name:
+                    description: Name is the name of the referenced resource.
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the referenced resource.
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
             required:
             - lastReconcileTime
             - observedGeneration
             - phase
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .status.phase
     served: true
     storage: true
     subresources:

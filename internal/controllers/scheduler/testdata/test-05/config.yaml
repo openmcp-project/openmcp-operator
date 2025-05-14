@@ -1,0 +1,16 @@
+scheduler:
+  scope: Cluster
+  purposeMappings:
+    delete:
+      template:
+        spec:
+          profile: test-profile
+          tenancy: Shared
+    no-delete:
+      template:
+        metadata:
+          labels:
+            clusters.openmcp.cloud/delete-without-requests: "false"
+        spec:
+          profile: test-profile
+          tenancy: Shared

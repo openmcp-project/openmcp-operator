@@ -1,0 +1,13 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: out-of-scope
+  namespace: foo
+spec:
+  profile: test-profile
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  - shared-unlimited
+  tenancy: Shared

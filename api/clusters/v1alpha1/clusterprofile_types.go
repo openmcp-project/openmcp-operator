@@ -6,9 +6,6 @@ import (
 
 // ClusterProfileSpec defines the desired state of Provider.
 type ClusterProfileSpec struct {
-	// Environment is the environment in which the ClusterProvider resides.
-	Environment string `json:"environment"`
-
 	// ProviderRef is a reference to the ClusterProvider
 	ProviderRef ObjectReference `json:"providerRef"`
 
@@ -30,11 +27,9 @@ type SupportedK8sVersion struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:scope=Cluster,shortName=cprof;profile
-// +kubebuilder:metadata:labels="openmcp.cloud/cluster=onboarding"
-// +kubebuilder:selectablefield:JSONPath=".spec.environment"
+// +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
 // +kubebuilder:selectablefield:JSONPath=".spec.providerRef.name"
 // +kubebuilder:selectablefield:JSONPath=".spec.providerConfigRef.name"
-// +kubebuilder:printcolumn:JSONPath=".spec.environment",name="Env",type=string
 // +kubebuilder:printcolumn:JSONPath=".spec.providerRef.name",name="Provider",type=string
 // +kubebuilder:printcolumn:JSONPath=".spec.providerConfigRef.name",name="Config",type=string
 

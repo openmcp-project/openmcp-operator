@@ -6,6 +6,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // ClusterSpec defines the desired state of Cluster
@@ -81,15 +82,14 @@ const (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:metadata:labels="openmcp.cloud/cluster=onboarding"
-// +kubebuilder:selectablefield:JSONPath=".spec.clusterProfileRef.name"
+// +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
+// +kubebuilder:selectablefield:JSONPath=".spec.profile"
 // +kubebuilder:printcolumn:JSONPath=".spec.purposes",name="Purposes",type=string
 // +kubebuilder:printcolumn:JSONPath=`.status.phase`,name="Phase",type=string
 // +kubebuilder:printcolumn:JSONPath=`.metadata.annotations["clusters.openmcp.cloud/k8sversion"]`,name="Version",type=string
 // +kubebuilder:printcolumn:JSONPath=`.metadata.annotations["clusters.openmcp.cloud/profile"]`,name="Profile",type=string
-// +kubebuilder:printcolumn:JSONPath=`.metadata.labels["environment.clusters.openmcp.cloud"]`,name="Env",type=string,priority=10
 // +kubebuilder:printcolumn:JSONPath=`.metadata.labels["provider.clusters.openmcp.cloud"]`,name="Provider",type=string, priority=10
-// +kubebuilder:printcolumn:JSONPath=".spec.clusterProfileRef.name",name="ProfileRef",type=string,priority=10
+// +kubebuilder:printcolumn:JSONPath=".spec.profile",name="ProfileRef",type=string,priority=10
 // +kubebuilder:printcolumn:JSONPath=`.metadata.annotations["clusters.openmcp.cloud/providerinfo"]`,name="Info",type=string,priority=10
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
@@ -132,12 +132,19 @@ func (cs *ClusterStatus) SetProviderStatus(from any) error {
 
 // GetTenancyCount returns the number of ClusterRequests currently pointing to this cluster.
 // This is determined by counting the finalizers that have the corresponding prefix.
+// Note that only unique finalizers are counted, so if there are multiple identical request finalizers
+// (which should not happen), this method's return value might not match the actual number of finalizers with the prefix.
 func (c *Cluster) GetTenancyCount() int {
-	count := 0
+	return c.GetRequestUIDs().Len()
+}
+
+// GetRequestUIDs returns the UIDs of all ClusterRequests that have marked this cluster with a corresponding finalizer.
+func (c *Cluster) GetRequestUIDs() sets.Set[string] {
+	res := sets.New[string]()
 	for _, fin := range c.Finalizers {
 		if strings.HasPrefix(fin, RequestFinalizerOnClusterPrefix) {
-			count++
+			res.Insert(strings.TrimPrefix(fin, RequestFinalizerOnClusterPrefix))
 		}
 	}
-	return count
+	return res
 }

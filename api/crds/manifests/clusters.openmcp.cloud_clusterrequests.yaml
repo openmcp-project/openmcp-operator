@@ -5,7 +5,7 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.3
   labels:
-    openmcp.cloud/cluster: onboarding
+    openmcp.cloud/cluster: platform
   name: clusterrequests.clusters.openmcp.cloud
 spec:
   group: clusters.openmcp.cloud
@@ -13,6 +13,9 @@ spec:
     kind: ClusterRequest
     listKind: ClusterRequestList
     plural: clusterrequests
+    shortNames:
+    - cr
+    - creq
     singular: clusterrequest
   scope: Namespaced
   versions:
@@ -61,7 +64,7 @@ spec:
             properties:
               clusterRef:
                 description: |-
-                  ClusterRef is the reference to the Cluster that was returned as a result of a granted request.
+                  Cluster is the reference to the Cluster that was returned as a result of a granted request.
                   Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
                 properties:
                   name:
@@ -127,7 +130,12 @@ spec:
                 format: int64
                 type: integer
               phase:
+                default: Pending
                 description: Phase is the current phase of the request.
+                enum:
+                - Pending
+                - Granted
+                - Denied
                 type: string
               reason:
                 description: Reason is expected to contain a CamelCased string that

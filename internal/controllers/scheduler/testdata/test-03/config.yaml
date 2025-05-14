@@ -1,0 +1,16 @@
+scheduler:
+  scope: Cluster
+  selectors:
+    clusters:
+      matchLabels:
+        foo.bar.baz/foobar: "true"
+  purposeMappings:
+    shared-unlimited:
+      template:
+        metadata:
+          name: singleton
+          labels:
+            foo.bar.baz/foobar: "true"
+        spec:
+          profile: test-profile
+          tenancy: Shared

@@ -26,10 +26,11 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
 )
 
 var setupLog logging.Logger
-var allControllers = []string{}
+var allControllers = []string{strings.ToLower(scheduler.ControllerName)}
 
 func NewRunCommand(so *SharedOptions) *cobra.Command {
 	opts := &RunOptions{
@@ -73,7 +74,7 @@ func (o *RunOptions) AddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.MetricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	cmd.Flags().BoolVar(&o.EnableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers")
 
-	cmd.Flags().StringSliceVar(&o.Controllers, "controllers", allControllers, "List of active controllers.")
+	cmd.Flags().StringSliceVar(&o.Controllers, "controllers", allControllers, "List of active controllers. Separate with comma or specify flag multiple times to activate multiple controllers.")
 }
 
 type RawRunOptions struct {
@@ -284,14 +285,20 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("unable to add onboarding cluster to manager: %w", err)
 	}
 
-	// setup cluster controller
-	// if slices.Contains(o.Controllers, strings.ToLower(cluster.ControllerName)) {
-	// 	if _, _, _, err := controllers.SetupClusterControllersWithManager(mgr, o.Clusters.Platform, o.Clusters.Onboarding, swMgr); err != nil {
-	// 		return fmt.Errorf("unable to setup cluster controllers: %w", err)
-	// 	}
-	// }
+	// setup cluster scheduler
+	if slices.Contains(o.Controllers, strings.ToLower(scheduler.ControllerName)) {
+		sc, err := scheduler.NewClusterScheduler(&setupLog, o.Clusters.Platform, o.Config.Scheduler)
+		if err != nil {
+			return fmt.Errorf("unable to initialize cluster scheduler: %w", err)
+		}
+		if err := sc.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to setup cluster scheduler with manager: %w", err)
+		}
+	}
 
 	// setup deployment controller
+	// TODO: Can we use a variable/constant/function instead of a hardcoded string for the controller name here?
+	// TODO: This value has to be added to the allControllers variable too, because I guess we want it to be enabled by default.
 	if slices.Contains(o.Controllers, strings.ToLower("deploymentcontroller")) {
 		utilruntime.Must(clientgoscheme.AddToScheme(mgr.GetScheme()))
 		utilruntime.Must(api.AddToScheme(mgr.GetScheme()))

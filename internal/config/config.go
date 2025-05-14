@@ -23,8 +23,12 @@ type Config struct {
 	// If a field's value has a 'Complete() error' method, it will be called to complete the config.
 	// These methods will be called in the order Default -> Validate -> Complete.
 	// The config printed during startup, therefore its fields should contain json markers.
+
+	// Scheduler is the configuration for the cluster scheduler.
+	Scheduler *SchedulerConfig `json:"scheduler,omitempty"`
 }
 
+// Dump is used for logging and debugging purposes.
 func (c *Config) Dump(out io.Writer) error {
 	data, err := yaml.Marshal(c)
 	if err != nil {

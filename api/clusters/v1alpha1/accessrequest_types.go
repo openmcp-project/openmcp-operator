@@ -12,6 +12,12 @@ type AccessRequestSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable"
 	ClusterRef NamespacedObjectReference `json:"clusterRef"`
 
+	// RequestRef is the reference to the ClusterRequest for whose Cluster access is requested.
+	// Exactly one of clusterRef or requestRef must be set.
+	// This value is immutable.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="requestRef is immutable"
+	RequestRef NamespacedObjectReference `json:"requestRef"`
+
 	// Permissions are the requested permissions.
 	Permissions []PermissionsRequest `json:"permissions"`
 }
@@ -32,14 +38,20 @@ type AccessRequestStatus struct {
 	CommonStatus `json:",inline"`
 
 	// Phase is the current phase of the request.
+	// +kubebuilder:default=Pending
+	// +kubebuilder:validation:Enum=Pending;Granted;Denied
 	Phase RequestPhase `json:"phase"`
 
-	// TODO: expose actual access information
+	// SecretRef holds the reference to the secret that contains the actual credentials.
+	SecretRef *NamespacedObjectReference `json:"secretRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:metadata:labels="openmcp.cloud/cluster=onboarding"
+// +kubebuilder:resource:shortName=ar;areq
+// +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
+// +kubebuilder:selectablefield:JSONPath=".status.phase"
+// +kubebuilder:printcolumn:JSONPath=".status.phase",name="Phase",type=string
 
 // AccessRequest is the Schema for the accessrequests API
 type AccessRequest struct {
