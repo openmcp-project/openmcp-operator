@@ -25,8 +25,9 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// DeploymentController is not a controller, but a collection of controllers reconciling
-// ClusterProviders, ServiceProviders, and PlatformServices.
+const ControllerName = "DeploymentController"
+
+// DeploymentController is a collection of controllers reconciling ClusterProviders, ServiceProviders, and PlatformServices.
 type DeploymentController struct {
 	Reconcilers []*ProviderReconciler
 }
