@@ -29,6 +29,18 @@ type ClusterRequestStatus struct {
 
 type RequestPhase string
 
+func (p RequestPhase) IsGranted() bool {
+	return p == REQUEST_GRANTED
+}
+
+func (p RequestPhase) IsDenied() bool {
+	return p == REQUEST_DENIED
+}
+
+func (p RequestPhase) IsPending() bool {
+	return p == "" || p == REQUEST_PENDING
+}
+
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=cr;creq
