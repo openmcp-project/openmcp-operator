@@ -74,7 +74,7 @@ func (o *RunOptions) AddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.MetricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	cmd.Flags().BoolVar(&o.EnableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers")
 
-	cmd.Flags().StringSliceVar(&o.Controllers, "controllers", allControllers, "List of active controllers.")
+	cmd.Flags().StringSliceVar(&o.Controllers, "controllers", allControllers, "List of active controllers. Separate with comma or specify flag multiple times to activate multiple controllers.")
 }
 
 type RawRunOptions struct {
