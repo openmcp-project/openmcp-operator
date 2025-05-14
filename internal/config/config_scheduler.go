@@ -70,8 +70,8 @@ type SchedulerSelectors struct {
 	Requests *metav1.LabelSelector `json:"requests,omitempty"`
 }
 type CompletedSchedulerSelectors struct {
-	Clusters        labels.Selector
-	ClusterRequests labels.Selector
+	Clusters labels.Selector
+	Requests labels.Selector
 }
 
 func (c *SchedulerConfig) Default(_ *field.Path) error {
@@ -175,7 +175,7 @@ func (c *SchedulerConfig) Complete(fldPath *field.Path) error {
 		}
 		if c.Selectors.Requests != nil {
 			var err error
-			c.CompletedSelectors.ClusterRequests, err = metav1.LabelSelectorAsSelector(c.Selectors.Requests)
+			c.CompletedSelectors.Requests, err = metav1.LabelSelectorAsSelector(c.Selectors.Requests)
 			if err != nil {
 				return field.Invalid(fldPath.Child("selectors").Child("requests"), c.Selectors.Requests, err.Error())
 			}
@@ -184,8 +184,8 @@ func (c *SchedulerConfig) Complete(fldPath *field.Path) error {
 	if c.CompletedSelectors.Clusters == nil {
 		c.CompletedSelectors.Clusters = labels.Everything()
 	}
-	if c.CompletedSelectors.ClusterRequests == nil {
-		c.CompletedSelectors.ClusterRequests = labels.Everything()
+	if c.CompletedSelectors.Requests == nil {
+		c.CompletedSelectors.Requests = labels.Everything()
 	}
 
 	for purpose, definition := range c.PurposeMappings {

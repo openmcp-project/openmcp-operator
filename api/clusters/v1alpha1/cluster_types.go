@@ -6,6 +6,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // ClusterSpec defines the desired state of Cluster
@@ -131,12 +132,19 @@ func (cs *ClusterStatus) SetProviderStatus(from any) error {
 
 // GetTenancyCount returns the number of ClusterRequests currently pointing to this cluster.
 // This is determined by counting the finalizers that have the corresponding prefix.
+// Note that only unique finalizers are counted, so if there are multiple identical request finalizers
+// (which should not happen), this method's return value might not match the actual number of finalizers with the prefix.
 func (c *Cluster) GetTenancyCount() int {
-	count := 0
+	return c.GetRequestUIDs().Len()
+}
+
+// GetRequestUIDs returns the UIDs of all ClusterRequests that have marked this cluster with a corresponding finalizer.
+func (c *Cluster) GetRequestUIDs() sets.Set[string] {
+	res := sets.New[string]()
 	for _, fin := range c.Finalizers {
 		if strings.HasPrefix(fin, RequestFinalizerOnClusterPrefix) {
-			count++
+			res.Insert(strings.TrimPrefix(fin, RequestFinalizerOnClusterPrefix))
 		}
 	}
-	return count
+	return res
 }

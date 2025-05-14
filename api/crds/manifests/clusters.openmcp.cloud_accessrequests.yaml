@@ -209,7 +209,12 @@ spec:
                 format: int64
                 type: integer
               phase:
+                default: Pending
                 description: Phase is the current phase of the request.
+                enum:
+                - Pending
+                - Granted
+                - Denied
                 type: string
               reason:
                 description: Reason is expected to contain a CamelCased string that

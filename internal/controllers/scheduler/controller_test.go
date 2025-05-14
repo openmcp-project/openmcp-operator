@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -397,6 +398,52 @@ var _ = Describe("Scheduler", func() {
 		Expect(req3.Status.Cluster).ToNot(BeNil())
 		Expect(req3.Status.Cluster.Name).To(Equal("shared2"))
 		Expect(req3.Status.Cluster.Namespace).To(Equal("foo"))
+	})
+
+	FIt("should handle the delete-without-requests label correctly", func() {
+		_, env := defaultTestSetup("testdata", "test-05")
+
+		// should create a new cluster
+		req := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("delete", "foo"), req)).To(Succeed())
+		Expect(req.Status.Cluster).To(BeNil())
+
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Status.Cluster).ToNot(BeNil())
+		cluster := &clustersv1alpha1.Cluster{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(req.Status.Cluster.Name, req.Status.Cluster.Namespace), cluster)).To(Succeed())
+		Expect(cluster.Labels).To(HaveKeyWithValue(clustersv1alpha1.DeleteWithoutRequestsLabel, "true"))
+
+		// should delete the cluster
+		Expect(env.Client().Delete(env.Ctx, req)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Eventually(func() bool {
+			return apierrors.IsNotFound(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req))
+		}, 3).Should(BeTrue(), "Request should be deleted")
+		Eventually(func() bool {
+			return apierrors.IsNotFound(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cluster), cluster))
+		}, 3).Should(BeTrue(), "Cluster should be deleted")
+
+		// should create a new cluster
+		req2 := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("no-delete", "foo"), req2)).To(Succeed())
+		Expect(req2.Status.Cluster).To(BeNil())
+
+		env.ShouldReconcile(testutils.RequestFromObject(req2))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req2), req2)).To(Succeed())
+		Expect(req2.Status.Cluster).ToNot(BeNil())
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(req2.Status.Cluster.Name, req2.Status.Cluster.Namespace), cluster)).To(Succeed())
+		Expect(cluster.Labels).To(HaveKeyWithValue(clustersv1alpha1.DeleteWithoutRequestsLabel, "false"))
+
+		// should not delete the cluster
+		Expect(env.Client().Delete(env.Ctx, req2)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(req2))
+		Eventually(func() bool {
+			return apierrors.IsNotFound(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req2), req2))
+		}, 3).Should(BeTrue(), "Request should be deleted")
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed(), "Cluster should not be deleted")
+		Expect(cluster.DeletionTimestamp).To(BeZero(), "Cluster should not be marked for deletion")
 	})
 
 })

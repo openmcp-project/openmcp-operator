@@ -38,6 +38,8 @@ type AccessRequestStatus struct {
 	CommonStatus `json:",inline"`
 
 	// Phase is the current phase of the request.
+	// +kubebuilder:default=Pending
+	// +kubebuilder:validation:Enum=Pending;Granted;Denied
 	Phase RequestPhase `json:"phase"`
 
 	// SecretRef holds the reference to the secret that contains the actual credentials.

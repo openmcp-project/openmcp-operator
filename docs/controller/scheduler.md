@@ -33,11 +33,17 @@ scheduler:
           tenancy: Exclusive
     platform:
       template:
+        metadata:
+          labels:
+            clusters.openmcp.cloud/delete-without-requests: "false"
         spec:
           profile: gcp-large
           tenancy: Shared
     onboarding:
       template:
+        metadata:
+          labels:
+            clusters.openmcp.cloud/delete-without-requests: "false"
         spec:
           profile: gcp-workerless
           tenancy: Shared
@@ -108,3 +114,9 @@ If the cluster template from the configuration for the requested purpose has `me
 For clusters with `Exclusive` tenancy, or for `Shared` ones with a limited tenancy count, the scheduler uses `metadata.generateName` from the cluster template or defaults it to `<purpose>-`, if not set.
 
 For clusters with unlimited tenancy count, `metadata.generateName` takes precedence, if specified in the template, with `metadata.name` being evaluated second. If neither is specified, `<purpose>` is used as `metadata.name` (as there should be only one instance of this cluster in this namespace due to the unlimited tenancy count, there is no need to add a randomized suffix to the name).
+
+## Deletion of Clusters
+
+By default, the scheduler marks every `Cluster` that it has created itself with a `clusters.openmcp.cloud/delete-without-requests: "true"` label. When a `ClusterRequest` is deleted, the scheduler removes the request's finalizers from all clusters and if it was the last request finalizer on that cluster and the cluster has the aforementioned label, the scheduler will delete the cluster.
+
+To prevent the scheduler from deleting a cluster that was created by it after the last request finalizer has been removed from the `Cluster` resource, add the label with any value except `"true"` to the cluster's template in the scheduler configuration.

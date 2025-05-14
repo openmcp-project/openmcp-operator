@@ -16,6 +16,8 @@ type ClusterRequestStatus struct {
 	CommonStatus `json:",inline"`
 
 	// Phase is the current phase of the request.
+	// +kubebuilder:default=Pending
+	// +kubebuilder:validation:Enum=Pending;Granted;Denied
 	Phase RequestPhase `json:"phase"`
 
 	// Cluster is the reference to the Cluster that was returned as a result of a granted request.
