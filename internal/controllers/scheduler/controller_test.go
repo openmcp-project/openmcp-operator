@@ -400,7 +400,7 @@ var _ = Describe("Scheduler", func() {
 		Expect(req3.Status.Cluster.Namespace).To(Equal("foo"))
 	})
 
-	FIt("should handle the delete-without-requests label correctly", func() {
+	It("should handle the delete-without-requests label correctly", func() {
 		_, env := defaultTestSetup("testdata", "test-05")
 
 		// should create a new cluster
