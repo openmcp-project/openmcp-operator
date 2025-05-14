@@ -2,15 +2,11 @@ package app
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
-	ctrlutil "github.com/openmcp-project/controller-utils/pkg/controller"
-	"github.com/openmcp-project/controller-utils/pkg/resources"
+	crdutil "github.com/openmcp-project/controller-utils/pkg/crds"
 	"github.com/spf13/cobra"
-	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
@@ -79,39 +75,13 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	log.Info("Environment", "value", o.Environment)
 
 	// apply CRDs
-	crdList := crds.CRDs()
-	var errs error
-	for _, crd := range crdList {
-		var c client.Client
-		clusterLabel, _ := ctrlutil.GetLabel(crd, clustersv1alpha1.ClusterLabel)
-		switch clusterLabel {
-		case clustersv1alpha1.PURPOSE_ONBOARDING:
-			if o.SkipOnboardingCRDs {
-				c = nil
-			} else {
-				c = o.Clusters.Onboarding.Client()
-			}
-		case clustersv1alpha1.PURPOSE_PLATFORM:
-			if o.SkipPlatformCRDs {
-				c = nil
-			} else {
-				c = o.Clusters.Platform.Client()
-			}
-		default:
-			return fmt.Errorf("missing cluster label '%s' or unsupported value '%s' for CRD '%s'", clustersv1alpha1.ClusterLabel, clusterLabel, crd.Name)
-		}
-		if c == nil {
-			log.Info("Skipping CRD", "name", crd.Name, "cluster", clusterLabel)
-			continue
-		}
-		actual := &apiextv1.CustomResourceDefinition{}
-		actual.Name = crd.Name
-		log.Info("Creating/updating CRD", "name", crd.Name, "cluster", clusterLabel)
-		err := resources.CreateOrUpdateResource(ctx, c, resources.NewCRDMutator(crd, crd.Labels, crd.Annotations))
-		errs = errors.Join(errs, err)
-	}
-	if errs != nil {
-		return fmt.Errorf("error creating/updating CRDs: %w", errs)
+	crdManager := crdutil.NewCRDManager(clustersv1alpha1.ClusterLabel, crds.CRDs)
+
+	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_ONBOARDING, o.Clusters.Onboarding)
+	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_PLATFORM, o.Clusters.Platform)
+
+	if err := crdManager.CreateOrUpdateCRDs(ctx, nil); err != nil {
+		return fmt.Errorf("error creating/updating CRDs: %w", err)
 	}
 
 	log.Info("Finished init command")

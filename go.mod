@@ -10,11 +10,10 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
-	github.com/openmcp-project/controller-utils v0.7.0
+	github.com/openmcp-project/controller-utils v0.0.0-20250514103840-36be6cfff45a
 	github.com/openmcp-project/openmcp-operator/api v0.0.0-00010101000000-000000000000
 	github.com/spf13/cobra v1.9.1
 	k8s.io/api v0.33.0
-	k8s.io/apiextensions-apiserver v0.33.0
 	k8s.io/apimachinery v0.33.0
 	k8s.io/client-go v0.33.0
 	k8s.io/utils v0.0.0-20250502105355-0f33e8f1c979
@@ -94,6 +93,7 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
+	k8s.io/apiextensions-apiserver v0.33.0 // indirect
 	k8s.io/apiserver v0.33.0 // indirect
 	k8s.io/component-base v0.33.0 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
