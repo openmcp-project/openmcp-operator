@@ -12,7 +12,27 @@ import (
 
 const initPrefix = "init"
 
-func NewValues(provider *unstructured.Unstructured, deploymentSpec *v1alpha1.DeploymentSpec) *Values {
+func NewValues(provider *unstructured.Unstructured, deploymentSpec *v1alpha1.DeploymentSpec, environment string) *Values {
+	return &Values{
+		provider:       provider,
+		deploymentSpec: deploymentSpec,
+		namespace:      determineNamespace(provider),
+		environment:    environment,
+	}
+}
+
+type Values struct {
+	provider       *unstructured.Unstructured
+	deploymentSpec *v1alpha1.DeploymentSpec
+	namespace      string
+	environment    string
+}
+
+func (v *Values) Environment() string {
+	return v.environment
+}
+
+func determineNamespace(provider *unstructured.Unstructured) string {
 	var namespacePrefix string
 	switch provider.GroupVersionKind().Kind {
 	case "ServiceProvider":
@@ -22,21 +42,9 @@ func NewValues(provider *unstructured.Unstructured, deploymentSpec *v1alpha1.Dep
 	case "PlatformService":
 		namespacePrefix = "ps"
 	default:
-		namespacePrefix = strings.ToLower(provider.GroupVersionKind().Kind)
+		namespacePrefix = provider.GroupVersionKind().Kind
 	}
-	namespace := fmt.Sprintf("%s-%s", namespacePrefix, provider.GetName())
-
-	return &Values{
-		provider:       provider,
-		deploymentSpec: deploymentSpec,
-		namespace:      namespace,
-	}
-}
-
-type Values struct {
-	provider       *unstructured.Unstructured
-	deploymentSpec *v1alpha1.DeploymentSpec
-	namespace      string
+	return strings.ToLower(fmt.Sprintf("%s-%s", namespacePrefix, provider.GetName()))
 }
 
 func (v *Values) Namespace() string {

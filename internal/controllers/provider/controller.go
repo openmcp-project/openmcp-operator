@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openmcp-project/controller-utils/pkg/controller"
@@ -35,10 +36,11 @@ const (
 type ProviderReconciler struct {
 	schema.GroupVersionKind
 	PlatformClient client.Client
+	Environment    string
 }
 
 func (r *ProviderReconciler) ControllerName() string {
-	return r.GroupVersionKind.String()
+	return strings.ToLower(r.GroupVersionKind.Kind)
 }
 
 func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, err error) {
@@ -144,6 +146,7 @@ func (r *ProviderReconciler) install(
 		PlatformClient: r.PlatformClient,
 		Provider:       provider,
 		DeploymentSpec: deploymentSpec,
+		Environment:    r.Environment,
 	}
 
 	if !isInitialized(deploymentStatus) {
@@ -198,6 +201,7 @@ func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider
 		PlatformClient: r.PlatformClient,
 		Provider:       provider,
 		DeploymentSpec: nil,
+		Environment:    r.Environment,
 	}
 
 	deploymentStatus.Phase = phaseTerminating

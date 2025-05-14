@@ -31,8 +31,7 @@ type ClusterProviderSpec struct {
 
 // ClusterProviderStatus defines the observed state of ClusterProvider.
 type ClusterProviderStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	DeploymentStatus `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -44,8 +43,8 @@ type ClusterProviderStatus struct {
 type ClusterProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ClusterProviderSpec `json:"spec,omitempty"`
-	Status            DeploymentStatus    `json:"status,omitempty"`
+	Spec              ClusterProviderSpec   `json:"spec,omitempty"`
+	Status            ClusterProviderStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

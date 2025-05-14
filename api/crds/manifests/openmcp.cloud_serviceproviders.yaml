@@ -63,7 +63,7 @@ spec:
             - image
             type: object
           status:
-            description: DeploymentStatus defines the observed state of a provider.
+            description: ServiceProviderStatus defines the observed state of ServiceProvider.
             properties:
               conditions:
                 items:

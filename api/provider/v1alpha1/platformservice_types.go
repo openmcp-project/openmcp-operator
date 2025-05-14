@@ -31,8 +31,7 @@ type PlatformServiceSpec struct {
 
 // PlatformServiceStatus defines the observed state of PlatformService.
 type PlatformServiceStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	DeploymentStatus `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -44,8 +43,8 @@ type PlatformServiceStatus struct {
 type PlatformService struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              PlatformServiceSpec `json:"spec,omitempty"`
-	Status            DeploymentStatus    `json:"status,omitempty"`
+	Spec              PlatformServiceSpec   `json:"spec,omitempty"`
+	Status            PlatformServiceStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

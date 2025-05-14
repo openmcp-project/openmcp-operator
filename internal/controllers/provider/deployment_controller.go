@@ -17,20 +17,17 @@ limitations under the License.
 package provider
 
 import (
-	"github.com/openmcp-project/controller-utils/pkg/controller"
-	v1 "k8s.io/api/batch/v1"
+	apps "k8s.io/api/apps/v1"
+	batch "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/builder"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider/install"
 )
 
-// DeploymentController is not a controller, but a collection of controllers reconciling
-// ClusterProviders, ServiceProviders, and PlatformServices.
+const ControllerName = "DeploymentController"
+
+// DeploymentController is a collection of controllers reconciling ClusterProviders, ServiceProviders, and PlatformServices.
 type DeploymentController struct {
 	Reconcilers []*ProviderReconciler
 }
@@ -40,7 +37,7 @@ func NewDeploymentController() *DeploymentController {
 }
 
 // SetupWithManager sets up the controllers with the Manager.
-func (r *DeploymentController) SetupWithManager(mgr ctrl.Manager, providerGKVList []schema.GroupVersionKind) error {
+func (r *DeploymentController) SetupWithManager(mgr ctrl.Manager, providerGKVList []schema.GroupVersionKind, environment string) error {
 	allErrs := field.ErrorList{}
 
 	r.Reconcilers = make([]*ProviderReconciler, len(providerGKVList))
@@ -49,18 +46,17 @@ func (r *DeploymentController) SetupWithManager(mgr ctrl.Manager, providerGKVLis
 		r.Reconcilers[i] = &ProviderReconciler{
 			GroupVersionKind: gvk,
 			PlatformClient:   mgr.GetClient(),
+			Environment:      environment,
 		}
 
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(gvk)
 
 		err := ctrl.NewControllerManagedBy(mgr).
-			For(obj).
 			Named(r.Reconcilers[i].ControllerName()).
-			Watches(&v1.Job{},
-				handler.EnqueueRequestsFromMapFunc(r.Reconcilers[i].HandleJob),
-				builder.WithPredicates(controller.HasAnnotationPredicate(install.ProviderKindLabel, "")),
-				builder.WithPredicates(controller.HasAnnotationPredicate(install.ProviderNameLabel, ""))).
+			For(obj).
+			Owns(&batch.Job{}).
+			Owns(&apps.Deployment{}).
 			Complete(r.Reconcilers[i])
 		if err != nil {
 			allErrs = append(allErrs, field.InternalError(field.NewPath(gvk.String()), err))

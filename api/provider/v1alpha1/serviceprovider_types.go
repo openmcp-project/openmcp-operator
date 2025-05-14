@@ -31,8 +31,7 @@ type ServiceProviderSpec struct {
 
 // ServiceProviderStatus defines the observed state of ServiceProvider.
 type ServiceProviderStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	DeploymentStatus `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -44,8 +43,8 @@ type ServiceProviderStatus struct {
 type ServiceProvider struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ServiceProviderSpec `json:"spec,omitempty"`
-	Status            DeploymentStatus    `json:"status,omitempty"`
+	Spec              ServiceProviderSpec   `json:"spec,omitempty"`
+	Status            ServiceProviderStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

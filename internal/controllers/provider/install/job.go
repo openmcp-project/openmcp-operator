@@ -7,8 +7,12 @@ import (
 	v1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
@@ -51,6 +55,7 @@ func (m *jobMutator) Empty() *v1.Job {
 
 func (m *jobMutator) Mutate(j *v1.Job) error {
 	j.Spec = v1.JobSpec{
+		BackoffLimit: ptr.To[int32](4),
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: m.values.LabelsInitJob(),
@@ -63,6 +68,7 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Args: []string{
 							"init",
+							"--environment=" + m.values.Environment(),
 						},
 					},
 				},
@@ -72,5 +78,11 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 			},
 		},
 	}
+
+	// Set the provider as owner of the job, so that the provider controller gets an event if the job changes.
+	if err := controllerutil.SetControllerReference(m.values.provider, j, install.InstallOperatorAPIs(runtime.NewScheme())); err != nil {
+		return fmt.Errorf("failed to set deployment controller as owner of init job: %w", err)
+	}
+
 	return m.meta.Mutate(j)
 }

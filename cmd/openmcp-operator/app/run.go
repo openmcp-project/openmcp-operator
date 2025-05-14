@@ -30,7 +30,10 @@ import (
 )
 
 var setupLog logging.Logger
-var allControllers = []string{strings.ToLower(scheduler.ControllerName)}
+var allControllers = []string{
+	strings.ToLower(scheduler.ControllerName),
+	strings.ToLower(provider.ControllerName),
+}
 
 func NewRunCommand(so *SharedOptions) *cobra.Command {
 	opts := &RunOptions{
@@ -297,13 +300,11 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	}
 
 	// setup deployment controller
-	// TODO: Can we use a variable/constant/function instead of a hardcoded string for the controller name here?
-	// TODO: This value has to be added to the allControllers variable too, because I guess we want it to be enabled by default.
-	if slices.Contains(o.Controllers, strings.ToLower("deploymentcontroller")) {
+	if slices.Contains(o.Controllers, strings.ToLower(provider.ControllerName)) {
 		utilruntime.Must(clientgoscheme.AddToScheme(mgr.GetScheme()))
 		utilruntime.Must(api.AddToScheme(mgr.GetScheme()))
 
-		if err = provider.NewDeploymentController().SetupWithManager(mgr, o.ProviderGVKList); err != nil {
+		if err = provider.NewDeploymentController().SetupWithManager(mgr, o.ProviderGVKList, o.Environment); err != nil {
 			return fmt.Errorf("unable to setup provider controllers: %w", err)
 		}
 	}
