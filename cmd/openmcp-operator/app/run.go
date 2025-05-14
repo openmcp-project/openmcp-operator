@@ -287,7 +287,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 
 	// setup cluster scheduler
 	if slices.Contains(o.Controllers, strings.ToLower(scheduler.ControllerName)) {
-		sc, err := scheduler.NewClusterScheduler(&setupLog, o.Clusters.Onboarding, o.Config.Scheduler)
+		sc, err := scheduler.NewClusterScheduler(&setupLog, o.Clusters.Platform, o.Config.Scheduler)
 		if err != nil {
 			return fmt.Errorf("unable to initialize cluster scheduler: %w", err)
 		}

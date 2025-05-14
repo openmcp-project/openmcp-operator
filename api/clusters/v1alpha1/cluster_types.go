@@ -81,7 +81,7 @@ const (
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:metadata:labels="openmcp.cloud/cluster=onboarding"
+// +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
 // +kubebuilder:selectablefield:JSONPath=".spec.clusterProfileRef.name"
 // +kubebuilder:printcolumn:JSONPath=".spec.purposes",name="Purposes",type=string
 // +kubebuilder:printcolumn:JSONPath=`.status.phase`,name="Phase",type=string

@@ -5,7 +5,7 @@ metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.3
   labels:
-    openmcp.cloud/cluster: onboarding
+    openmcp.cloud/cluster: platform
   name: clusterprofiles.clusters.openmcp.cloud
 spec:
   group: clusters.openmcp.cloud
@@ -20,9 +20,6 @@ spec:
   scope: Cluster
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.environment
-      name: Env
-      type: string
     - jsonPath: .spec.providerRef.name
       name: Provider
       type: string
@@ -53,10 +50,6 @@ spec:
           spec:
             description: ClusterProfileSpec defines the desired state of Provider.
             properties:
-              environment:
-                description: Environment is the environment in which the ClusterProvider
-                  resides.
-                type: string
               providerConfigRef:
                 description: ProviderConfigRef is a reference to the provider-specific
                   configuration.
@@ -94,14 +87,12 @@ spec:
                   type: object
                 type: array
             required:
-            - environment
             - providerConfigRef
             - providerRef
             - supportedVersions
             type: object
         type: object
     selectableFields:
-    - jsonPath: .spec.environment
     - jsonPath: .spec.providerRef.name
     - jsonPath: .spec.providerConfigRef.name
     served: true

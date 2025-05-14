@@ -12,17 +12,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/controller-utils/pkg/collections/filters"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
-	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
@@ -31,8 +28,8 @@ import (
 
 const ControllerName = "Scheduler"
 
-func NewClusterScheduler(setupLog *logging.Logger, onboardingCluster *clusters.Cluster, config *config.SchedulerConfig) (*ClusterScheduler, error) {
-	if onboardingCluster == nil {
+func NewClusterScheduler(setupLog *logging.Logger, platformCluster *clusters.Cluster, config *config.SchedulerConfig) (*ClusterScheduler, error) {
+	if platformCluster == nil {
 		return nil, fmt.Errorf("onboarding cluster must not be nil")
 	}
 	if config == nil {
@@ -42,14 +39,14 @@ func NewClusterScheduler(setupLog *logging.Logger, onboardingCluster *clusters.C
 		setupLog.WithName(ControllerName).Info("Initializing cluster scheduler", "scope", string(config.Scope), "strategy", string(config.Strategy), "knownPurposes", strings.Join(sets.List(sets.KeySet(config.PurposeMappings)), ","))
 	}
 	return &ClusterScheduler{
-		OnboardingCluster: onboardingCluster,
-		Config:            config,
+		PlatformCluster: platformCluster,
+		Config:          config,
 	}, nil
 }
 
 type ClusterScheduler struct {
-	OnboardingCluster *clusters.Cluster
-	Config            *config.SchedulerConfig
+	PlatformCluster *clusters.Cluster
+	Config          *config.SchedulerConfig
 }
 
 var _ reconcile.Reconciler = &ClusterScheduler{}
@@ -73,13 +70,13 @@ func (r *ClusterScheduler) Reconcile(ctx context.Context, req reconcile.Request)
 			return clustersv1alpha1.REQUEST_GRANTED, nil
 		}).
 		Build().
-		UpdateStatus(ctx, r.OnboardingCluster.Client(), rr)
+		UpdateStatus(ctx, r.PlatformCluster.Client(), rr)
 }
 
 func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, req reconcile.Request) ReconcileResult {
 	// get ClusterRequest resource
 	cr := &clustersv1alpha1.ClusterRequest{}
-	if err := r.OnboardingCluster.Client().Get(ctx, req.NamespacedName, cr); err != nil {
+	if err := r.PlatformCluster.Client().Get(ctx, req.NamespacedName, cr); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Resource not found")
 			return ReconcileResult{}
@@ -97,7 +94,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 				return ReconcileResult{}
 			case clustersv1alpha1.OperationAnnotationValueReconcile:
 				log.Debug("Removing reconcile operation annotation from resource")
-				if err := ctrlutils.EnsureAnnotation(ctx, r.OnboardingCluster.Client(), cr, clustersv1alpha1.OperationAnnotation, "", true, ctrlutils.DELETE); err != nil {
+				if err := ctrlutils.EnsureAnnotation(ctx, r.PlatformCluster.Client(), cr, clustersv1alpha1.OperationAnnotation, "", true, ctrlutils.DELETE); err != nil {
 					return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("error removing operation annotation: %w", err), cconst.ReasonOnboardingClusterInteractionProblem)}
 				}
 			}
@@ -118,7 +115,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 		// ensure finalizer
 		if controllerutil.AddFinalizer(cr, clustersv1alpha1.ClusterRequestFinalizer) {
 			log.Info("Adding finalizer")
-			if err := r.OnboardingCluster.Client().Patch(ctx, cr, client.MergeFrom(rr.OldObject)); err != nil {
+			if err := r.PlatformCluster.Client().Patch(ctx, cr, client.MergeFrom(rr.OldObject)); err != nil {
 				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching finalizer on resource '%s': %w", req.NamespacedName.String(), err), cconst.ReasonOnboardingClusterInteractionProblem)
 				return rr
 			}
@@ -149,7 +146,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			namespace = cDef.Template.Namespace
 		}
 		clusterList := &clustersv1alpha1.ClusterList{}
-		if err := r.OnboardingCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: cDef.CompletedSelector}); err != nil {
+		if err := r.PlatformCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: cDef.CompletedSelector}); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonOnboardingClusterInteractionProblem)
 			return rr
 		}
@@ -235,7 +232,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			fin := cr.FinalizerForCluster()
 			if controllerutil.AddFinalizer(cluster, fin) {
 				log.Debug("Adding finalizer to cluster", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace, "finalizer", fin)
-				if err := r.OnboardingCluster.Client().Patch(ctx, cluster, client.MergeFrom(oldCluster)); err != nil {
+				if err := r.PlatformCluster.Client().Patch(ctx, cluster, client.MergeFrom(oldCluster)); err != nil {
 					rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching finalizer '%s' on cluster '%s/%s': %w", fin, cluster.Namespace, cluster.Name, err), cconst.ReasonOnboardingClusterInteractionProblem)
 					return rr
 				}
@@ -301,7 +298,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			}
 
 			// create Cluster resource
-			if err := r.OnboardingCluster.Client().Create(ctx, cluster); err != nil {
+			if err := r.PlatformCluster.Client().Create(ctx, cluster); err != nil {
 				if apierrors.IsAlreadyExists(err) {
 					rr.ReconcileError = errutils.WithReason(fmt.Errorf("Cluster '%s/%s' already exists, this is not supposed to happen", cluster.Namespace, cluster.Name), cconst.ReasonInternalError)
 					return rr
@@ -324,7 +321,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 		// fetch all clusters and filter for the ones that have a finalizer from this request
 		fin := cr.FinalizerForCluster()
 		clusterList := &clustersv1alpha1.ClusterList{}
-		if err := r.OnboardingCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: r.Config.CompletedSelectors.Clusters}); err != nil {
+		if err := r.PlatformCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: r.Config.CompletedSelectors.Clusters}); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonOnboardingClusterInteractionProblem)
 			return rr
 		}
@@ -346,7 +343,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			log.Debug("Removing finalizer from cluster", "clusterName", c.Name, "clusterNamespace", c.Namespace, "finalizer", fin)
 			oldCluster := c.DeepCopy()
 			if controllerutil.RemoveFinalizer(c, fin) {
-				if err := r.OnboardingCluster.Client().Patch(ctx, c, client.MergeFrom(oldCluster)); err != nil {
+				if err := r.PlatformCluster.Client().Patch(ctx, c, client.MergeFrom(oldCluster)); err != nil {
 					errs.Append(errutils.WithReason(fmt.Errorf("error patching finalizer '%s' on cluster '%s/%s': %w", fin, c.Namespace, c.Name, err), cconst.ReasonOnboardingClusterInteractionProblem))
 				}
 			}
@@ -359,7 +356,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 		// remove finalizer
 		if controllerutil.RemoveFinalizer(cr, clustersv1alpha1.ClusterRequestFinalizer) {
 			log.Info("Removing finalizer")
-			if err := r.OnboardingCluster.Client().Patch(ctx, cr, client.MergeFrom(rr.OldObject)); err != nil {
+			if err := r.PlatformCluster.Client().Patch(ctx, cr, client.MergeFrom(rr.OldObject)); err != nil {
 				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching finalizer on resource '%s': %w", req.NamespacedName.String(), err), cconst.ReasonOnboardingClusterInteractionProblem)
 				return rr
 			}
@@ -374,11 +371,9 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		Named("clusterrequest").
 		// watch ClusterRequest resources
-		WatchesRawSource(source.Kind(r.OnboardingCluster.Cluster().GetCache(), &clustersv1alpha1.ClusterRequest{}, handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, ls *clustersv1alpha1.ClusterRequest) []ctrl.Request {
-			return []ctrl.Request{testutils.RequestFromObject(ls)}
-		}), ctrlutils.ToTypedPredicate[*clustersv1alpha1.ClusterRequest](predicate.And(
+		For(&clustersv1alpha1.ClusterRequest{}).
+		WithEventFilter(predicate.And(
 			ctrlutils.LabelSelectorPredicate(r.Config.CompletedSelectors.ClusterRequests),
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
@@ -388,6 +383,6 @@ func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.Not(
 				ctrlutils.HasAnnotationPredicate(clustersv1alpha1.OperationAnnotation, clustersv1alpha1.OperationAnnotationValueIgnore),
 			),
-		)))).
+		)).
 		Complete(r)
 }
