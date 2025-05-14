@@ -82,14 +82,13 @@ const (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
-// +kubebuilder:selectablefield:JSONPath=".spec.clusterProfileRef.name"
+// +kubebuilder:selectablefield:JSONPath=".spec.profile"
 // +kubebuilder:printcolumn:JSONPath=".spec.purposes",name="Purposes",type=string
 // +kubebuilder:printcolumn:JSONPath=`.status.phase`,name="Phase",type=string
 // +kubebuilder:printcolumn:JSONPath=`.metadata.annotations["clusters.openmcp.cloud/k8sversion"]`,name="Version",type=string
 // +kubebuilder:printcolumn:JSONPath=`.metadata.annotations["clusters.openmcp.cloud/profile"]`,name="Profile",type=string
-// +kubebuilder:printcolumn:JSONPath=`.metadata.labels["environment.clusters.openmcp.cloud"]`,name="Env",type=string,priority=10
 // +kubebuilder:printcolumn:JSONPath=`.metadata.labels["provider.clusters.openmcp.cloud"]`,name="Provider",type=string, priority=10
-// +kubebuilder:printcolumn:JSONPath=".spec.clusterProfileRef.name",name="ProfileRef",type=string,priority=10
+// +kubebuilder:printcolumn:JSONPath=".spec.profile",name="ProfileRef",type=string,priority=10
 // +kubebuilder:printcolumn:JSONPath=`.metadata.annotations["clusters.openmcp.cloud/providerinfo"]`,name="Info",type=string,priority=10
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 

@@ -13,10 +13,17 @@ spec:
     kind: AccessRequest
     listKind: AccessRequestList
     plural: accessrequests
+    shortNames:
+    - ar
+    - areq
     singular: accessrequest
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: AccessRequest is the Schema for the accessrequests API
@@ -229,6 +236,8 @@ spec:
             - phase
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .status.phase
     served: true
     storage: true
     subresources:

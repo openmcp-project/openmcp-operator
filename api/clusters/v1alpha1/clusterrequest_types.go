@@ -29,7 +29,7 @@ type RequestPhase string
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=cr;creq;request
+// +kubebuilder:resource:shortName=cr;creq
 // +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
 // +kubebuilder:selectablefield:JSONPath=".spec.purpose"
 // +kubebuilder:selectablefield:JSONPath=".status.phase"

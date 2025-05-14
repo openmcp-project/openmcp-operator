@@ -16,7 +16,6 @@ spec:
     shortNames:
     - cr
     - creq
-    - request
     singular: clusterrequest
   scope: Namespaced
   versions:

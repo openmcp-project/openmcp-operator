@@ -46,7 +46,10 @@ type AccessRequestStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:resource:shortName=ar;areq
 // +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
+// +kubebuilder:selectablefield:JSONPath=".status.phase"
+// +kubebuilder:printcolumn:JSONPath=".status.phase",name="Phase",type=string
 
 // AccessRequest is the Schema for the accessrequests API
 type AccessRequest struct {
