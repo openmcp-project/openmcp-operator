@@ -153,9 +153,7 @@ spec:
                 - message: requestRef is immutable
                   rule: self == oldSelf
             required:
-            - clusterRef
             - permissions
-            - requestRef
             type: object
           status:
             description: AccessRequestStatus defines the observed state of AccessRequest
