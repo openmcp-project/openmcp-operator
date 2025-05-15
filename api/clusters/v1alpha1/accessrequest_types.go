@@ -10,13 +10,15 @@ type AccessRequestSpec struct {
 	// Exactly one of clusterRef or requestRef must be set.
 	// This value is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable"
-	ClusterRef NamespacedObjectReference `json:"clusterRef"`
+	// +optional
+	ClusterRef *NamespacedObjectReference `json:"clusterRef,omitempty"`
 
 	// RequestRef is the reference to the ClusterRequest for whose Cluster access is requested.
 	// Exactly one of clusterRef or requestRef must be set.
 	// This value is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="requestRef is immutable"
-	RequestRef NamespacedObjectReference `json:"requestRef"`
+	// +optional
+	RequestRef *NamespacedObjectReference `json:"requestRef,omitempty"`
 
 	// Permissions are the requested permissions.
 	Permissions []PermissionsRequest `json:"permissions"`
