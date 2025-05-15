@@ -42,7 +42,7 @@ func newInitClusterRoleMutator(values *Values) resources.Mutator[*rbac.ClusterRo
 			{
 				APIGroups: []string{""},
 				Resources: []string{"secrets"},
-				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"clusters.openmcp.cloud"},
