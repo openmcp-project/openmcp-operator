@@ -40,7 +40,7 @@ type ProviderReconciler struct {
 }
 
 func (r *ProviderReconciler) ControllerName() string {
-	return strings.ToLower(r.GroupVersionKind.Kind)
+	return strings.ToLower(r.Kind)
 }
 
 func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, err error) {
@@ -78,7 +78,7 @@ func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 // Therefore, the ProviderReconciler watches also jobs. The present method handles the job events and creates a reconcile request.
 func (r *ProviderReconciler) HandleJob(_ context.Context, job client.Object) []reconcile.Request {
 	providerKind, found := job.GetLabels()[install.ProviderKindLabel]
-	if !found || providerKind != r.GroupVersionKind.Kind {
+	if !found || providerKind != r.Kind {
 		return nil
 	}
 
