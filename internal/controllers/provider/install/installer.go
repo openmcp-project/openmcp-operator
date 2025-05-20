@@ -7,7 +7,7 @@ import (
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
 	"github.com/openmcp-project/controller-utils/pkg/readiness"
-	. "github.com/openmcp-project/controller-utils/pkg/resources"
+	"github.com/openmcp-project/controller-utils/pkg/resources"
 	v1 "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,19 +38,19 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
-	if err := CreateOrUpdateResource(ctx, a.PlatformClient, NewNamespaceMutator(values.Namespace(), nil, nil)); err != nil {
+	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, resources.NewNamespaceMutator(values.Namespace(), nil, nil)); err != nil {
 		return false, err
 	}
 
-	if err = CreateOrUpdateResource(ctx, a.PlatformClient, newInitServiceAccountMutator(values)); err != nil {
+	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitServiceAccountMutator(values)); err != nil {
 		return false, err
 	}
 
-	if err = CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
+	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
 		return false, err
 	}
 
-	if err = CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
+	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
 		return false, err
 	}
 
@@ -61,7 +61,7 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 	})
 	var job *v1.Job
 	found := true
-	job, err = GetResource(ctx, a.PlatformClient, j)
+	job, err = resources.GetResource(ctx, a.PlatformClient, j)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			found = false
@@ -72,7 +72,7 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 
 	if !found {
 		// Job does not exist, create it
-		if err := CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
+		if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
 			return false, fmt.Errorf("failed to create job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
 		}
 		return false, nil
@@ -83,10 +83,10 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 			return false, fmt.Errorf("failed to cleanup job pods %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
 		}
 
-		if err := DeleteResource(ctx, a.PlatformClient, j); err != nil {
+		if err := resources.DeleteResource(ctx, a.PlatformClient, j); err != nil {
 			return false, fmt.Errorf("failed to delete job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
 		}
-		if err := CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
+		if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
 			return false, fmt.Errorf("failed to re-create job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
 		}
 		return false, nil
@@ -101,15 +101,15 @@ func (a *Installer) InstallProvider(ctx context.Context) error {
 
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
-	if err := CreateOrUpdateResource(ctx, a.PlatformClient, newProviderServiceAccountMutator(values)); err != nil {
+	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, newProviderServiceAccountMutator(values)); err != nil {
 		return err
 	}
 
-	if err := CreateOrUpdateResource(ctx, a.PlatformClient, newProviderClusterRoleBindingMutator(values)); err != nil {
+	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, newProviderClusterRoleBindingMutator(values)); err != nil {
 		return err
 	}
 
-	if err := CreateOrUpdateResource(ctx, a.PlatformClient, newDeploymentMutator(values)); err != nil {
+	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, newDeploymentMutator(values)); err != nil {
 		return err
 	}
 
@@ -119,7 +119,7 @@ func (a *Installer) InstallProvider(ctx context.Context) error {
 func (a *Installer) CheckProviderReadiness(ctx context.Context) readiness.CheckResult {
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
-	depl, err := GetResource(ctx, a.PlatformClient, newDeploymentMutator(values))
+	depl, err := resources.GetResource(ctx, a.PlatformClient, newDeploymentMutator(values))
 	if err != nil {
 		return readiness.NewFailedResult(err)
 	}
@@ -131,31 +131,31 @@ func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err er
 
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
-	if err := DeleteResource(ctx, a.PlatformClient, newDeploymentMutator(values)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, newDeploymentMutator(values)); err != nil {
 		return false, err
 	}
 
-	if err := DeleteResource(ctx, a.PlatformClient, newProviderClusterRoleBindingMutator(values)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, newProviderClusterRoleBindingMutator(values)); err != nil {
 		return false, err
 	}
 
-	if err := DeleteResource(ctx, a.PlatformClient, newProviderServiceAccountMutator(values)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, newProviderServiceAccountMutator(values)); err != nil {
 		return false, err
 	}
 
-	if err := DeleteResource(ctx, a.PlatformClient, newJobMutator(values, a.DeploymentSpec, nil)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, newJobMutator(values, a.DeploymentSpec, nil)); err != nil {
 		return false, err
 	}
 
-	if err := DeleteResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
 		return false, err
 	}
 
-	if err := DeleteResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
 		return false, err
 	}
 
-	if err := DeleteResource(ctx, a.PlatformClient, newInitServiceAccountMutator(values)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, newInitServiceAccountMutator(values)); err != nil {
 		return false, err
 	}
 
@@ -194,7 +194,7 @@ func (a *Installer) isJobFailed(job *v1.Job) bool {
 }
 
 func (a *Installer) isGenerationUpToDate(ctx context.Context, job *v1.Job) bool {
-	genJob := job.ObjectMeta.Annotations[ProviderGenerationLabel]
+	genJob := job.Annotations[ProviderGenerationLabel]
 	if genJob == "" {
 		return false
 	}

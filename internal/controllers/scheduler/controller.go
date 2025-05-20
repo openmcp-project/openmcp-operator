@@ -81,7 +81,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 			log.Info("Resource not found")
 			return ReconcileResult{}
 		}
-		return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("unable to get resource '%s' from cluster: %w", req.NamespacedName.String(), err), cconst.ReasonPlatformClusterInteractionProblem)}
+		return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("unable to get resource '%s' from cluster: %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)}
 	}
 
 	// handle operation annotation
@@ -125,7 +125,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 	if controllerutil.AddFinalizer(cr, clustersv1alpha1.ClusterRequestFinalizer) {
 		log.Info("Adding finalizer")
 		if err := r.PlatformCluster.Client().Patch(ctx, cr, client.MergeFrom(rr.OldObject)); err != nil {
-			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching finalizer on resource '%s': %w", req.NamespacedName.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
+			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching finalizer on resource '%s': %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
 			return rr
 		}
 	}
@@ -230,7 +230,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 		// create Cluster resource
 		if err := r.PlatformCluster.Client().Create(ctx, cluster); err != nil {
 			if apierrors.IsAlreadyExists(err) {
-				rr.ReconcileError = errutils.WithReason(fmt.Errorf("Cluster '%s/%s' already exists, this is not supposed to happen", cluster.Namespace, cluster.Name), cconst.ReasonInternalError)
+				rr.ReconcileError = errutils.WithReason(fmt.Errorf("cluster '%s/%s' already exists, this is not supposed to happen", cluster.Namespace, cluster.Name), cconst.ReasonInternalError)
 				return rr
 			}
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
@@ -304,7 +304,7 @@ func (r *ClusterScheduler) handleDelete(ctx context.Context, req reconcile.Reque
 	if controllerutil.RemoveFinalizer(cr, clustersv1alpha1.ClusterRequestFinalizer) {
 		log.Info("Removing finalizer")
 		if err := r.PlatformCluster.Client().Patch(ctx, cr, client.MergeFrom(rr.OldObject)); err != nil {
-			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error removing finalizer from resource '%s': %w", req.NamespacedName.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
+			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error removing finalizer from resource '%s': %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
 			return rr
 		}
 	}
