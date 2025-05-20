@@ -1,0 +1,12 @@
+apiVersion: openmcp.cloud/v1alpha1
+kind: ClusterProvider
+metadata:
+  name: cluster-provider-test-01
+  generation: 1
+spec:
+  image: "test-image:v0.1.0"
+  imagePullSecrets: []
+  env:
+    - name: NAME
+      value: "test-name"
+  verbosity: DEBUG

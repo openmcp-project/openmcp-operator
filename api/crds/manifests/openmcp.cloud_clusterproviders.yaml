@@ -16,7 +16,11 @@ spec:
     singular: clusterprovider
   scope: Cluster
   versions:
-  - name: v1alpha1
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v1alpha1
     schema:
       openAPIV3Schema:
         description: ClusterProvider is the Schema for the clusterproviders API.
@@ -160,6 +164,8 @@ spec:
             - observedGeneration
             type: object
         type: object
+    selectableFields:
+    - jsonPath: .status.phase
     served: true
     storage: true
     subresources:

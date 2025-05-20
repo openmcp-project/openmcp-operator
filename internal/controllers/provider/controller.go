@@ -5,33 +5,33 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/openmcp-project/controller-utils/pkg/controller"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider/install"
 )
 
 const (
-	openmcpDomain              = "openmcp.cloud"
-	openmcpFinalizer           = openmcpDomain + "/finalizer"
-	openmcpOperationAnnotation = openmcpDomain + "/operation"
-	operationReconcile         = "reconcile"
-
-	phaseProgressing = "Progressing"
-	phaseTerminating = "Terminating"
-	phaseReady       = "Ready"
+	openmcpFinalizer = constants.OpenMCPGroupName + "/finalizer"
 )
+
+func NewProviderReconciler(gvk schema.GroupVersionKind, client client.Client, environment string) *ProviderReconciler {
+	return &ProviderReconciler{
+		GroupVersionKind: gvk,
+		PlatformClient:   client,
+		Environment:      environment,
+	}
+}
 
 type ProviderReconciler struct {
 	schema.GroupVersionKind
@@ -52,13 +52,23 @@ func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	provider.SetGroupVersionKind(r.GroupVersionKind)
 
 	if err := r.PlatformClient.Get(ctx, req.NamespacedName, provider); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("Resource not found, ignoring reconcile request")
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, fmt.Errorf("failed to get provider resource: %w", err)
+	}
+
+	if controller.HasAnnotationWithValue(provider, constants.OperationAnnotation, constants.OperationAnnotationValueIgnore) {
+		log.Info("Ignoring resource due to ignore operation annotation")
+		return ctrl.Result{}, nil
 	}
 
 	providerOrig := provider.DeepCopy()
 
 	if provider.GetDeletionTimestamp().IsZero() {
-		res, err = r.handleCreateUpdateOperation(ctx, provider)
+		err = r.handleCreateUpdateOperation(ctx, provider)
+		res = reconcile.Result{}
 	} else {
 		deleted := false
 		deleted, res, err = r.handleDeleteOperation(ctx, provider)
@@ -73,73 +83,39 @@ func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 	return res, err
 }
 
-// HandleJob - the ProviderReconciler reconciles the provider resources (ClusterProviders, ServiceProviders, PlatformServices).
-// During a reconcile, the ProviderReconciler creates the init job of the provider and must wait for it to complete.
-// Therefore, the ProviderReconciler watches also jobs. The present method handles the job events and creates a reconcile request.
-func (r *ProviderReconciler) HandleJob(_ context.Context, job client.Object) []reconcile.Request {
-	providerKind, found := job.GetLabels()[install.ProviderKindLabel]
-	if !found || providerKind != r.Kind {
-		return nil
-	}
-
-	providerName, found := job.GetLabels()[install.ProviderNameLabel]
-	if !found {
-		return nil
-	}
-
-	return []reconcile.Request{
-		{
-			NamespacedName: client.ObjectKey{
-				Name: providerName,
-			},
-		},
-	}
-}
-
-func (r *ProviderReconciler) handleCreateUpdateOperation(ctx context.Context, provider *unstructured.Unstructured) (ctrl.Result, error) {
+func (r *ProviderReconciler) handleCreateUpdateOperation(ctx context.Context, provider *unstructured.Unstructured) error {
 	log := logging.FromContextOrPanic(ctx)
+	log.Debug("Handling create or update operation")
 
 	if err := r.ensureFinalizer(ctx, provider); err != nil {
-		return reconcile.Result{}, err
+		return err
 	}
 
-	deploymentSpec, err := r.deploymentSpecFromUnstructured(provider)
+	deploymentSpec, err := deploymentSpecFromUnstructured(provider)
 	if err != nil {
-		return reconcile.Result{}, err
+		return err
 	}
 
-	deploymentStatus, err := r.deploymentStatusFromUnstructured(provider)
-	if err != nil {
-		return reconcile.Result{}, err
+	if err := r.removeReconcileAnnotation(ctx, provider); err != nil {
+		return err
 	}
 
-	// If the provider is not yet in phase ready, we continue with the installation.
-	// If the provider is already in phase ready, we install it again if the generation has changed or if it has a reconcile annotation.
+	status, err := r.install(ctx, provider, deploymentSpec)
 
-	if err := r.checkReconcileAnnotation(ctx, provider, deploymentStatus); err != nil {
-		return reconcile.Result{}, err
-	}
-	r.observeGeneration(provider, deploymentStatus)
-
-	if deploymentStatus.Phase == phaseReady {
-		log.Debug("provider is already in phase ready")
-		return reconcile.Result{}, nil
-	}
-
-	res, err := r.install(ctx, provider, deploymentSpec, deploymentStatus)
-
-	conversionErr := r.deploymentStatusIntoUnstructured(deploymentStatus, provider)
+	// transfer status into provider
+	conversionErr := status.intoProviderStatus(provider)
 	err = errors.Join(err, conversionErr)
 
-	return res, err
+	return err
 }
 
 func (r *ProviderReconciler) install(
 	ctx context.Context,
 	provider *unstructured.Unstructured,
 	deploymentSpec *v1alpha1.DeploymentSpec,
-	deploymentStatus *v1alpha1.DeploymentStatus,
-) (reconcile.Result, error) {
+) (*ReconcileStatus, error) {
+
+	status := newInstallStatus(provider.GetGeneration())
 
 	log := logging.FromContextOrPanic(ctx)
 	installer := install.Installer{
@@ -149,53 +125,50 @@ func (r *ProviderReconciler) install(
 		Environment:    r.Environment,
 	}
 
-	if !isInitialized(deploymentStatus) {
-		log.Debug("installing init job")
-		completed, err := installer.InstallInitJob(ctx)
-		if err != nil {
-			log.Error(err, "failed to install init job")
-			apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionInitJobCreationFailed(provider, err))
-			return reconcile.Result{}, err
-		}
-		if !completed {
-			log.Debug("init job has not yet completed")
-			apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionInitRunning(provider, "init job has not yet completed"))
-			return reconcile.Result{}, nil
-		}
-
-		log.Debug("init job completed")
-		apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionInitCompleted(provider))
+	// init job
+	log.Debug("installing init job")
+	completed, err := installer.InstallInitJob(ctx)
+	if err != nil {
+		log.Error(err, "failed to install init job")
+		status.setInitConditionJobCreationFailed(err)
+		return status, err
+	}
+	if !completed {
+		log.Debug("init job has not yet completed")
+		status.setInitConditionJobRunning()
+		return status, nil
 	}
 
-	if !isProviderInstalledAndReady(deploymentStatus) {
-		log.Debug("installing provider")
-		if err := installer.InstallProvider(ctx); err != nil {
-			log.Error(err, "failed to install provider")
-			apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionProviderInstallationFailed(provider, err))
-			return reconcile.Result{}, err
-		}
+	log.Debug("init job completed")
+	status.setInitConditionJobCompleted()
 
-		readinessCheckResult := installer.CheckProviderReadiness(ctx)
-		if !readinessCheckResult.IsReady() {
-			log.Debug("provider is not yet ready")
-			apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionProviderNotReady(provider, readinessCheckResult.Message()))
-			return reconcile.Result{RequeueAfter: 40 * time.Second}, nil
-		}
-
-		log.Debug("provider has become ready")
-		apimeta.SetStatusCondition(&deploymentStatus.Conditions, conditionProviderReady(provider))
+	// deployment
+	log.Debug("installing provider")
+	if err := installer.InstallProvider(ctx); err != nil {
+		log.Error(err, "failed to install provider")
+		status.setReadyConditionProviderInstallationFailed(err)
+		return status, err
 	}
 
-	deploymentStatus.Phase = phaseReady
-	return reconcile.Result{}, nil
+	readinessCheckResult := installer.CheckProviderReadiness(ctx)
+	if !readinessCheckResult.IsReady() {
+		log.Debug("provider is not yet ready")
+		status.setReadyConditionProviderNotReady(readinessCheckResult.Message())
+		return status, nil
+	}
+
+	log.Debug("provider has become ready")
+	status.setReadyConditionProviderReady()
+
+	status.Phase = phaseReady
+	return status, nil
 }
 
 func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider *unstructured.Unstructured) (deleted bool, res ctrl.Result, err error) {
+	log := logging.FromContextOrPanic(ctx)
+	log.Debug("Handling delete operation")
 
-	deploymentStatus, err := r.deploymentStatusFromUnstructured(provider)
-	if err != nil {
-		return false, reconcile.Result{}, err
-	}
+	status := newUninstallStatus(provider.GetGeneration())
 
 	installer := install.Installer{
 		PlatformClient: r.PlatformClient,
@@ -204,18 +177,15 @@ func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider
 		Environment:    r.Environment,
 	}
 
-	deploymentStatus.Phase = phaseTerminating
-
 	deleted, err = installer.UninstallProvider(ctx)
 	if err != nil {
-		conversionErr := r.deploymentStatusIntoUnstructured(deploymentStatus, provider)
+		status.setUninstalledConditionFailed(err)
+		conversionErr := status.intoProviderStatus(provider)
 		err = errors.Join(err, conversionErr)
 		return false, reconcile.Result{}, err
-
-	}
-
-	if !deleted {
-		return false, reconcile.Result{Requeue: true}, nil
+	} else if !deleted {
+		conversionErr := status.intoProviderStatus(provider)
+		return false, reconcile.Result{Requeue: true}, conversionErr
 	}
 
 	if err = r.removeFinalizer(ctx, provider); err != nil {
@@ -225,26 +195,11 @@ func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider
 	return true, reconcile.Result{}, nil
 }
 
-func (r *ProviderReconciler) checkReconcileAnnotation(
-	ctx context.Context,
-	provider *unstructured.Unstructured,
-	deploymentStatus *v1alpha1.DeploymentStatus,
-) error {
-	if controller.HasAnnotationWithValue(provider, openmcpOperationAnnotation, operationReconcile) && deploymentStatus.Phase == phaseReady {
+func (r *ProviderReconciler) removeReconcileAnnotation(ctx context.Context, provider *unstructured.Unstructured) error {
+	if controller.HasAnnotationWithValue(provider, constants.OperationAnnotation, constants.OperationAnnotationValueReconcile) {
 		log := logging.FromContextOrPanic(ctx)
-		deploymentStatus.Phase = phaseProgressing
-
-		if err := r.deploymentStatusIntoUnstructured(deploymentStatus, provider); err != nil {
-			log.Error(err, "failed to handle reconcile annotation")
-			return fmt.Errorf("failed to handle reconcile annotation: %w", err)
-		}
-
-		if err := r.PlatformClient.Status().Update(ctx, provider); err != nil {
-			log.Error(err, "failed to handle reconcile annotation: unable to change phase of provider to progressing")
-			return fmt.Errorf("failed to handle reconcile annotation: unable to change phase of provider %s/%s to progressing: %w", provider.GetNamespace(), provider.GetName(), err)
-		}
-
-		if err := controller.EnsureAnnotation(ctx, r.PlatformClient, provider, openmcpOperationAnnotation, operationReconcile, true, controller.DELETE); err != nil {
+		log.Debug("found reconcile annotation")
+		if err := controller.EnsureAnnotation(ctx, r.PlatformClient, provider, constants.OperationAnnotation, constants.OperationAnnotationValueReconcile, true, controller.DELETE); err != nil {
 			log.Error(err, "failed to remove reconcile annotation from provider")
 			return fmt.Errorf("failed to remove reconcile annotation from provider %s/%s: %w", provider.GetNamespace(), provider.GetName(), err)
 		}
@@ -272,54 +227,6 @@ func (r *ProviderReconciler) removeFinalizer(ctx context.Context, provider *unst
 			log.Error(err, "failed to remove finalizer from provider")
 			return fmt.Errorf("failed to remove finalizer from provider %s: %w", provider.GetName(), err)
 		}
-	}
-	return nil
-}
-
-func (r *ProviderReconciler) observeGeneration(provider *unstructured.Unstructured, status *v1alpha1.DeploymentStatus) {
-	gen := provider.GetGeneration()
-	if status.ObservedGeneration != gen {
-		status.ObservedGeneration = gen
-		status.Phase = phaseProgressing
-		resetConditions(provider, status)
-	}
-}
-
-func (r *ProviderReconciler) deploymentSpecFromUnstructured(provider *unstructured.Unstructured) (*v1alpha1.DeploymentSpec, error) {
-	deploymentSpec := v1alpha1.DeploymentSpec{}
-	deploymentSpecRaw, found, err := unstructured.NestedFieldNoCopy(provider.Object, "spec")
-	if !found {
-		return nil, fmt.Errorf("provider spec not found")
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get provider spec: %w", err)
-	}
-
-	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(deploymentSpecRaw.(map[string]interface{}), &deploymentSpec); err != nil {
-		return nil, fmt.Errorf("failed to convert provider spec: %w", err)
-	}
-	return &deploymentSpec, nil
-}
-
-func (r *ProviderReconciler) deploymentStatusFromUnstructured(provider *unstructured.Unstructured) (*v1alpha1.DeploymentStatus, error) {
-	status := v1alpha1.DeploymentStatus{}
-	statusRaw, found, _ := unstructured.NestedFieldNoCopy(provider.Object, "status")
-	if found {
-		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(statusRaw.(map[string]interface{}), &status); err != nil {
-			return nil, fmt.Errorf("failed to convert provider status from unstructured: %w", err)
-		}
-	}
-	return &status, nil
-}
-
-func (r *ProviderReconciler) deploymentStatusIntoUnstructured(status *v1alpha1.DeploymentStatus, provider *unstructured.Unstructured) error {
-	statusRaw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(status)
-	if err != nil {
-		return fmt.Errorf("failed to convert provider status to unstructured: %w", err)
-	}
-
-	if err = unstructured.SetNestedField(provider.Object, statusRaw, "status"); err != nil {
-		return fmt.Errorf("failed to set provider status: %w", err)
 	}
 	return nil
 }
