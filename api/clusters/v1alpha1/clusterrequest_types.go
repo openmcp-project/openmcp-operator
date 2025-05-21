@@ -11,7 +11,7 @@ type ClusterRequestSpec struct {
 	Purpose string `json:"purpose"`
 }
 
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterRef) || has(self.clusterRef)", message="clusterRef may not be removed once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.cluster) || has(self.cluster)", message="cluster may not be removed once set"
 type ClusterRequestStatus struct {
 	CommonStatus `json:",inline"`
 
@@ -23,8 +23,8 @@ type ClusterRequestStatus struct {
 	// Cluster is the reference to the Cluster that was returned as a result of a granted request.
 	// Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable"
-	Cluster *NamespacedObjectReference `json:"clusterRef,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="cluster is immutable"
+	Cluster *NamespacedObjectReference `json:"cluster,omitempty"`
 }
 
 type RequestPhase string
@@ -49,6 +49,8 @@ func (p RequestPhase) IsPending() bool {
 // +kubebuilder:selectablefield:JSONPath=".status.phase"
 // +kubebuilder:printcolumn:JSONPath=".spec.purpose",name="Purpose",type=string
 // +kubebuilder:printcolumn:JSONPath=".status.phase",name="Phase",type=string
+// +kubebuilder:printcolumn:JSONPath=".status.cluster.name",name="Cluster",type=string
+// +kubebuilder:printcolumn:JSONPath=".status.cluster.namespace",name="Cluster-NS",type=string
 
 // ClusterRequest is the Schema for the clusters API
 type ClusterRequest struct {

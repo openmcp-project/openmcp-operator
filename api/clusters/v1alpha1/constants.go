@@ -57,28 +57,30 @@ const (
 
 const (
 	// ClusterLabel can be used on CRDs to indicate onto which cluster they should be deployed.
-	ClusterLabel = "openmcp.cloud/cluster"
+	ClusterLabel = ParentGroupName + "/cluster"
 	// OperationAnnotation is used to trigger specific operations on resources.
-	OperationAnnotation = "openmcp.cloud/operation"
+	OperationAnnotation = ParentGroupName + "/operation"
 	// OperationAnnotationValueIgnore is used to ignore the resource.
 	OperationAnnotationValueIgnore = "ignore"
 	// OperationAnnotationValueReconcile is used to trigger a reconcile on the resource.
 	OperationAnnotationValueReconcile = "reconcile"
 
 	// K8sVersionAnnotation can be used to display the k8s version of the cluster.
-	K8sVersionAnnotation = "clusters.openmcp.cloud/k8sversion"
+	K8sVersionAnnotation = GroupName + "/k8sversion"
 	// ProviderInfoAnnotation can be used to display provider-specific information about the cluster.
-	ProviderInfoAnnotation = "clusters.openmcp.cloud/providerinfo"
+	ProviderInfoAnnotation = GroupName + "/providerinfo"
 	// ProfileNameAnnotation can be used to display the actual name (not the hash) of the cluster profile.
-	ProfileNameAnnotation = "clusters.openmcp.cloud/profile"
+	ProfileNameAnnotation = GroupName + "/profile"
 	// EnvironmentAnnotation can be used to display the environment of the cluster.
-	EnvironmentAnnotation = "clusters.openmcp.cloud/environment"
+	EnvironmentAnnotation = GroupName + "/environment"
 	// ProviderAnnotation can be used to display the provider of the cluster.
-	ProviderAnnotation = "clusters.openmcp.cloud/provider"
+	ProviderAnnotation = GroupName + "/provider"
 
 	// DeleteWithoutRequestsLabel marks that the corresponding cluster can be deleted if the scheduler removes the last request pointing to it.
 	// Its value must be "true" for the label to take effect.
-	DeleteWithoutRequestsLabel = "clusters.openmcp.cloud/delete-without-requests"
+	DeleteWithoutRequestsLabel = GroupName + "/delete-without-requests"
+	// ProviderLabel is used to indicate the provider that is responsible for an AccessRequest.
+	ProviderLabel = "provider." + GroupName
 )
 
 const (

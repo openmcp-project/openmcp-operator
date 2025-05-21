@@ -3,6 +3,7 @@
 
 ## Controller
 
+- [AccessRequest Controller](controller/accessrequest.md)
 - [Cluster Scheduler](controller/scheduler.md)
 
 ## Resources

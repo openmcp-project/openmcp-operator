@@ -26,6 +26,12 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .status.cluster.name
+      name: Cluster
+      type: string
+    - jsonPath: .status.cluster.namespace
+      name: Cluster-NS
+      type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
@@ -62,7 +68,7 @@ spec:
               rule: self == oldSelf
           status:
             properties:
-              clusterRef:
+              cluster:
                 description: |-
                   Cluster is the reference to the Cluster that was returned as a result of a granted request.
                   Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
@@ -79,7 +85,7 @@ spec:
                 - namespace
                 type: object
                 x-kubernetes-validations:
-                - message: clusterRef is immutable
+                - message: cluster is immutable
                   rule: self == oldSelf
               conditions:
                 description: Conditions contains the conditions.
@@ -147,8 +153,8 @@ spec:
             - phase
             type: object
             x-kubernetes-validations:
-            - message: clusterRef may not be removed once set
-              rule: '!has(oldSelf.clusterRef) || has(self.clusterRef)'
+            - message: cluster may not be removed once set
+              rule: '!has(oldSelf.cluster) || has(self.cluster)'
         type: object
     selectableFields:
     - jsonPath: .spec.purpose

@@ -7,7 +7,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
-const GroupName = "clusters.openmcp.cloud"
+const ParentGroupName = "openmcp.cloud"
+const GroupName = "clusters." + ParentGroupName
 
 var (
 	// GroupVersion is group version used to register these objects
