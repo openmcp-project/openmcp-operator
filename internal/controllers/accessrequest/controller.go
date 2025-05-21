@@ -140,7 +140,7 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 	// fetch ClusterProfile resource
 	cp := &clustersv1alpha1.ClusterProfile{}
 	cp.SetName(c.Spec.Profile)
-	log.Debug("Fetching ClusterProfile", "clusterProfileName", cp.Name)
+	log.Debug("Fetching ClusterProfile", "profileName", cp.Name)
 	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(cp), cp); err != nil {
 		if apierrors.IsNotFound(err) {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("ClusterProfile '%s' not found", cp.Name), cconst.ReasonInvalidReference)
@@ -150,13 +150,22 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 		return rr
 	}
 
-	log.Info("Identified responsible ClusterProvider", "providerName", cp.Spec.ProviderRef.Name)
-	if err := ctrlutils.EnsureLabel(ctx, r.PlatformCluster.Client(), ar, clustersv1alpha1.ProviderLabel, cp.Spec.ProviderRef.Name, true); err != nil {
-		if ctrlutils.IsMetadataEntryAlreadyExistsError(err) {
-			log.Error(err, "label '%s' already set on resource '%s'", clustersv1alpha1.ProviderLabel, req.String())
+	log.Info("Identified responsible ClusterProvider", "providerName", cp.Spec.ProviderRef.Name, "profileName", cp.Name)
+	arOld := ar.DeepCopy()
+	if err := ctrlutils.EnsureLabel(ctx, nil, ar, clustersv1alpha1.ProviderLabel, cp.Spec.ProviderRef.Name, false); err != nil {
+		if e, ok := err.(*ctrlutils.MetadataEntryAlreadyExistsError); ok {
+			log.Error(err, "label '%s' already set on resource '%s', but with value '%s' instead of the desired value '%s'", e.Key, req.String(), e.ActualValue, e.DesiredValue)
 			return rr
 		}
-		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error setting label '%s' with value '%s' on resource '%s': %w", clustersv1alpha1.ProviderLabel, cp.Spec.ProviderRef.Name, req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
+	}
+	if err := ctrlutils.EnsureLabel(ctx, nil, ar, clustersv1alpha1.ProfileLabel, cp.Name, false); err != nil {
+		if e, ok := err.(*ctrlutils.MetadataEntryAlreadyExistsError); ok {
+			log.Error(err, "label '%s' already set on resource '%s', but with value '%s' instead of the desired value '%s'", e.Key, req.String(), e.ActualValue, e.DesiredValue)
+			return rr
+		}
+	}
+	if err := r.PlatformCluster.Client().Patch(ctx, ar, client.MergeFrom(arOld)); err != nil {
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching labels on resource '%s': %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
 		return rr
 	}
 
@@ -169,8 +178,11 @@ func (r *AccessRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// watch AccessRequest resources
 		For(&clustersv1alpha1.AccessRequest{}).
 		WithEventFilter(predicate.And(
-			// ignore resources that already have the provider label set
-			predicate.Not(ctrlutils.HasLabelPredicate(clustersv1alpha1.ProviderLabel, "")),
+			// ignore resources that already have the provider AND profile label set
+			predicate.Not(predicate.And(
+				ctrlutils.HasLabelPredicate(clustersv1alpha1.ProviderLabel, ""),
+				ctrlutils.HasLabelPredicate(clustersv1alpha1.ProfileLabel, ""),
+			)),
 			ctrlutils.LabelSelectorPredicate(r.Config.Selector.Completed()),
 			predicate.Or(
 				ctrlutils.GotAnnotationPredicate(clustersv1alpha1.OperationAnnotation, clustersv1alpha1.OperationAnnotationValueReconcile),

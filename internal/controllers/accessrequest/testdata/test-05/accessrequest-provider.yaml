@@ -1,0 +1,19 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: mc-access-provider
+  namespace: bar
+  labels:
+    provider.clusters.openmcp.cloud: wrong
+spec:
+  clusterRef:
+    name: my-cluster
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"

@@ -81,6 +81,8 @@ const (
 	DeleteWithoutRequestsLabel = GroupName + "/delete-without-requests"
 	// ProviderLabel is used to indicate the provider that is responsible for an AccessRequest.
 	ProviderLabel = "provider." + GroupName
+	// ProfileLabel is used to make the profile information easily accessible for the ClusterProviders.
+	ProfileLabel = "profile." + GroupName
 )
 
 const (
