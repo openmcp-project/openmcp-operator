@@ -26,7 +26,7 @@ func arReconciler(c client.Client) reconcile.Reconciler {
 
 var _ = Describe("AccessRequest Controller", func() {
 
-	It("should add the correct provider and profile labels to the AccessRequest if a Cluster is referenced directly", func() {
+	It("should add the correct labels to the AccessRequest if a Cluster is referenced directly", func() {
 		env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-01").WithReconcilerConstructor(arReconciler).Build()
 		ar := &clustersv1alpha1.AccessRequest{}
 		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mc-access", "bar"), ar)).To(Succeed())
@@ -38,16 +38,20 @@ var _ = Describe("AccessRequest Controller", func() {
 		Expect(ar.Labels).To(HaveKeyWithValue(clustersv1alpha1.ProfileLabel, "default"))
 	})
 
-	It("should add the correct provider and profile labels to the AccessRequest if a Cluster is referenced via a ClusterRequest", func() {
+	It("should add the correct labels and cluster reference to the AccessRequest if a Cluster is referenced via a ClusterRequest", func() {
 		env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-01").WithReconcilerConstructor(arReconciler).Build()
 		ar := &clustersv1alpha1.AccessRequest{}
 		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mcr-access", "bar"), ar)).To(Succeed())
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 		env.ShouldReconcile(testutils.RequestFromObject(ar))
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 		Expect(ar.Labels).To(HaveKeyWithValue(clustersv1alpha1.ProviderLabel, "asdf"))
 		Expect(ar.Labels).To(HaveKeyWithValue(clustersv1alpha1.ProfileLabel, "default"))
+		Expect(ar.Spec.ClusterRef).ToNot(BeNil())
+		Expect(ar.Spec.ClusterRef.Name).To(Equal("my-cluster"))
+		Expect(ar.Spec.ClusterRef.Namespace).To(Equal("foo"))
 	})
 
 	It("should fail if the AccessRequest references a ClusterRequest which is not Granted", func() {
@@ -56,9 +60,13 @@ var _ = Describe("AccessRequest Controller", func() {
 		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mcr-access", "bar"), ar)).To(Succeed())
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 		env.ShouldNotReconcile(testutils.RequestFromObject(ar))
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 		Expect(ar.Status.Message).To(ContainSubstring("not granted"))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 	})
 
 	It("should fail if the AccessRequest references an unknown Cluster or ClusterRequest", func() {
@@ -72,15 +80,21 @@ var _ = Describe("AccessRequest Controller", func() {
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 		Expect(ar.Status.Reason).To(Equal(cconst.ReasonInvalidReference))
 		Expect(ar.Status.Message).To(ContainSubstring("not found"))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
 
 		ar = &clustersv1alpha1.AccessRequest{}
 		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mcr-access", "bar"), ar)).To(Succeed())
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 		env.ShouldNotReconcile(testutils.RequestFromObject(ar))
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 		Expect(ar.Status.Reason).To(Equal(cconst.ReasonInvalidReference))
 		Expect(ar.Status.Message).To(ContainSubstring("not found"))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 	})
 
 	It("should add the respective other label if either provider or profile label is already set", func() {
@@ -109,22 +123,26 @@ var _ = Describe("AccessRequest Controller", func() {
 		env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-05").WithReconcilerConstructor(arReconciler).Build()
 
 		ar := &clustersv1alpha1.AccessRequest{}
-		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mc-access-provider", "bar"), ar)).To(Succeed())
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mcr-access-provider", "bar"), ar)).To(Succeed())
 		Expect(ar.Labels).To(HaveKey(clustersv1alpha1.ProviderLabel))
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 		env.ShouldReconcile(testutils.RequestFromObject(ar))
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 		Expect(ar.Labels).ToNot(HaveKeyWithValue(clustersv1alpha1.ProviderLabel, "asdf"))
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 
 		ar = &clustersv1alpha1.AccessRequest{}
-		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mc-access-profile", "bar"), ar)).To(Succeed())
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mcr-access-profile", "bar"), ar)).To(Succeed())
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
 		Expect(ar.Labels).To(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 		env.ShouldReconcile(testutils.RequestFromObject(ar))
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
 		Expect(ar.Labels).ToNot(HaveKeyWithValue(clustersv1alpha1.ProfileLabel, "default"))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
 	})
 
 })

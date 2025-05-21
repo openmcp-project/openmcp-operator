@@ -7,14 +7,14 @@ import (
 
 type AccessRequestSpec struct {
 	// ClusterRef is the reference to the Cluster for which access is requested.
-	// Exactly one of clusterRef or requestRef must be set.
+	// If set, requestRef will be ignored.
 	// This value is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable"
 	// +optional
 	ClusterRef *NamespacedObjectReference `json:"clusterRef,omitempty"`
 
 	// RequestRef is the reference to the ClusterRequest for whose Cluster access is requested.
-	// Exactly one of clusterRef or requestRef must be set.
+	// Is ignored if clusterRef is set.
 	// This value is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="requestRef is immutable"
 	// +optional

@@ -164,8 +164,16 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 			return rr
 		}
 	}
+
+	// set cluster reference, if only the request reference is set
+	if ar.Spec.ClusterRef == nil {
+		ar.Spec.ClusterRef = &clustersv1alpha1.NamespacedObjectReference{}
+		ar.Spec.ClusterRef.Name = c.Name
+		ar.Spec.ClusterRef.Namespace = c.Namespace
+	}
+
 	if err := r.PlatformCluster.Client().Patch(ctx, ar, client.MergeFrom(arOld)); err != nil {
-		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching labels on resource '%s': %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching resource '%s': %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
 		return rr
 	}
 
