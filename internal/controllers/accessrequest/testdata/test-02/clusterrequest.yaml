@@ -1,0 +1,9 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: my-cluster
+  namespace: foo
+spec:
+  purpose: test
+status:
+  phase: Denied

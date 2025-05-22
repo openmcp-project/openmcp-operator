@@ -26,6 +26,9 @@ type Config struct {
 
 	// Scheduler is the configuration for the cluster scheduler.
 	Scheduler *SchedulerConfig `json:"scheduler,omitempty"`
+
+	// AccessRequest is the configuration for the access request controller.
+	AccessRequest *AccessRequestConfig `json:"accessRequest,omitempty"`
 }
 
 // Dump is used for logging and debugging purposes.

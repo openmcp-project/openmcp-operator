@@ -23,6 +23,7 @@ import (
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
+	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 )
 
@@ -57,7 +58,7 @@ func (r *ClusterScheduler) Reconcile(ctx context.Context, req reconcile.Request)
 	log := logging.FromContextOrPanic(ctx).WithName(ControllerName)
 	ctx = logging.NewContext(ctx, log)
 	log.Info("Starting reconcile")
-	rr := r.reconcile(ctx, log, req)
+	rr := r.reconcile(ctx, req)
 	// status update
 	return ctrlutils.NewStatusUpdaterBuilder[*clustersv1alpha1.ClusterRequest, clustersv1alpha1.RequestPhase, clustersv1alpha1.ConditionStatus]().
 		WithNestedStruct("CommonStatus").
@@ -73,7 +74,8 @@ func (r *ClusterScheduler) Reconcile(ctx context.Context, req reconcile.Request)
 		UpdateStatus(ctx, r.PlatformCluster.Client(), rr)
 }
 
-func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, req reconcile.Request) ReconcileResult {
+func (r *ClusterScheduler) reconcile(ctx context.Context, req reconcile.Request) ReconcileResult {
+	log := logging.FromContextOrPanic(ctx)
 	// get ClusterRequest resource
 	cr := &clustersv1alpha1.ClusterRequest{}
 	if err := r.PlatformCluster.Client().Get(ctx, req.NamespacedName, cr); err != nil {
@@ -86,15 +88,15 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, log logging.Logger, re
 
 	// handle operation annotation
 	if cr.GetAnnotations() != nil {
-		op, ok := cr.GetAnnotations()[clustersv1alpha1.OperationAnnotation]
+		op, ok := cr.GetAnnotations()[apiconst.OperationAnnotation]
 		if ok {
 			switch op {
-			case clustersv1alpha1.OperationAnnotationValueIgnore:
+			case apiconst.OperationAnnotationValueIgnore:
 				log.Info("Ignoring resource due to ignore operation annotation")
 				return ReconcileResult{}
-			case clustersv1alpha1.OperationAnnotationValueReconcile:
+			case apiconst.OperationAnnotationValueReconcile:
 				log.Debug("Removing reconcile operation annotation from resource")
-				if err := ctrlutils.EnsureAnnotation(ctx, r.PlatformCluster.Client(), cr, clustersv1alpha1.OperationAnnotation, "", true, ctrlutils.DELETE); err != nil {
+				if err := ctrlutils.EnsureAnnotation(ctx, r.PlatformCluster.Client(), cr, apiconst.OperationAnnotation, "", true, ctrlutils.DELETE); err != nil {
 					return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("error removing operation annotation: %w", err), cconst.ReasonPlatformClusterInteractionProblem)}
 				}
 			}
@@ -258,7 +260,7 @@ func (r *ClusterScheduler) handleDelete(ctx context.Context, req reconcile.Reque
 	// fetch all clusters and filter for the ones that have a finalizer from this request
 	fin := cr.FinalizerForCluster()
 	clusterList := &clustersv1alpha1.ClusterList{}
-	if err := r.PlatformCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: r.Config.CompletedSelectors.Clusters}); err != nil {
+	if err := r.PlatformCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: r.Config.Selectors.Clusters.Completed()}); err != nil {
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
 		return rr
 	}
@@ -319,16 +321,14 @@ func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
 		// watch ClusterRequest resources
 		For(&clustersv1alpha1.ClusterRequest{}).
 		WithEventFilter(predicate.And(
-			ctrlutils.LabelSelectorPredicate(r.Config.CompletedSelectors.Requests),
+			ctrlutils.LabelSelectorPredicate(r.Config.Selectors.Requests.Completed()),
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.DeletionTimestampChangedPredicate{},
-				ctrlutils.GotAnnotationPredicate(clustersv1alpha1.OperationAnnotation, clustersv1alpha1.OperationAnnotationValueReconcile),
-				ctrlutils.LostAnnotationPredicate(clustersv1alpha1.OperationAnnotation, clustersv1alpha1.OperationAnnotationValueIgnore),
+				ctrlutils.GotAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueReconcile),
+				ctrlutils.LostAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore),
 			),
-			predicate.Not(
-				ctrlutils.HasAnnotationPredicate(clustersv1alpha1.OperationAnnotation, clustersv1alpha1.OperationAnnotationValueIgnore),
-			),
+			predicate.Not(ctrlutils.HasAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore)),
 		)).
 		Complete(r)
 }
@@ -346,7 +346,7 @@ func (r *ClusterScheduler) fetchRelevantClusters(ctx context.Context, cr *cluste
 		namespace = cDef.Template.Namespace
 	}
 	clusterList := &clustersv1alpha1.ClusterList{}
-	if err := r.PlatformCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: cDef.CompletedSelector}); err != nil {
+	if err := r.PlatformCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: cDef.Selector.Completed()}); err != nil {
 		return nil, errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
 	}
 	clusters := make([]*clustersv1alpha1.Cluster, len(clusterList.Items))

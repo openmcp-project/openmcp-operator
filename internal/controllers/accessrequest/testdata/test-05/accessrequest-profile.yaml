@@ -1,0 +1,19 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: mcr-access-profile
+  namespace: bar
+  labels:
+    profile.clusters.openmcp.cloud: wrong
+spec:
+  requestRef:
+    name: my-cluster
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"

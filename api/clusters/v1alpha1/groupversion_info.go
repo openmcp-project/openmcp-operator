@@ -5,9 +5,11 @@ package v1alpha1
 import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
+
+	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 )
 
-const GroupName = "clusters.openmcp.cloud"
+const GroupName = "clusters." + apiconst.OpenMCPGroupName
 
 var (
 	// GroupVersion is group version used to register these objects

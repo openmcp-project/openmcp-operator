@@ -25,6 +25,7 @@ import (
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
 )
@@ -33,6 +34,7 @@ var setupLog logging.Logger
 var allControllers = []string{
 	strings.ToLower(scheduler.ControllerName),
 	strings.ToLower(provider.ControllerName),
+	strings.ToLower(accessrequest.ControllerName),
 }
 
 func NewRunCommand(so *SharedOptions) *cobra.Command {
@@ -296,6 +298,13 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		}
 		if err := sc.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to setup cluster scheduler with manager: %w", err)
+		}
+	}
+
+	// setup accessrequest controller
+	if slices.Contains(o.Controllers, strings.ToLower(accessrequest.ControllerName)) {
+		if err := accessrequest.NewAccessRequestReconciler(o.Clusters.Platform, o.Config.AccessRequest).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to setup accessrequest controller: %w", err)
 		}
 	}
 
