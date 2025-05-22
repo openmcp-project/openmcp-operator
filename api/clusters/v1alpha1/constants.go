@@ -56,15 +56,6 @@ const (
 )
 
 const (
-	// ClusterLabel can be used on CRDs to indicate onto which cluster they should be deployed.
-	ClusterLabel = ParentGroupName + "/cluster"
-	// OperationAnnotation is used to trigger specific operations on resources.
-	OperationAnnotation = ParentGroupName + "/operation"
-	// OperationAnnotationValueIgnore is used to ignore the resource.
-	OperationAnnotationValueIgnore = "ignore"
-	// OperationAnnotationValueReconcile is used to trigger a reconcile on the resource.
-	OperationAnnotationValueReconcile = "reconcile"
-
 	// K8sVersionAnnotation can be used to display the k8s version of the cluster.
 	K8sVersionAnnotation = GroupName + "/k8sversion"
 	// ProviderInfoAnnotation can be used to display provider-specific information about the cluster.

@@ -10,6 +10,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
+	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/crds"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 )
@@ -75,7 +76,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	log.Info("Environment", "value", o.Environment)
 
 	// apply CRDs
-	crdManager := crdutil.NewCRDManager(clustersv1alpha1.ClusterLabel, crds.CRDs)
+	crdManager := crdutil.NewCRDManager(apiconst.ClusterLabel, crds.CRDs)
 
 	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_ONBOARDING, o.Clusters.Onboarding)
 	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_PLATFORM, o.Clusters.Platform)
