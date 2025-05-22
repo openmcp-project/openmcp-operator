@@ -9,7 +9,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
@@ -19,21 +18,23 @@ import (
 type jobMutator struct {
 	values         *Values
 	deploymentSpec *v1alpha1.DeploymentSpec
-	meta           resources.Mutator[client.Object]
+	meta           resources.MetadataMutator
 }
 
 var _ resources.Mutator[*v1.Job] = &jobMutator{}
 
-func newJobMutator(
-	values *Values,
-	deploymentSpec *v1alpha1.DeploymentSpec,
-	annotations map[string]string,
-) resources.Mutator[*v1.Job] {
-	return &jobMutator{
+func newJobMutator(values *Values, deploymentSpec *v1alpha1.DeploymentSpec, annotations map[string]string) resources.Mutator[*v1.Job] {
+	res := &jobMutator{
 		values:         values,
 		deploymentSpec: deploymentSpec,
-		meta:           resources.NewMetadataMutator(values.LabelsInitJob(), annotations),
+		meta:           resources.NewMetadataMutator(),
 	}
+	res.meta.WithLabels(values.LabelsInitJob()).WithAnnotations(annotations)
+	return res
+}
+
+func (m *jobMutator) MetadataMutator() resources.MetadataMutator {
+	return m.meta
 }
 
 func (m *jobMutator) String() string {

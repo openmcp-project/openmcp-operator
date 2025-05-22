@@ -7,16 +7,14 @@ import (
 )
 
 func newInitServiceAccountMutator(values *Values) resources.Mutator[*corev1.ServiceAccount] {
-	return resources.NewServiceAccountMutator(
-		values.NamespacedResourceName(initPrefix),
-		values.Namespace(),
-		values.LabelsInitJob(),
-		nil)
+	res := resources.NewServiceAccountMutator(values.NamespacedResourceName(initPrefix), values.Namespace())
+	res.MetadataMutator().WithLabels(values.LabelsInitJob())
+	return res
 }
 
 func newInitClusterRoleBindingMutator(values *Values) resources.Mutator[*rbac.ClusterRoleBinding] {
 	clusterRoleName := values.ClusterScopedResourceName(initPrefix)
-	return resources.NewClusterRoleBindingMutator(
+	res := resources.NewClusterRoleBindingMutator(
 		clusterRoleName,
 		[]rbac.Subject{
 			{
@@ -26,12 +24,13 @@ func newInitClusterRoleBindingMutator(values *Values) resources.Mutator[*rbac.Cl
 			},
 		},
 		resources.NewClusterRoleRef(clusterRoleName),
-		values.LabelsInitJob(),
-		nil)
+	)
+	res.MetadataMutator().WithLabels(values.LabelsInitJob())
+	return res
 }
 
 func newInitClusterRoleMutator(values *Values) resources.Mutator[*rbac.ClusterRole] {
-	return resources.NewClusterRoleMutator(
+	res := resources.NewClusterRoleMutator(
 		values.ClusterScopedResourceName(initPrefix),
 		[]rbac.PolicyRule{
 			{
@@ -50,6 +49,7 @@ func newInitClusterRoleMutator(values *Values) resources.Mutator[*rbac.ClusterRo
 				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 			},
 		},
-		values.LabelsInitJob(),
-		nil)
+	)
+	res.MetadataMutator().WithLabels(values.LabelsInitJob())
+	return res
 }

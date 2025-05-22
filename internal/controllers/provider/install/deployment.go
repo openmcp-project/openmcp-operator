@@ -8,7 +8,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/openmcp-project/controller-utils/pkg/resources"
@@ -18,16 +17,22 @@ import (
 
 type deploymentMutator struct {
 	values *Values
-	meta   resources.Mutator[client.Object]
+	meta   resources.MetadataMutator
 }
 
 var _ resources.Mutator[*appsv1.Deployment] = &deploymentMutator{}
 
 func newDeploymentMutator(values *Values) resources.Mutator[*appsv1.Deployment] {
-	return &deploymentMutator{
+	res := &deploymentMutator{
 		values: values,
-		meta:   resources.NewMetadataMutator(values.LabelsController(), nil),
+		meta:   resources.NewMetadataMutator(),
 	}
+	res.meta.WithLabels(values.LabelsController())
+	return res
+}
+
+func (m *deploymentMutator) MetadataMutator() resources.MetadataMutator {
+	return m.meta
 }
 
 func (m *deploymentMutator) String() string {

@@ -38,7 +38,7 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
-	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, resources.NewNamespaceMutator(values.Namespace(), nil, nil)); err != nil {
+	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, resources.NewNamespaceMutator(values.Namespace())); err != nil {
 		return false, err
 	}
 
