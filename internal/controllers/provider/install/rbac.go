@@ -7,15 +7,16 @@ import (
 )
 
 func newProviderServiceAccountMutator(values *Values) resources.Mutator[*corev1.ServiceAccount] {
-	return resources.NewServiceAccountMutator(
+	res := resources.NewServiceAccountMutator(
 		values.NamespacedDefaultResourceName(),
 		values.Namespace(),
-		values.LabelsController(),
-		nil)
+	)
+	res.MetadataMutator().WithLabels(values.LabelsController())
+	return res
 }
 
 func newProviderClusterRoleBindingMutator(values *Values) resources.Mutator[*rbac.ClusterRoleBinding] {
-	return resources.NewClusterRoleBindingMutator(
+	res := resources.NewClusterRoleBindingMutator(
 		values.ClusterScopedDefaultResourceName(),
 		[]rbac.Subject{
 			{
@@ -25,6 +26,7 @@ func newProviderClusterRoleBindingMutator(values *Values) resources.Mutator[*rba
 			},
 		},
 		resources.NewClusterRoleRef("cluster-admin"),
-		values.LabelsController(),
-		nil)
+	)
+	res.MetadataMutator().WithLabels(values.LabelsController())
+	return res
 }
