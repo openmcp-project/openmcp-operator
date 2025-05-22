@@ -6,10 +6,10 @@ includes:
     flatten: true
     excludes: [] # put task names in here which are overwritten in this file
     vars:
-      NESTED_MODULES: api
+      NESTED_MODULES: 'api lib'
       API_DIRS: '{{.ROOT_DIR}}/api/...'
       MANIFEST_OUT: '{{.ROOT_DIR}}/api/crds/manifests'
-      CODE_DIRS: '{{.ROOT_DIR}}/cmd/... {{.ROOT_DIR}}/internal/... {{.ROOT_DIR}}/api/...'
+      CODE_DIRS: '{{.ROOT_DIR}}/cmd/... {{.ROOT_DIR}}/internal/... {{.ROOT_DIR}}/api/... {{.ROOT_DIR}}/lib/...'
       COMPONENTS: 'openmcp-operator'
       REPO_URL: 'https://github.com/openmcp-project/openmcp-operator'
       GENERATE_DOCS_INDEX: "true"
