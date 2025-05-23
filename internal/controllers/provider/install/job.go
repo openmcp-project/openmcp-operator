@@ -70,7 +70,9 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 						Args: []string{
 							"init",
 							"--environment=" + m.values.Environment(),
+							"--verbosity=" + m.values.Verbosity(),
 						},
+						Env: m.values.EnvironmentVariables(),
 					},
 				},
 				ServiceAccountName: m.values.NamespacedResourceName(initPrefix),

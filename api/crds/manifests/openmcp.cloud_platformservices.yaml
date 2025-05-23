@@ -41,6 +41,27 @@ spec:
           spec:
             description: PlatformServiceSpec defines the desired state of PlatformService.
             properties:
+              env:
+                description: Env is a list of environment variables to set in the
+                  containers of the init job and deployment of the provider.
+                items:
+                  description: EnvVar represents an environment variable present in
+                    a Container.
+                  properties:
+                    name:
+                      description: Name is the name of the environment variable.
+                      minLength: 1
+                      type: string
+                    value:
+                      description: Value is the value of the environment variable.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               image:
                 description: Image is the name of the image of a provider.
                 minLength: 1
@@ -59,6 +80,14 @@ spec:
                   - name
                   type: object
                 type: array
+              verbosity:
+                default: INFO
+                description: Verbosity is the verbosity level of the provider.
+                enum:
+                - DEBUG
+                - INFO
+                - ERROR
+                type: string
             required:
             - image
             type: object

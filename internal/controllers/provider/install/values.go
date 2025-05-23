@@ -100,3 +100,18 @@ func (v *Values) LabelsController() map[string]string {
 	m["app.kubernetes.io/component"] = "controller"
 	return m
 }
+
+func (v *Values) Verbosity() string {
+	return v.deploymentSpec.Verbosity
+}
+
+func (v *Values) EnvironmentVariables() []corev1.EnvVar {
+	env := make([]corev1.EnvVar, len(v.deploymentSpec.Env))
+	for i, e := range v.deploymentSpec.Env {
+		env[i] = corev1.EnvVar{
+			Name:  e.Name,
+			Value: e.Value,
+		}
+	}
+	return env
+}

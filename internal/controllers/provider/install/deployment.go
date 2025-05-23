@@ -67,7 +67,9 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 						Args: []string{
 							"run",
 							"--environment=" + m.values.Environment(),
+							"--verbosity=" + m.values.Verbosity(),
 						},
+						Env: m.values.EnvironmentVariables(),
 					},
 				},
 				ImagePullSecrets:   m.values.ImagePullSecrets(),
