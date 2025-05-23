@@ -4,6 +4,7 @@
 ## Controller
 
 - [AccessRequest Controller](controller/accessrequest.md)
+- [Deployment Controllers](controller/deployment.md)
 - [Cluster Scheduler](controller/scheduler.md)
 
 ## Resources
