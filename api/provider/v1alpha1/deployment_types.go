@@ -32,6 +32,19 @@ type DeploymentSpec struct {
 	// ImagePullSecrets are secrets in the same namespace.
 	// They can be used to fetch provider images from private registries.
 	ImagePullSecrets []ObjectReference `json:"imagePullSecrets,omitempty"`
+
+	// Env is a list of environment variables to set in the containers of the init job and deployment of the provider.
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=name
+	Env []EnvVar `json:"env,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
+
+	// Verbosity is the verbosity level of the provider.
+	// +kubebuilder:validation:Enum=DEBUG;INFO;ERROR
+	// +kubebuilder:default=INFO
+	Verbosity string `json:"verbosity,omitempty"`
 }
 
 // DeploymentStatus defines the observed state of a provider.
@@ -49,4 +62,14 @@ type ObjectReference struct {
 	// Name is the name of the referenced resource.
 	// +kubebuilder:validation:MinLength=1
 	Name string `json:"name"`
+}
+
+// EnvVar represents an environment variable present in a Container.
+type EnvVar struct {
+	// Name is the name of the environment variable.
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+	// Value is the value of the environment variable.
+	// +optional
+	Value string `json:"value,omitempty"`
 }
