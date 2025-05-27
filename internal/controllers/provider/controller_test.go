@@ -72,7 +72,7 @@ var _ = Describe("Deployment Controller", func() {
 			job.Status.Succeeded = 1
 			Expect(env.Client().Status().Update(env.Ctx, job)).To(Succeed(), "Status update of init job should succeed")
 			env.ShouldReconcile(req, "2nd reconcile should not return an error")
-			deploymentSpec, deploymentStatus = getProvider(env, provider)
+			_, deploymentStatus = getProvider(env, provider)
 			Expect(deploymentStatus.Phase).To(Equal(phaseProgressing), "Phase should be progressing")
 			Expect(isInitialized(deploymentStatus)).To(BeTrue(), "Provider should be initialized")
 			Expect(isProviderInstalledAndReady(deploymentStatus)).To(BeFalse(), "Provider should not yet be ready")
@@ -92,7 +92,7 @@ var _ = Describe("Deployment Controller", func() {
 			deploy.Status.AvailableReplicas = 1
 			Expect(env.Client().Status().Update(env.Ctx, deploy)).To(Succeed(), "Status update of deployment should succeed")
 			env.ShouldReconcile(req, "3rd reconcile should not return an error")
-			deploymentSpec, deploymentStatus = getProvider(env, provider)
+			_, deploymentStatus = getProvider(env, provider)
 			Expect(deploymentStatus.Phase).To(Equal(phaseReady), "Phase should be ready")
 			Expect(isInitialized(deploymentStatus)).To(BeTrue(), "Provider should be initialized")
 			Expect(isProviderInstalledAndReady(deploymentStatus)).To(BeTrue(), "Provider should be ready")
