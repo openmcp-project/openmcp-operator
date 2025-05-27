@@ -168,6 +168,7 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 
 	// set cluster reference, if only the request reference is set
 	if ar.Spec.ClusterRef == nil {
+		log.Info("Setting cluster reference in AccessRequest", "clusterName", c.Name, "clusterNamespace", c.Namespace)
 		ar.Spec.ClusterRef = &clustersv1alpha1.NamespacedObjectReference{}
 		ar.Spec.ClusterRef.Name = c.Name
 		ar.Spec.ClusterRef.Namespace = c.Namespace
