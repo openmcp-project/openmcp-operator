@@ -155,6 +155,11 @@ spec:
             required:
             - permissions
             type: object
+            x-kubernetes-validations:
+            - message: clusterRef may not be removed once set
+              rule: '!has(oldSelf.clusterRef) || has(self.clusterRef)'
+            - message: requestRef may not be removed once set
+              rule: '!has(oldSelf.requestRef) || has(self.requestRef)'
           status:
             description: AccessRequestStatus defines the observed state of AccessRequest
             properties:
