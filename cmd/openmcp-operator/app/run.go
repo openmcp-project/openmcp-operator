@@ -312,9 +312,8 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	if slices.Contains(o.Controllers, strings.ToLower(provider.ControllerName)) {
 		utilruntime.Must(clientgoscheme.AddToScheme(mgr.GetScheme()))
 		utilruntime.Must(api.AddToScheme(mgr.GetScheme()))
-
-		if err = provider.NewDeploymentController().SetupWithManager(mgr, o.ProviderGVKList, o.Environment); err != nil {
-			return fmt.Errorf("unable to setup provider controllers: %w", err)
+		if err = provider.NewDeploymentController().SetupWithManager(&setupLog, mgr, o.ProviderGVKList, o.Environment); err != nil {
+			return fmt.Errorf("unable to setup deployment controllers: %w", err)
 		}
 	}
 

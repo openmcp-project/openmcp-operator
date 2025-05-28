@@ -84,7 +84,7 @@ func (v *Values) ImagePullSecrets() []corev1.LocalObjectReference {
 func (v *Values) LabelsCommon() map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/managed-by": "openmcp-operator",
-		"app.kubernetes.io/name":       v.provider.GetKind(),
+		"app.kubernetes.io/name":       v.provider.GroupVersionKind().Kind,
 		"app.kubernetes.io/instance":   v.provider.GetName(),
 	}
 }

@@ -54,7 +54,7 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 		return false, err
 	}
 
-	j := newJobMutator(values, a.DeploymentSpec, map[string]string{
+	j := NewJobMutator(values, a.DeploymentSpec, map[string]string{
 		ProviderKindLabel:       a.Provider.GetKind(),
 		ProviderNameLabel:       a.Provider.GetName(),
 		ProviderGenerationLabel: fmt.Sprintf("%d", a.Provider.GetGeneration()),
@@ -109,7 +109,7 @@ func (a *Installer) InstallProvider(ctx context.Context) error {
 		return err
 	}
 
-	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, newDeploymentMutator(values)); err != nil {
+	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, NewDeploymentMutator(values)); err != nil {
 		return err
 	}
 
@@ -119,7 +119,7 @@ func (a *Installer) InstallProvider(ctx context.Context) error {
 func (a *Installer) CheckProviderReadiness(ctx context.Context) readiness.CheckResult {
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
-	depl, err := resources.GetResource(ctx, a.PlatformClient, newDeploymentMutator(values))
+	depl, err := resources.GetResource(ctx, a.PlatformClient, NewDeploymentMutator(values))
 	if err != nil {
 		return readiness.NewFailedResult(err)
 	}
@@ -131,7 +131,7 @@ func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err er
 
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
 
-	if err := resources.DeleteResource(ctx, a.PlatformClient, newDeploymentMutator(values)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, NewDeploymentMutator(values)); err != nil {
 		return false, err
 	}
 
@@ -143,7 +143,7 @@ func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err er
 		return false, err
 	}
 
-	if err := resources.DeleteResource(ctx, a.PlatformClient, newJobMutator(values, a.DeploymentSpec, nil)); err != nil {
+	if err := resources.DeleteResource(ctx, a.PlatformClient, NewJobMutator(values, a.DeploymentSpec, nil)); err != nil {
 		return false, err
 	}
 

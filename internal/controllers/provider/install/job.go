@@ -23,7 +23,7 @@ type jobMutator struct {
 
 var _ resources.Mutator[*v1.Job] = &jobMutator{}
 
-func newJobMutator(values *Values, deploymentSpec *v1alpha1.DeploymentSpec, annotations map[string]string) resources.Mutator[*v1.Job] {
+func NewJobMutator(values *Values, deploymentSpec *v1alpha1.DeploymentSpec, annotations map[string]string) resources.Mutator[*v1.Job] {
 	res := &jobMutator{
 		values:         values,
 		deploymentSpec: deploymentSpec,
