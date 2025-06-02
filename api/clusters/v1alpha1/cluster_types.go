@@ -57,6 +57,10 @@ type ClusterStatus struct {
 	// Phase is the current phase of the cluster.
 	Phase ClusterPhase `json:"phase"`
 
+	// APIServer is the API server endpoint of the cluster.
+	// +optional
+	APIServer string `json:"apiServer,omitempty"`
+
 	// ProviderStatus is the provider-specific status of the cluster.
 	// x-kubernetes-preserve-unknown-fields: true
 	// +optional
