@@ -122,6 +122,9 @@ spec:
           status:
             description: ClusterStatus defines the observed state of Cluster
             properties:
+              apiServer:
+                description: APIServer is the API server endpoint of the cluster.
+                type: string
               conditions:
                 description: Conditions contains the conditions.
                 items:
