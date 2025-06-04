@@ -10,7 +10,7 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
-	github.com/openmcp-project/controller-utils v0.9.0
+	github.com/openmcp-project/controller-utils v0.10.0
 	github.com/openmcp-project/openmcp-operator/api v0.7.0
 	github.com/spf13/cobra v1.9.1
 	k8s.io/api v0.33.1
@@ -34,7 +34,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
-	github.com/go-logr/logr v1.4.2 // indirect
+	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
