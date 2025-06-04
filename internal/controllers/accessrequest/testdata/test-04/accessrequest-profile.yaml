@@ -4,7 +4,7 @@ metadata:
   name: mc-access-profile
   namespace: bar
   labels:
-    profile.clusters.openmcp.cloud: default
+    clusters.openmcp.cloud/profile: default
 spec:
   clusterRef:
     name: my-cluster

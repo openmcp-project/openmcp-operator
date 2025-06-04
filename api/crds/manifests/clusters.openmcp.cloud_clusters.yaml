@@ -23,22 +23,22 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
-    - jsonPath: .metadata.annotations["clusters.openmcp.cloud/k8sversion"]
+    - jsonPath: .metadata.labels["clusters.openmcp.cloud/k8sversion"]
       name: Version
       type: string
-    - jsonPath: .metadata.annotations["clusters.openmcp.cloud/profile"]
-      name: Profile
-      type: string
-    - jsonPath: .metadata.labels["provider.clusters.openmcp.cloud"]
+    - jsonPath: .metadata.labels["clusters.openmcp.cloud/provider"]
       name: Provider
-      priority: 10
       type: string
     - jsonPath: .spec.profile
-      name: ProfileRef
+      name: Profile
       priority: 10
       type: string
     - jsonPath: .metadata.annotations["clusters.openmcp.cloud/providerinfo"]
       name: Info
+      priority: 10
+      type: string
+    - jsonPath: .status.apiServer
+      name: APIServer
       priority: 10
       type: string
     - jsonPath: .metadata.creationTimestamp
