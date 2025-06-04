@@ -26,6 +26,16 @@ run
 --verbosity <DEBUG|INFO|ERROR>
 ```
 
+### Env Variables
+
+The environment variables below are available in the pods of the init job and the deployment of providers:
+
+- the environment variables specified in the [provider resource](#provider-resource), in field `spec.env`;
+- the following predefined environment variables:
+  - `OPENMCP_PROVIDER_NAME`: the name of the provider resource;
+  - `OPENMCP_PLATFORM_CLUSTER_NAMESPACE`: the namespace on the platform cluster in which the provider is running.
+
+
 ## Provider Resource
 
 The provider resources specify how to deploy the providers. They are of the kind `ClusterProvider`, `ServiceProvider`, or `PlatformService`. They are cluster-scoped, and have the following common structure:
