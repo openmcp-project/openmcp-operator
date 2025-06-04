@@ -4,7 +4,7 @@ metadata:
   name: mcr-access-provider
   namespace: bar
   labels:
-    provider.clusters.openmcp.cloud: wrong
+    clusters.openmcp.cloud/provider: wrong
 spec:
   requestRef:
     name: my-cluster

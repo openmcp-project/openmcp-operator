@@ -56,24 +56,25 @@ const (
 )
 
 const (
-	// K8sVersionAnnotation can be used to display the k8s version of the cluster.
-	K8sVersionAnnotation = GroupName + "/k8sversion"
+	// K8sVersionLabel can be used to display the k8s version of the cluster.
+	// This is useful since the cluster spec can contain only a partial version (e.g. "1.23") or no version at all, so the actual version can not be determined from the spec alone.
+	// The responsible ClusterProvider has to set this label.
+	K8sVersionLabel = GroupName + "/k8sversion"
 	// ProviderInfoAnnotation can be used to display provider-specific information about the cluster.
+	// The responsible ClusterProvider can set this annotation to display additional information about the cluster.
+	// The value will be shown in a column when 'kubectl get clusters -o wide' is used.
 	ProviderInfoAnnotation = GroupName + "/providerinfo"
-	// ProfileNameAnnotation can be used to display the actual name (not the hash) of the cluster profile.
-	ProfileNameAnnotation = GroupName + "/profile"
-	// EnvironmentAnnotation can be used to display the environment of the cluster.
-	EnvironmentAnnotation = GroupName + "/environment"
-	// ProviderAnnotation can be used to display the provider of the cluster.
-	ProviderAnnotation = GroupName + "/provider"
+	// ProviderLabel can be used to display the provider of the cluster.
+	// It is also used to indicate the provider that is responsible for an AccessRequest.
+	// For clusters, the responsible ClusterProvider has to set this label.
+	// For AccessRequests, the generic controller that is part of the openMCP Operator sets it.
+	ProviderLabel = GroupName + "/provider"
 
 	// DeleteWithoutRequestsLabel marks that the corresponding cluster can be deleted if the scheduler removes the last request pointing to it.
 	// Its value must be "true" for the label to take effect.
 	DeleteWithoutRequestsLabel = GroupName + "/delete-without-requests"
-	// ProviderLabel is used to indicate the provider that is responsible for an AccessRequest.
-	ProviderLabel = "provider." + GroupName
-	// ProfileLabel is used to make the profile information easily accessible for the ClusterProviders.
-	ProfileLabel = "profile." + GroupName
+	// ProfileLabel is used to make the profile information easily accessible on AccessRequests.
+	ProfileLabel = GroupName + "/profile"
 )
 
 const (

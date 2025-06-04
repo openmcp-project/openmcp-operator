@@ -8,8 +8,8 @@ To increase performance and simplify reconciliation logic in the individual Clus
 
 The added labels are:
 ```yaml
-provider.clusters.openmcp.cloud: <provider-name>
-profile.clusters.openmcp.cloud: <profile-name>
+clusters.openmcp.cloud/provider: <provider-name>
+clusters.openmcp.cloud/profile: <profile-name>
 ```
 
 ClusterProviders should only reconcile `AccessRequest` resources where both labels are set and the value of the provider label matches their own provider name. Resources where either label is missing or the value of the provider label does not match the own provider name must be ignored.

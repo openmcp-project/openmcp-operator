@@ -4,7 +4,7 @@ metadata:
   name: mc-access-provider
   namespace: bar
   labels:
-    provider.clusters.openmcp.cloud: asdf
+    clusters.openmcp.cloud/provider: asdf
 spec:
   clusterRef:
     name: my-cluster
