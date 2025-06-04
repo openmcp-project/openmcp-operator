@@ -21,4 +21,11 @@ const (
 	OnboardingNameLabel = OpenMCPGroupName + "/onboarding-name"
 	// OnboardingNamespaceLabel is used to store the namespace on the onboarding cluster of a resource.
 	OnboardingNamespaceLabel = OpenMCPGroupName + "/onboarding-namespace"
+
+	// EnvVariableProviderName is the name of an environment variable passed to providers.
+	// It contains the name of the provider resource.
+	EnvVariableProviderName = "OPENMCP_PROVIDER_NAME"
+	// EnvVariablePlatformClusterNamespace is the name of an environment variable passed to providers.
+	// It contains the namespace on the platform cluster in which the provider is running.
+	EnvVariablePlatformClusterNamespace = "OPENMCP_PLATFORM_CLUSTER_NAMESPACE"
 )

@@ -49,6 +49,11 @@ func (m *deploymentMutator) Empty() *appsv1.Deployment {
 }
 
 func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
+	env, err := m.values.EnvironmentVariables()
+	if err != nil {
+		return err
+	}
+
 	d.Spec = appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Selector: &metav1.LabelSelector{
@@ -69,7 +74,7 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 							"--environment=" + m.values.Environment(),
 							"--verbosity=" + m.values.Verbosity(),
 						},
-						Env: m.values.EnvironmentVariables(),
+						Env: env,
 					},
 				},
 				ImagePullSecrets:   m.values.ImagePullSecrets(),

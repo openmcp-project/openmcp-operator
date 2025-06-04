@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
@@ -35,11 +36,11 @@ func (v *Values) Environment() string {
 func determineNamespace(provider *unstructured.Unstructured) string {
 	var namespacePrefix string
 	switch provider.GroupVersionKind().Kind {
-	case "ServiceProvider":
+	case v1alpha1.ServiceProviderGKV().Kind:
 		namespacePrefix = "sp"
-	case "ClusterProvider":
+	case v1alpha1.ClusterProviderGKV().Kind:
 		namespacePrefix = "cp"
-	case "PlatformService":
+	case v1alpha1.PlatformServiceGKV().Kind:
 		namespacePrefix = "ps"
 	default:
 		namespacePrefix = provider.GroupVersionKind().Kind
@@ -105,7 +106,23 @@ func (v *Values) Verbosity() string {
 	return v.deploymentSpec.Verbosity
 }
 
-func (v *Values) EnvironmentVariables() []corev1.EnvVar {
+// EnvironmentVariables returns the environment variables set in the provider resource, enriched by the following:
+// - OPENMCP_PROVIDER_NAME: the name of the provider resource,
+// - OPENMCP_PROVIDER_NAMESPACE: the namespace in which the provider will be deployed.
+func (v *Values) EnvironmentVariables() ([]corev1.EnvVar, error) {
+	varList := append(
+		v.providerEnvironmentVariables(),
+		corev1.EnvVar{Name: constants.EnvVariableProviderName, Value: v.provider.GetName()},
+		corev1.EnvVar{Name: constants.EnvVariablePlatformClusterNamespace, Value: v.namespace},
+	)
+
+	if err := v.checkUniquenessOfVariableNames(varList); err != nil {
+		return nil, err
+	}
+	return varList, nil
+}
+
+func (v *Values) providerEnvironmentVariables() []corev1.EnvVar {
 	env := make([]corev1.EnvVar, len(v.deploymentSpec.Env))
 	for i, e := range v.deploymentSpec.Env {
 		env[i] = corev1.EnvVar{
@@ -114,4 +131,15 @@ func (v *Values) EnvironmentVariables() []corev1.EnvVar {
 		}
 	}
 	return env
+}
+
+func (v *Values) checkUniquenessOfVariableNames(varList []corev1.EnvVar) error {
+	varMap := make(map[string]bool)
+	for _, e := range varList {
+		if varMap[e.Name] {
+			return fmt.Errorf("environment variable is not unique: %s", e.Name)
+		}
+		varMap[e.Name] = true
+	}
+	return nil
 }

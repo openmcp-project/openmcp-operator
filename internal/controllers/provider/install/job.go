@@ -55,6 +55,11 @@ func (m *jobMutator) Empty() *v1.Job {
 }
 
 func (m *jobMutator) Mutate(j *v1.Job) error {
+	env, err := m.values.EnvironmentVariables()
+	if err != nil {
+		return err
+	}
+
 	j.Spec = v1.JobSpec{
 		BackoffLimit: ptr.To[int32](4),
 		Template: corev1.PodTemplateSpec{
@@ -72,7 +77,7 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 							"--environment=" + m.values.Environment(),
 							"--verbosity=" + m.values.Verbosity(),
 						},
-						Env: m.values.EnvironmentVariables(),
+						Env: env,
 					},
 				},
 				ServiceAccountName: m.values.NamespacedResourceName(initPrefix),
