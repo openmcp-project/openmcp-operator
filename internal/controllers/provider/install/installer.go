@@ -11,6 +11,7 @@ import (
 	v1 "k8s.io/api/batch/v1"
 	core "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -79,11 +80,8 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 
 	} else if !a.isGenerationUpToDate(ctx, job) || a.isJobFailed(job) {
 		// Job exists, but needs to be deleted and re-created
-		if err := a.cleanupJobPods(ctx, values); err != nil {
-			return false, fmt.Errorf("failed to cleanup job pods %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
-		}
-
-		if err := resources.DeleteResource(ctx, a.PlatformClient, j); err != nil {
+		// Delete the job with propagation policy "Background" to also delete the pods.
+		if err := resources.DeleteResource(ctx, a.PlatformClient, j, client.PropagationPolicy(meta.DeletePropagationBackground)); err != nil {
 			return false, fmt.Errorf("failed to delete job %s/%s: %w", values.Namespace(), a.Provider.GetName(), err)
 		}
 		if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, j); err != nil {
@@ -143,7 +141,8 @@ func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err er
 		return false, err
 	}
 
-	if err := resources.DeleteResource(ctx, a.PlatformClient, NewJobMutator(values, a.DeploymentSpec, nil)); err != nil {
+	// Delete the job with propagation policy "Background" to also delete the pods.
+	if err := resources.DeleteResource(ctx, a.PlatformClient, NewJobMutator(values, a.DeploymentSpec, nil), client.PropagationPolicy(meta.DeletePropagationBackground)); err != nil {
 		return false, err
 	}
 
@@ -160,26 +159,6 @@ func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err er
 	}
 
 	return true, nil
-}
-
-func (a *Installer) cleanupJobPods(ctx context.Context, values *Values) error {
-	podList := &core.PodList{}
-	if err := a.PlatformClient.List(ctx, podList,
-		client.InNamespace(values.Namespace()),
-		client.MatchingLabels{
-			"batch.kubernetes.io/job-name": values.NamespacedResourceName(initPrefix),
-		},
-	); err != nil {
-		return fmt.Errorf("failed to list pods for job %s/%s: %w", values.Namespace(), values.NamespacedResourceName(initPrefix), err)
-	}
-
-	for _, pod := range podList.Items {
-		if err := a.PlatformClient.Delete(ctx, &pod); err != nil {
-			return fmt.Errorf("failed to delete pod %s/%s: %w", pod.Namespace, pod.Name, err)
-		}
-	}
-
-	return nil
 }
 
 func (a *Installer) isJobFailed(job *v1.Job) bool {
