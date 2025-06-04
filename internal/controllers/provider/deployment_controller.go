@@ -17,12 +17,18 @@ limitations under the License.
 package provider
 
 import (
+	"fmt"
+
+	"github.com/openmcp-project/controller-utils/pkg/logging"
 	apps "k8s.io/api/apps/v1"
 	batch "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
 const ControllerName = "DeploymentController"
@@ -37,17 +43,16 @@ func NewDeploymentController() *DeploymentController {
 }
 
 // SetupWithManager sets up the controllers with the Manager.
-func (r *DeploymentController) SetupWithManager(mgr ctrl.Manager, providerGKVList []schema.GroupVersionKind, environment string) error {
+func (r *DeploymentController) SetupWithManager(setupLog *logging.Logger, mgr ctrl.Manager, providerGKVList []schema.GroupVersionKind, environment string) error {
+	log := setupLog.WithName(ControllerName)
 	allErrs := field.ErrorList{}
 
 	r.Reconcilers = make([]*ProviderReconciler, len(providerGKVList))
 
 	for i, gvk := range providerGKVList {
-		r.Reconcilers[i] = &ProviderReconciler{
-			GroupVersionKind: gvk,
-			PlatformClient:   mgr.GetClient(),
-			Environment:      environment,
-		}
+		log.Info("Registering deployment controller", "groupVersionKind", gvk.String())
+
+		r.Reconcilers[i] = NewProviderReconciler(gvk, mgr.GetClient(), environment)
 
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(gvk)
@@ -59,9 +64,69 @@ func (r *DeploymentController) SetupWithManager(mgr ctrl.Manager, providerGKVLis
 			Owns(&apps.Deployment{}).
 			Complete(r.Reconcilers[i])
 		if err != nil {
+			log.Error(err, "Failed to register controller", "groupVersionKind", gvk.String())
 			allErrs = append(allErrs, field.InternalError(field.NewPath(gvk.String()), err))
 		}
 	}
 
 	return allErrs.ToAggregate()
+}
+
+func deploymentSpecFromUnstructured(provider *unstructured.Unstructured) (*v1alpha1.DeploymentSpec, error) {
+	deploymentSpec := v1alpha1.DeploymentSpec{}
+	deploymentSpecRaw, found, err := unstructured.NestedFieldNoCopy(provider.Object, "spec")
+	if !found {
+		return nil, fmt.Errorf("provider spec not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider spec: %w", err)
+	}
+
+	specObj, ok := deploymentSpecRaw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("failed to cast provider spec")
+	}
+	if err = runtime.DefaultUnstructuredConverter.FromUnstructured(specObj, &deploymentSpec); err != nil {
+		return nil, fmt.Errorf("failed to convert provider spec: %w", err)
+	}
+	return &deploymentSpec, nil
+}
+
+func deploymentSpecIntoUnstructured(spec *v1alpha1.DeploymentSpec, provider *unstructured.Unstructured) error {
+	specRaw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(spec)
+	if err != nil {
+		return fmt.Errorf("failed to convert provider spec to unstructured: %w", err)
+	}
+
+	if err = unstructured.SetNestedField(provider.Object, specRaw, "spec"); err != nil {
+		return fmt.Errorf("failed to set provider spec: %w", err)
+	}
+	return nil
+}
+
+func deploymentStatusFromUnstructured(provider *unstructured.Unstructured) (*v1alpha1.DeploymentStatus, error) {
+	status := v1alpha1.DeploymentStatus{}
+	statusRaw, found, _ := unstructured.NestedFieldNoCopy(provider.Object, "status")
+	if found {
+		statusObj, ok := statusRaw.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("failed to cast provider status")
+		}
+		if err := runtime.DefaultUnstructuredConverter.FromUnstructured(statusObj, &status); err != nil {
+			return nil, fmt.Errorf("failed to convert provider status from unstructured: %w", err)
+		}
+	}
+	return &status, nil
+}
+
+func deploymentStatusIntoUnstructured(status *v1alpha1.DeploymentStatus, provider *unstructured.Unstructured) error {
+	statusRaw, err := runtime.DefaultUnstructuredConverter.ToUnstructured(status)
+	if err != nil {
+		return fmt.Errorf("failed to convert provider status to unstructured: %w", err)
+	}
+
+	if err = unstructured.SetNestedField(provider.Object, statusRaw, "status"); err != nil {
+		return fmt.Errorf("failed to set provider status: %w", err)
+	}
+	return nil
 }

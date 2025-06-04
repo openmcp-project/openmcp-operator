@@ -22,7 +22,7 @@ type deploymentMutator struct {
 
 var _ resources.Mutator[*appsv1.Deployment] = &deploymentMutator{}
 
-func newDeploymentMutator(values *Values) resources.Mutator[*appsv1.Deployment] {
+func NewDeploymentMutator(values *Values) resources.Mutator[*appsv1.Deployment] {
 	res := &deploymentMutator{
 		values: values,
 		meta:   resources.NewMetadataMutator(),
