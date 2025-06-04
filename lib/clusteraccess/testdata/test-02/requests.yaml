@@ -1,0 +1,41 @@
+apiVersion: openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: mcp-olpw5g5pmvoomq3xiwdeeqizdsx674atl2infa5x4qwz6dqxswqa
+  namespace: ob-test
+spec:
+  requestRef:
+    name: instance
+    namespace: ob-test
+
+  permissions:
+  - rules:
+    - apiGroups: ["*"]
+      resources: ["*"]
+      verbs: ["*"]
+
+---
+apiVersion: openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: wl-olpw5g5pmvoomq3xiwdeeqizdsx674atl2infa5x4qwz6dqxswqa
+  namespace: ob-test
+spec:
+  requestRef:
+    name: wl-olpw5g5pmvoomq3xiwdeeqizdsx674atl2infa5x4qwz6dqxswqa
+    namespace: ob-test
+
+  permissions:
+    - rules:
+        - apiGroups: [ "*" ]
+          resources: [ "*" ]
+          verbs: [ "*" ]
+
+---
+apiVersion: openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: wl-olpw5g5pmvoomq3xiwdeeqizdsx674atl2infa5x4qwz6dqxswqa
+  namespace: ob-test
+spec:
+  purpose: workload
