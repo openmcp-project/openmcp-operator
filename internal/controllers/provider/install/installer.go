@@ -55,6 +55,14 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 		return false, err
 	}
 
+	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitRoleMutator(values)); err != nil {
+		return false, err
+	}
+
+	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitRoleBindingMutator(values)); err != nil {
+		return false, err
+	}
+
 	j := NewJobMutator(values, a.DeploymentSpec, map[string]string{
 		ProviderKindLabel:       a.Provider.GetKind(),
 		ProviderNameLabel:       a.Provider.GetName(),
