@@ -170,8 +170,17 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 		return rr
 	}
 
+	// if no cluster was found, check if there is an existing cluster that qualifies for the request
 	if cDef.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_SHARED {
 		log.Debug("Cluster template allows sharing, checking for fitting clusters", "purpose", purpose, "tenancyCount", cDef.TenancyCount)
+		// remove all clusters with a non-zero deletion timestamp from the list of candidates
+		clusters = filters.FilterSlice(clusters, func(args ...any) bool {
+			c, ok := args[0].(*clustersv1alpha1.Cluster)
+			if !ok {
+				return false
+			}
+			return c.DeletionTimestamp.IsZero()
+		})
 		// unless the cluster template for the requested purpose allows unlimited sharing, filter out all clusters that are already at their tenancy limit
 		if cDef.TenancyCount > 0 {
 			clusters = filters.FilterSlice(clusters, func(args ...any) bool {
