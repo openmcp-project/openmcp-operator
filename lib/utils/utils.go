@@ -12,11 +12,6 @@ const (
 	prefixWorkload   = "wl-"
 )
 
-// StableControllerNamespace returns a stable namespace for controllers that can be used on the platform cluster.
-func StableControllerNamespace(controllerName string) string {
-	return fmt.Sprint(controller.K8sNameHash(controllerName), "-system")
-}
-
 // StableRequestNamespace returns a stable namespace for ClusterRequests and AccessRequests,
 // that can be created/used on the platform cluster.
 // onboardingNamespace is the namespace of the reconciled resource on the onboarding cluster.

@@ -281,30 +281,32 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 var _ = Describe("ClusterAccessManager", func() {
 	It("should create and wait for onboarding cluster access", func() {
+
 		const (
-			clusterName    = "onboarding-cluster"
-			controllerName = "test-controller"
-			timeout        = 1 * time.Second
-			interval       = 20 * time.Millisecond
+			clusterName         = "onboarding-cluster"
+			controllerName      = "test-controller"
+			controllerNamespace = "test-namespace"
+			timeout             = 1 * time.Second
+			interval            = 20 * time.Millisecond
 		)
 
 		clusterRequest := &clustersv1alpha1.ClusterRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterName,
-				Namespace: utils.StableControllerNamespace(controllerName),
+				Namespace: controllerNamespace,
 			},
 		}
 
 		accessRequest := &clustersv1alpha1.AccessRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterName,
-				Namespace: utils.StableControllerNamespace(controllerName),
+				Namespace: controllerNamespace,
 			},
 		}
 
 		env := buildTestEnvironmentNoReconcile("test-03", accessRequest, clusterRequest)
 
-		manager := clusteraccess.NewClusterAccessManager(env.Client(), controllerName)
+		manager := clusteraccess.NewClusterAccessManager(env.Client(), controllerName, controllerNamespace)
 		Expect(manager).ToNot(BeNil(), "should create a ClusterAccessManager")
 
 		manager.WithInterval(interval).WithTimeout(timeout)
