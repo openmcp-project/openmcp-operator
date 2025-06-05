@@ -312,13 +312,14 @@ type Manager interface {
 type managerImpl struct {
 	platformClusterClient client.Client
 	controllerName        string
+	controllerNamespace   string // Namespace where the controller is running, used for stable resource names
 	timeout               time.Duration
 	interval              time.Duration
 	log                   *logging.Logger
 }
 
 // NewClusterAccessManager creates a new Manager with the given parameters.
-func NewClusterAccessManager(platformClusterClient client.Client, controllerName string) Manager {
+func NewClusterAccessManager(platformClusterClient client.Client, controllerName, controllerNamespace string) Manager {
 	return &managerImpl{
 		platformClusterClient: platformClusterClient,
 		controllerName:        controllerName,
@@ -346,17 +347,10 @@ func (m *managerImpl) WithLogger(log *logging.Logger) Manager {
 func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, clusterName, purpose string,
 	scheme *runtime.Scheme, permissions []clustersv1alpha1.PermissionsRequest) (*clusters.Cluster, error) {
 
-	namespace := libutils.StableControllerNamespace(m.controllerName)
-
-	namespaceMutator := resources.NewNamespaceMutator(namespace)
-	if err := resources.CreateOrUpdateResource(ctx, m.platformClusterClient, namespaceMutator); err != nil {
-		return nil, fmt.Errorf("failed to create/update namespace: %w", err)
-	}
-
 	cr := &clustersv1alpha1.ClusterRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      clusterName,
-			Namespace: namespace,
+			Namespace: m.controllerNamespace,
 		},
 	}
 
@@ -388,7 +382,7 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, clusterName, 
 	ar := &clustersv1alpha1.AccessRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name,
-			Namespace: namespace,
+			Namespace: m.controllerNamespace,
 		},
 	}
 
