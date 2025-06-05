@@ -323,6 +323,7 @@ func NewClusterAccessManager(platformClusterClient client.Client, controllerName
 	return &managerImpl{
 		platformClusterClient: platformClusterClient,
 		controllerName:        controllerName,
+		controllerNamespace:   controllerNamespace,
 		timeout:               5 * time.Minute,
 		interval:              10 * time.Second,
 		log:                   nil, // Default to no logging
