@@ -446,4 +446,42 @@ var _ = Describe("Scheduler", func() {
 		Expect(cluster.DeletionTimestamp).To(BeZero(), "Cluster should not be marked for deletion")
 	})
 
+	It("should not consider clusters that are in deletion for scheduling", func() {
+		// verify that the cluster is usually considered for scheduling
+		_, env := defaultTestSetup("testdata", "test-01")
+
+		c := &clustersv1alpha1.Cluster{}
+		c.SetName("shared-1")
+		c.SetNamespace("shared-twice")
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(c), c)).To(Succeed())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName("shared")
+		cr.SetNamespace("foo")
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(cr))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+		Expect(cr.Status.Cluster).ToNot(BeNil())
+		Expect(cr.Status.Cluster.Name).To(Equal(c.Name))
+		Expect(cr.Status.Cluster.Namespace).To(Equal(c.Namespace))
+
+		// repeat, but with the cluster in deletion
+		_, env = defaultTestSetup("testdata", "test-01")
+
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(c), c)).To(Succeed())
+		c.Finalizers = []string{"foo"}
+		Expect(env.Client().Update(env.Ctx, c)).To(Succeed())
+		Expect(env.Client().Delete(env.Ctx, c)).To(Succeed())
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(c), c)).To(Succeed())
+		Expect(c.DeletionTimestamp).ToNot(BeZero(), "Cluster should be marked for deletion")
+
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(cr))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+		Expect(cr.Status.Cluster).ToNot(BeNil())
+		Expect(cr.Status.Cluster.Name).ToNot(Equal(c.Name), "Cluster is in deletion and should not be considered for scheduling")
+		Expect(cr.Status.Cluster.Namespace).To(Equal(c.Namespace))
+
+	})
+
 })
