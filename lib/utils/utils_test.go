@@ -22,14 +22,6 @@ func TestUtils(t *testing.T) {
 }
 
 var _ = Describe("Utils", func() {
-	Context("StableControllerNamespace", func() {
-		It("should return a stable namespace for controllers", func() {
-			expectedNamespace := fmt.Sprint("x33lfeffopjdj5decdwbrcje75inbmpthligzyqlvvooqay7tpoq", "-system")
-
-			Expect(utils.StableControllerNamespace(controllerName)).To(Equal(expectedNamespace))
-		})
-	})
-
 	Context("StableRequestNamespace", func() {
 		It("should return a stable namespace for requests", func() {
 			expectedNamespace := "ob-foo"
