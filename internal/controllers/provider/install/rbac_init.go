@@ -44,12 +44,57 @@ func newInitClusterRoleMutator(values *Values) resources.Mutator[*rbac.ClusterRo
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
+				APIGroups: []string{""},
+				Resources: []string{"configmaps"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
 				APIGroups: []string{"clusters.openmcp.cloud"},
 				Resources: []string{"accessrequests", "clusterrequests"},
 				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
 			},
 		},
 	)
+	res.MetadataMutator().WithLabels(values.LabelsInitJob())
+	return res
+}
+
+func newInitRoleBindingMutator(values *Values) resources.Mutator[*rbac.RoleBinding] {
+	roleName := values.NamespacedResourceName(initPrefix)
+	res := resources.NewRoleBindingMutator(
+		roleName,
+		values.Namespace(),
+		[]rbac.Subject{
+			{
+				Kind:      rbac.ServiceAccountKind,
+				Name:      values.NamespacedResourceName(initPrefix),
+				Namespace: values.Namespace(),
+			},
+		},
+		resources.NewRoleRef(roleName),
+	)
+	res.MetadataMutator().WithLabels(values.LabelsInitJob())
+	return res
+}
+
+func newInitRoleMutator(values *Values) resources.Mutator[*rbac.Role] {
+	roleName := values.NamespacedResourceName(initPrefix)
+	res := resources.NewRoleMutator(
+		roleName,
+		values.Namespace(),
+		[]rbac.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"secrets"},
+				Verbs:     []string{"create", "update", "patch", "delete"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"configmaps"},
+				Verbs:     []string{"create", "update", "patch", "delete"},
+			},
+		})
+
 	res.MetadataMutator().WithLabels(values.LabelsInitJob())
 	return res
 }
