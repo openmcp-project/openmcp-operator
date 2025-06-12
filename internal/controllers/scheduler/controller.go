@@ -179,7 +179,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 
 	// if no cluster was found, check if there is an existing cluster that qualifies for the request
 	// skip this check for preemptive requests with purposes with exclusive tenancy, as they will always result in a new cluster
-	if !(cDef.IsExclusive() && cr.Spec.Preemptive) {
+	if !(cDef.IsExclusive() && cr.Spec.Preemptive) { //nolint:staticcheck // QF1001
 		cluster, rerr = r.pickFittingCluster(ctx, cr, clusters, cDef)
 		if rerr != nil {
 			rr.ReconcileError = rerr
@@ -363,7 +363,7 @@ func (r *ClusterScheduler) fetchRelevantClusters(ctx context.Context, cr *cluste
 		if a == nil || b == nil {
 			return 0 // cannot compare nil clusters, should not happen
 		}
-		return a.CreationTimestamp.Time.Compare(b.CreationTimestamp.Time)
+		return a.CreationTimestamp.Compare(b.CreationTimestamp.Time)
 	})
 
 	return clusters, nil

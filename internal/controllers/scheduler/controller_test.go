@@ -29,6 +29,12 @@ import (
 
 var scheme = install.InstallOperatorAPIs(runtime.NewScheme())
 
+const (
+	exclusiveString       = "exclusive"
+	sharedTwiceString     = "shared-twice"
+	sharedUnlimitedString = "shared-unlimited"
+)
+
 // defaultTestSetup initializes a new environment for testing the scheduler controller.
 // Expected folder structure is a 'config.yaml' file next to a folder named 'cluster' containing the manifests.
 func defaultTestSetup(testDirPathSegments ...string) (*scheduler.ClusterScheduler, *testutils.Environment) {
@@ -50,7 +56,7 @@ func defaultTestSetup(testDirPathSegments ...string) (*scheduler.ClusterSchedule
 			if !ok {
 				panic(fmt.Errorf("indexer function for type %T's spec.preemptive field received object of type %T, this should never happen", clustersv1alpha1.ClusterRequest{}, obj))
 			}
-			return []string{string(strconv.FormatBool(c.Spec.Preemptive))}
+			return []string{strconv.FormatBool(c.Spec.Preemptive)}
 		}).
 		Build()
 	sc, ok := env.Reconciler().(*scheduler.ClusterScheduler)
@@ -63,7 +69,7 @@ var _ = Describe("Scheduler", func() {
 	Context("Scope: Namespaced", func() {
 
 		It("should create a new exclusive cluster if no cluster exists", func() {
-			clusterNamespace := "exclusive"
+			clusterNamespace := exclusiveString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 			existingClusters := &clustersv1alpha1.ClusterList{}
@@ -71,7 +77,7 @@ var _ = Describe("Scheduler", func() {
 			Expect(existingClusters.Items).To(BeEmpty())
 
 			req := &clustersv1alpha1.ClusterRequest{}
-			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
+			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(exclusiveString, "foo"), req)).To(Succeed())
 			Expect(req.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req))
@@ -90,14 +96,14 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should create a new exclusive cluster if a cluster exists", func() {
-			clusterNamespace := "exclusive"
+			clusterNamespace := exclusiveString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			oldCount := len(existingClusters.Items)
 
 			req := &clustersv1alpha1.ClusterRequest{}
-			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
+			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(exclusiveString, "foo"), req)).To(Succeed())
 			Expect(req.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req))
@@ -119,7 +125,7 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should create a new shared cluster if no cluster exists", func() {
-			clusterNamespace := "shared-twice"
+			clusterNamespace := sharedTwiceString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 			existingClusters := &clustersv1alpha1.ClusterList{}
@@ -146,7 +152,7 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should share a shared cluster if it still has capacity and create a new one otherwise", func() {
-			clusterNamespace := "shared-twice"
+			clusterNamespace := sharedTwiceString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -226,7 +232,7 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should only create a new cluster if none exists for unlimitedly shared clusters", func() {
-			clusterNamespace := "shared-unlimited"
+			clusterNamespace := sharedUnlimitedString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			reqCount := 20
 			requests := make([]*clustersv1alpha1.ClusterRequest, reqCount)
@@ -235,7 +241,7 @@ var _ = Describe("Scheduler", func() {
 				requests[i].SetName(fmt.Sprintf("req-%d", i))
 				requests[i].SetNamespace("foo")
 				requests[i].SetUID(uuid.NewUUID())
-				requests[i].Spec.Purpose = "shared-unlimited"
+				requests[i].Spec.Purpose = sharedUnlimitedString
 				Expect(env.Client().Create(env.Ctx, requests[i])).To(Succeed())
 				env.ShouldReconcile(testutils.RequestFromObject(requests[i]))
 			}
@@ -261,7 +267,7 @@ var _ = Describe("Scheduler", func() {
 			_, env := defaultTestSetup("testdata", "test-02")
 
 			req := &clustersv1alpha1.ClusterRequest{}
-			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
+			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(exclusiveString, "foo"), req)).To(Succeed())
 			Expect(req.Status.Cluster).To(BeNil())
 
 			env.ShouldReconcile(testutils.RequestFromObject(req))
@@ -466,7 +472,7 @@ var _ = Describe("Scheduler", func() {
 
 		c := &clustersv1alpha1.Cluster{}
 		c.SetName("shared-1")
-		c.SetNamespace("shared-twice")
+		c.SetNamespace(sharedTwiceString)
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(c), c)).To(Succeed())
 
 		cr := &clustersv1alpha1.ClusterRequest{}
@@ -500,7 +506,7 @@ var _ = Describe("Scheduler", func() {
 	Context("Preemptive ClusterRequests", func() {
 
 		It("should create a new exclusive cluster if no cluster exists", func() {
-			clusterNamespace := "exclusive"
+			clusterNamespace := exclusiveString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 			existingClusters := &clustersv1alpha1.ClusterList{}
@@ -526,7 +532,7 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should create a new exclusive cluster if a cluster exists", func() {
-			clusterNamespace := "exclusive"
+			clusterNamespace := exclusiveString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -553,7 +559,7 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should create a new shared cluster if no cluster exists", func() {
-			clusterNamespace := "shared-twice"
+			clusterNamespace := sharedTwiceString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 			existingClusters := &clustersv1alpha1.ClusterList{}
@@ -579,7 +585,7 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should share a shared cluster if it still has capacity and create a new one otherwise", func() {
-			clusterNamespace := "shared-twice"
+			clusterNamespace := sharedTwiceString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -650,7 +656,7 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should evict preemptive requests to make space for regular ones", func() {
-			clusterNamespace := "shared-twice"
+			clusterNamespace := sharedTwiceString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -757,7 +763,7 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should only create a single unlimitedly shared cluster and not remove its preemptive request finalizers", func() {
-			clusterNamespace := "shared-unlimited"
+			clusterNamespace := sharedUnlimitedString
 			sc, env := defaultTestSetup("testdata", "test-01")
 			reqCount := 20
 			prequests := make([]*clustersv1alpha1.ClusterRequest, reqCount)
@@ -766,7 +772,7 @@ var _ = Describe("Scheduler", func() {
 				prequests[i].SetName(fmt.Sprintf("reqp-%d", i))
 				prequests[i].SetNamespace("foo")
 				prequests[i].SetUID(uuid.NewUUID())
-				prequests[i].Spec.Purpose = "shared-unlimited"
+				prequests[i].Spec.Purpose = sharedUnlimitedString
 				prequests[i].Spec.Preemptive = true
 				Expect(env.Client().Create(env.Ctx, prequests[i])).To(Succeed())
 				env.ShouldReconcile(testutils.RequestFromObject(prequests[i]))
@@ -787,7 +793,7 @@ var _ = Describe("Scheduler", func() {
 				requests[i].SetName(fmt.Sprintf("req-%d", i))
 				requests[i].SetNamespace("foo")
 				requests[i].SetUID(uuid.NewUUID())
-				requests[i].Spec.Purpose = "shared-unlimited"
+				requests[i].Spec.Purpose = sharedUnlimitedString
 				Expect(env.Client().Create(env.Ctx, requests[i])).To(Succeed())
 				env.ShouldReconcile(testutils.RequestFromObject(requests[i]))
 			}
