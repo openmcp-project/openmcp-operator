@@ -11,4 +11,6 @@ const (
 	ReasonConfigurationProblem = "ConfigurationProblem"
 	// ReasonInternalError indicates that something went wrong internally.
 	ReasonInternalError = "InternalError"
+	// ReasonPreemptiveRequest indicates that the ClusterRequest is preemptive and AccessRequests referencing it are denied.
+	ReasonPreemptiveRequest = "PreemptiveRequest"
 )

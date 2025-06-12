@@ -1,0 +1,10 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: my-cluster-p
+  namespace: foo
+spec:
+  purpose: test
+  preemptive: true
+status:
+  phase: Granted
