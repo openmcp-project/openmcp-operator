@@ -82,4 +82,6 @@ const (
 	ClusterRequestFinalizer = GroupName + "/request"
 	// RequestFinalizerOnClusterPrefix is the prefix for the finalizers that mark a Cluster as being referenced by a ClusterRequest.
 	RequestFinalizerOnClusterPrefix = "request." + GroupName + "/"
+	// PreemptiveRequestFinalizerOnClusterPrefix is the prefix for the finalizers that mark a Cluster as being referenced by a preemptive ClusterRequest.
+	PreemptiveRequestFinalizerOnClusterPrefix = "preemptive." + GroupName + "/"
 )

@@ -26,6 +26,9 @@ spec:
     - jsonPath: .status.phase
       name: Phase
       type: string
+    - jsonPath: .spec.preemptive
+      name: Preemptive
+      type: string
     - jsonPath: .status.cluster.name
       name: Cluster
       type: string
@@ -56,6 +59,13 @@ spec:
             type: object
           spec:
             properties:
+              preemptive:
+                default: false
+                description: |-
+                  Preemptive determines whether the request is preemptive.
+                  Preemptive requests are used to create clusters in advance, so that they are ready when needed.
+                  AccessRequests for preemptive clusters are not allowed.
+                type: boolean
               purpose:
                 description: Purpose is the purpose of the requested cluster.
                 minLength: 1
@@ -158,6 +168,7 @@ spec:
         type: object
     selectableFields:
     - jsonPath: .spec.purpose
+    - jsonPath: .spec.preemptive
     - jsonPath: .status.phase
     served: true
     storage: true
