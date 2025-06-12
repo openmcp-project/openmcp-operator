@@ -444,11 +444,13 @@ func RemoveFinalizerWithPrefix(obj client.Object, prefix string) (string, bool) 
 	fins := obj.GetFinalizers()
 	length := len(fins)
 	suffix := ""
+	found := false
 
 	index := 0
-	for i := 0; i < length; i++ {
-		if strings.HasPrefix(fins[i], prefix) {
+	for i := range length {
+		if !found && strings.HasPrefix(fins[i], prefix) {
 			suffix = strings.TrimPrefix(fins[i], prefix)
+			found = true
 			continue
 		}
 		fins[index] = fins[i]

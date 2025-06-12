@@ -1,0 +1,9 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: exclusive-p
+  namespace: foo
+  uid: e69e7465-2d8a-4842-84ed-b94e29e27d46
+spec:
+  purpose: exclusive
+  preemptive: true
