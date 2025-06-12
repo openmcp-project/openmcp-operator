@@ -145,4 +145,21 @@ var _ = Describe("AccessRequest Controller", func() {
 		Expect(ar.Spec.ClusterRef).To(BeNil())
 	})
 
+	It("should deny the AccessRequest, if it references a preemptive ClusterRequest", func() {
+		env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-01").WithReconcilerConstructor(arReconciler).Build()
+		ar := &clustersv1alpha1.AccessRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mcr-access-p", "bar"), ar)).To(Succeed())
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
+		env.ShouldReconcile(testutils.RequestFromObject(ar))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+		Expect(ar.Status.Phase).To(Equal(clustersv1alpha1.REQUEST_DENIED))
+		Expect(ar.Status.Reason).To(Equal(cconst.ReasonPreemptiveRequest))
+		Expect(ar.Status.Message).To(ContainSubstring("preemptive"))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
+		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProfileLabel))
+		Expect(ar.Spec.ClusterRef).To(BeNil())
+	})
+
 })
