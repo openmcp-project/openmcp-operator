@@ -9,6 +9,13 @@ type ClusterRequestSpec struct {
 	// Purpose is the purpose of the requested cluster.
 	// +kubebuilder:validation:MinLength=1
 	Purpose string `json:"purpose"`
+
+	// Preemptive determines whether the request is preemptive.
+	// Preemptive requests are used to create clusters in advance, so that they are ready when needed.
+	// AccessRequests for preemptive clusters are not allowed.
+	// +optional
+	// +kubebuilder:default=false
+	Preemptive bool `json:"preemptive,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.cluster) || has(self.cluster)", message="cluster may not be removed once set"
@@ -46,9 +53,11 @@ func (p RequestPhase) IsPending() bool {
 // +kubebuilder:resource:shortName=cr;creq
 // +kubebuilder:metadata:labels="openmcp.cloud/cluster=platform"
 // +kubebuilder:selectablefield:JSONPath=".spec.purpose"
+// +kubebuilder:selectablefield:JSONPath=".spec.preemptive"
 // +kubebuilder:selectablefield:JSONPath=".status.phase"
 // +kubebuilder:printcolumn:JSONPath=".spec.purpose",name="Purpose",type=string
 // +kubebuilder:printcolumn:JSONPath=".status.phase",name="Phase",type=string
+// +kubebuilder:printcolumn:JSONPath=".spec.preemptive",name="Preemptive",type=string
 // +kubebuilder:printcolumn:JSONPath=".status.cluster.name",name="Cluster",type=string
 // +kubebuilder:printcolumn:JSONPath=".status.cluster.namespace",name="Cluster-NS",type=string
 
@@ -67,7 +76,7 @@ type ClusterRequest struct {
 type ClusterRequestList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Cluster `json:"items"`
+	Items           []ClusterRequest `json:"items"`
 }
 
 func init() {
@@ -77,5 +86,9 @@ func init() {
 // FinalizerForCluster returns the finalizer that is used to mark that a specific request has pointed to a specific cluster.
 // Apart from preventing the Cluster's deletion, this information is used to recover the Cluster if the status of the ClusterRequest ever gets lost.
 func (cr *ClusterRequest) FinalizerForCluster() string {
-	return RequestFinalizerOnClusterPrefix + string(cr.UID)
+	prefix := RequestFinalizerOnClusterPrefix
+	if cr.Spec.Preemptive {
+		prefix = PreemptiveRequestFinalizerOnClusterPrefix
+	}
+	return prefix + string(cr.UID)
 }
