@@ -120,3 +120,11 @@ For clusters with unlimited tenancy count, `metadata.generateName` takes precede
 By default, the scheduler marks every `Cluster` that it has created itself with a `clusters.openmcp.cloud/delete-without-requests: "true"` label. When a `ClusterRequest` is deleted, the scheduler removes the request's finalizers from all clusters and if it was the last request finalizer on that cluster and the cluster has the aforementioned label, the scheduler will delete the cluster.
 
 To prevent the scheduler from deleting a cluster that was created by it after the last request finalizer has been removed from the `Cluster` resource, add the label with any value except `"true"` to the cluster's template in the scheduler configuration.
+
+Note that the `ClusterRequest` resource is removed immediately and does not wait for potential deletion of the corresponding cluster.
+
+## Preemptive Scheduling
+
+To avoid long waiting times for `ClusterRequest`s, it is possible to request clusters preemptively. A `ClusterRequest` with `spec.preemptive` set to `true` is referred to as a 'preemptive request'. These requests behave like regular requests, with one important difference: a regular request prefers taking over an existing `Cluster` belonging to a preemptive request over creating a new `Cluster`. If that happens, the replaced preemptive request will be rescheduled, potentially resulting in a new `Cluster`.
+
+Think of preemptive requests as reservations for clusters (or workload capacity on shared clusters) which are used by regular requests.

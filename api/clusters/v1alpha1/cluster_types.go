@@ -138,3 +138,19 @@ func (c *Cluster) GetRequestUIDs() sets.Set[string] {
 	}
 	return res
 }
+
+// GetPreemptiveTenancyCount works like GetTenancyCount, but for preemptive ClusterRequests.
+func (c *Cluster) GetPreemptiveTenancyCount() int {
+	return c.GetPreemptiveRequestUIDs().Len()
+}
+
+// GetPreemptiveRequestUIDs returns the UIDs of all preemptive ClusterRequests that have marked this cluster with a corresponding finalizer.
+func (c *Cluster) GetPreemptiveRequestUIDs() sets.Set[string] {
+	res := sets.New[string]()
+	for _, fin := range c.Finalizers {
+		if strings.HasPrefix(fin, PreemptiveRequestFinalizerOnClusterPrefix) {
+			res.Insert(strings.TrimPrefix(fin, PreemptiveRequestFinalizerOnClusterPrefix))
+		}
+	}
+	return res
+}
