@@ -172,3 +172,13 @@ func (c *SchedulerConfig) Complete(fldPath *field.Path) error {
 
 	return nil
 }
+
+func (cd *ClusterDefinition) IsExclusive() bool {
+	return cd.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_EXCLUSIVE
+}
+func (cd *ClusterDefinition) IsShared() bool {
+	return cd.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_SHARED
+}
+func (cd *ClusterDefinition) IsSharedUnlimitedly() bool {
+	return cd.IsShared() && cd.TenancyCount == 0
+}
