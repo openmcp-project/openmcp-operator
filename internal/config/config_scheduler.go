@@ -42,9 +42,10 @@ const (
 type Strategy string
 
 const (
-	STRATEGY_BALANCED Strategy = "Balanced"
-	STRATEGY_RANDOM   Strategy = "Random"
-	STRATEGY_SIMPLE   Strategy = "Simple"
+	STRATEGY_BALANCED_IGNORE_EMPTY Strategy = "BalancedIgnoreEmpty"
+	STRATEGY_BALANCED              Strategy = "Balanced"
+	STRATEGY_RANDOM                Strategy = "Random"
+	STRATEGY_SIMPLE                Strategy = "Simple"
 )
 
 type ClusterDefinition struct {
