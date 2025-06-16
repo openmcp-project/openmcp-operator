@@ -13,4 +13,6 @@ const (
 	ReasonInternalError = "InternalError"
 	// ReasonPreemptiveRequest indicates that the ClusterRequest is preemptive and AccessRequests referencing it are denied.
 	ReasonPreemptiveRequest = "PreemptiveRequest"
+	// ReasonSchedulingFailed indicates that there was a problem with scheduling a request.
+	ReasonSchedulingFailed = "SchedulingFailed"
 )
