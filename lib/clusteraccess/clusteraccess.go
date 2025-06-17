@@ -240,7 +240,7 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				Name: requestNameWorkload,
 			},
 			Namespace: requestNamespace,
-		}, nil, r.mcpPermissions, metadata)
+		}, nil, r.workloadPermissions, metadata)
 
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to create or update Workload AccessRequest: %w", err)
