@@ -53,9 +53,6 @@ func (r *AccessRequestReconciler) Reconcile(ctx context.Context, req reconcile.R
 		WithFieldOverride(ctrlutils.STATUS_FIELD_PHASE, "Phase").
 		WithoutFields(ctrlutils.STATUS_FIELD_CONDITIONS).
 		WithPhaseUpdateFunc(func(obj *clustersv1alpha1.AccessRequest, rr ReconcileResult) (clustersv1alpha1.RequestPhase, error) {
-			if rr.Reason == cconst.ReasonPreemptiveRequest {
-				return clustersv1alpha1.REQUEST_DENIED, nil
-			}
 			return clustersv1alpha1.REQUEST_PENDING, nil
 		}).
 		Build().
@@ -113,11 +110,6 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 				return rr
 			}
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to get ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-			return rr
-		}
-		if cr.Spec.Preemptive {
-			rr.Reason = cconst.ReasonPreemptiveRequest
-			rr.Message = "The referenced ClusterRequest is preemptive and access cannot be granted."
 			return rr
 		}
 		if cr.Status.Phase != clustersv1alpha1.REQUEST_GRANTED {

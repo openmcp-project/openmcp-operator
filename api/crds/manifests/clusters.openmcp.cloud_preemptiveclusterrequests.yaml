@@ -3,39 +3,35 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.18.0
+    controller-gen.kubebuilder.io/version: v0.17.3
   labels:
     openmcp.cloud/cluster: platform
-  name: clusterrequests.clusters.openmcp.cloud
+  name: preemptiveclusterrequests.clusters.openmcp.cloud
 spec:
   group: clusters.openmcp.cloud
   names:
-    kind: ClusterRequest
-    listKind: ClusterRequestList
-    plural: clusterrequests
+    kind: PreemptiveClusterRequest
+    listKind: PreemptiveClusterRequestList
+    plural: preemptiveclusterrequests
     shortNames:
-    - cr
-    - creq
-    singular: clusterrequest
+    - pcr
+    - pcreq
+    singular: preemptiveclusterrequest
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .spec.purpose
       name: Purpose
       type: string
+    - jsonPath: .spec.workloadCount
+      name: Workload
+      type: string
     - jsonPath: .status.phase
       name: Phase
-      type: string
-    - jsonPath: .status.cluster.name
-      name: Cluster
-      type: string
-    - jsonPath: .status.cluster.namespace
-      name: Cluster-NS
       type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ClusterRequest is the Schema for the clusters API
         properties:
           apiVersion:
             description: |-
@@ -60,33 +56,21 @@ spec:
                 description: Purpose is the purpose of the requested cluster.
                 minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: purpose is immutable
+                  rule: self == oldSelf
+              workloadCount:
+                description: |-
+                  WorkloadCount specifies for how many workloads this preemptive cluster request should account.
+                  Must be greater than 0.
+                minimum: 1
+                type: integer
             required:
             - purpose
+            - workloadCount
             type: object
-            x-kubernetes-validations:
-            - message: spec is immutable
-              rule: self == oldSelf
           status:
             properties:
-              cluster:
-                description: |-
-                  Cluster is the reference to the Cluster that was returned as a result of a granted request.
-                  Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
-                properties:
-                  name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
-                    type: string
-                  namespace:
-                    description: Namespace is the namespace of the referenced resource.
-                    type: string
-                required:
-                - name
-                - namespace
-                type: object
-                x-kubernetes-validations:
-                - message: cluster is immutable
-                  rule: self == oldSelf
               conditions:
                 description: Conditions contains the conditions.
                 items:
