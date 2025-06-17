@@ -8,10 +8,8 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -20,13 +18,11 @@ import (
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
-	"github.com/openmcp-project/controller-utils/pkg/pairs"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler/strategy"
 )
 
 const ControllerName = "Scheduler"
@@ -42,12 +38,17 @@ func NewClusterScheduler(setupLog *logging.Logger, platformCluster *clusters.Clu
 		setupLog.WithName(ControllerName).Info("Initializing cluster scheduler", "scope", string(config.Scope), "strategy", string(config.Strategy), "knownPurposes", strings.Join(sets.List(sets.KeySet(config.PurposeMappings)), ","))
 	}
 	return &ClusterScheduler{
+		Preemptive: PreemptiveScheduler{
+			PlatformCluster: platformCluster,
+			Config:          config,
+		},
 		PlatformCluster: platformCluster,
 		Config:          config,
 	}, nil
 }
 
 type ClusterScheduler struct {
+	Preemptive      PreemptiveScheduler
 	PlatformCluster *clusters.Cluster
 	Config          *config.SchedulerConfig
 }
@@ -71,13 +72,6 @@ func (r *ClusterScheduler) Reconcile(ctx context.Context, req reconcile.Request)
 				return clustersv1alpha1.REQUEST_PENDING, nil
 			}
 			return clustersv1alpha1.REQUEST_GRANTED, nil
-		}).
-		WithCustomUpdateFunc(func(obj *clustersv1alpha1.ClusterRequest, rr ctrlutils.ReconcileResult[*clustersv1alpha1.ClusterRequest, clustersv1alpha1.ConditionStatus]) error {
-			// make sure to never write a cluster reference into the status for preemptive requests
-			if rr.Object != nil && rr.Object.Spec.Preemptive {
-				rr.Object.Status.Cluster = nil
-			}
-			return nil
 		}).
 		Build().
 		UpdateStatus(ctx, r.PlatformCluster.Client(), rr)
@@ -133,7 +127,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 	log.Info("Creating/updating resource")
 
 	// ensure finalizer
-	if controllerutil.AddFinalizer(cr, clustersv1alpha1.ClusterRequestFinalizer) {
+	if AddFinalizer(cr, clustersv1alpha1.ClusterRequestFinalizer, false) {
 		log.Info("Adding finalizer")
 		if err := r.PlatformCluster.Client().Patch(ctx, cr, client.MergeFrom(rr.OldObject)); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching finalizer on resource '%s': %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
@@ -156,30 +150,30 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 		return rr
 	}
 
-	clusters, rerr := r.fetchRelevantClusters(ctx, cr, cDef)
+	clusters, rerr := fetchRelevantClusters(ctx, r.PlatformCluster.Client(), r.Config.Scope, cDef, cr.Spec.Purpose, cr.Namespace)
 	if rerr != nil {
 		rr.ReconcileError = rerr
 		return rr
 	}
 
-	// check if status was lost, but there exists a cluster that was already assigned to this request
-	reqFin := cr.FinalizerForCluster()
+	// // check if status was lost, but there exists a cluster that was already assigned to this request
+	// reqFin := cr.FinalizerForCluster()
 	var cluster *clustersv1alpha1.Cluster
-	for _, c := range clusters {
-		if slices.Contains(c.Finalizers, reqFin) {
-			cluster = c
-			break
-		}
-	}
-	if cluster != nil {
-		log.Info("Recovered cluster from referencing finalizer", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
-		rr.Object.Status.Cluster = &clustersv1alpha1.NamespacedObjectReference{}
-		rr.Object.Status.Cluster.Name = cluster.Name
-		rr.Object.Status.Cluster.Namespace = cluster.Namespace
-		return rr
-	}
+	// for _, c := range clusters {
+	// 	if slices.Contains(c.Finalizers, reqFin) {
+	// 		cluster = c
+	// 		break
+	// 	}
+	// }
+	// if cluster != nil {
+	// 	log.Info("Recovered cluster from referencing finalizer", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
+	// 	rr.Object.Status.Cluster = &clustersv1alpha1.NamespacedObjectReference{}
+	// 	rr.Object.Status.Cluster.Name = cluster.Name
+	// 	rr.Object.Status.Cluster.Namespace = cluster.Namespace
+	// 	return rr
+	// }
 
-	sr, err := Schedule(ctx, clusters, cDef, strategy.FromConfig(r.Config.Strategy), NewSchedulingRequest(string(cr.UID), cr.Spec.Preemptive, false, cr.Namespace, cr.Spec.Purpose))
+	sr, err := Schedule(ctx, clusters, cDef, r.Config.Strategy, NewSchedulingRequest(string(cr.UID), 0, false, cr.Namespace, cr.Spec.Purpose))
 	if err != nil {
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error scheduling request '%s': %w", req.String(), err), cconst.ReasonSchedulingFailed)
 		return rr
@@ -195,7 +189,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 	for _, c := range updated {
 		if slices.Contains(c.Finalizers, cr.FinalizerForCluster()) {
 			cluster = c
-			log.Debug("Request has been scheduled", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace, "preemptive", cr.Spec.Preemptive)
+			log.Debug("Request has been scheduled", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
 			break
 		}
 	}
@@ -245,7 +239,7 @@ func (r *ClusterScheduler) handleDelete(ctx context.Context, req reconcile.Reque
 	for _, c := range clusters {
 		log.Debug("Removing finalizer from cluster", "clusterName", c.Name, "clusterNamespace", c.Namespace, "finalizer", fin)
 		oldCluster := c.DeepCopy()
-		if controllerutil.RemoveFinalizer(c, fin) {
+		if RemoveFinalizer(c, fin, true) {
 			if err := r.PlatformCluster.Client().Patch(ctx, c, client.MergeFrom(oldCluster)); err != nil {
 				errs.Append(errutils.WithReason(fmt.Errorf("error patching finalizer '%s' on cluster '%s/%s': %w", fin, c.Namespace, c.Name, err), cconst.ReasonPlatformClusterInteractionProblem))
 			}
@@ -267,7 +261,7 @@ func (r *ClusterScheduler) handleDelete(ctx context.Context, req reconcile.Reque
 	}
 
 	// remove finalizer
-	if controllerutil.RemoveFinalizer(cr, clustersv1alpha1.ClusterRequestFinalizer) {
+	if RemoveFinalizer(cr, clustersv1alpha1.ClusterRequestFinalizer, true) {
 		log.Info("Removing finalizer")
 		if err := r.PlatformCluster.Client().Patch(ctx, cr, client.MergeFrom(rr.OldObject)); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error removing finalizer from resource '%s': %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
@@ -281,7 +275,7 @@ func (r *ClusterScheduler) handleDelete(ctx context.Context, req reconcile.Reque
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	err := ctrl.NewControllerManagedBy(mgr).
 		// watch ClusterRequest resources
 		For(&clustersv1alpha1.ClusterRequest{}).
 		WithEventFilter(predicate.And(
@@ -295,16 +289,23 @@ func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.Not(ctrlutils.HasAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore)),
 		)).
 		Complete(r)
+	if err != nil {
+		return fmt.Errorf("error setting up scheduler: %w", err)
+	}
+	err = r.Preemptive.SetupWithManager(mgr)
+	if err != nil {
+		return fmt.Errorf("error setting up preemptive scheduler: %w", err)
+	}
+	return nil
 }
 
 // fetchRelevantClusters fetches all Cluster resources that could qualify for the given ClusterRequest.
 // These are all clusters in the expected namespace (for namespaced mode) that match the definition's label selector and have the requested purpose.
 // They are sorted by age, with the oldest cluster first. This reduces the chance of picking a cluster that is not ready yet because it was just created.
-func (r *ClusterScheduler) fetchRelevantClusters(ctx context.Context, cr *clustersv1alpha1.ClusterRequest, cDef *config.ClusterDefinition) ([]*clustersv1alpha1.Cluster, errutils.ReasonableError) {
+func fetchRelevantClusters(ctx context.Context, platformClient client.Client, scope config.SchedulerScope, cDef *config.ClusterDefinition, purpose, requestNamespace string) ([]*clustersv1alpha1.Cluster, errutils.ReasonableError) {
 	// fetch clusters
-	purpose := cr.Spec.Purpose
-	namespace := cr.Namespace
-	if r.Config.Scope == config.SCOPE_CLUSTER {
+	namespace := requestNamespace
+	if scope == config.SCOPE_CLUSTER {
 		// in cluster scope, search all namespaces
 		namespace = ""
 	} else if cDef.Template.Namespace != "" {
@@ -312,7 +313,7 @@ func (r *ClusterScheduler) fetchRelevantClusters(ctx context.Context, cr *cluste
 		namespace = cDef.Template.Namespace
 	}
 	clusterList := &clustersv1alpha1.ClusterList{}
-	if err := r.PlatformCluster.Client().List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: cDef.Selector.Completed()}); err != nil {
+	if err := platformClient.List(ctx, clusterList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: cDef.Selector.Completed()}); err != nil {
 		return nil, errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
 	}
 	clusters := make([]*clustersv1alpha1.Cluster, len(clusterList.Items))
@@ -337,73 +338,4 @@ func (r *ClusterScheduler) fetchRelevantClusters(ctx context.Context, cr *cluste
 	})
 
 	return clusters, nil
-}
-
-// TODO: move to controller-utils
-// RemoveFinalizerWithPrefix removes the first finalizer with the given prefix from the object.
-// The bool return value indicates whether a finalizer was removed.
-// If it is true, the string return value holds the suffix of the removed finalizer.
-// The logic is based on the controller-runtime's RemoveFinalizer function.
-func RemoveFinalizerWithPrefix(obj client.Object, prefix string) (string, bool) {
-	fins := obj.GetFinalizers()
-	length := len(fins)
-	suffix := ""
-	found := false
-
-	index := 0
-	for i := range length {
-		if !found && strings.HasPrefix(fins[i], prefix) {
-			suffix = strings.TrimPrefix(fins[i], prefix)
-			found = true
-			continue
-		}
-		fins[index] = fins[i]
-		index++
-	}
-	obj.SetFinalizers(fins[:index])
-	return suffix, length != index
-}
-
-// TODO: move to controller-utils
-// GetAny returns an arbitrary key-value pair from the map as a pointer to a pairs.Pair.
-// If the map is empty, it returns nil.
-func GetAny[K comparable, V any](m map[K]V) *pairs.Pair[K, V] {
-	for k, v := range m {
-		return ptr.To(pairs.New(k, v))
-	}
-	return nil
-}
-
-// TODO: move to controller-utils
-// MapValues returns a slice of all values in the map.
-// The order is unspecified.
-// The values are not deep-copied, so changes to the values could affect the original map.
-func MapValues[K comparable, V any](m map[K]V) []V {
-	values := make([]V, 0, len(m))
-	for _, v := range m {
-		values = append(values, v)
-	}
-	return values
-}
-
-// ReschedulePreemptiveRequest fetches the ClusterRequest with the corresponding UID from the cluster and adds a reconcile annotation to it.
-func ReschedulePreemptiveRequest(ctx context.Context, platformClient client.Client, uid string) errutils.ReasonableError {
-	crl := &clustersv1alpha1.ClusterRequestList{}
-	if err := platformClient.List(ctx, crl, client.MatchingFields{"spec.preemptive": "true"}); err != nil {
-		return errutils.WithReason(fmt.Errorf("error listing ClusterRequests: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
-	}
-	var cr *clustersv1alpha1.ClusterRequest
-	for _, elem := range crl.Items {
-		if string(elem.UID) == uid {
-			cr = &elem
-			break
-		}
-	}
-	if cr == nil {
-		return errutils.WithReason(fmt.Errorf("unable to find preemptive ClusterRequest with UID '%s'", uid), cconst.ReasonInternalError)
-	}
-	if err := ctrlutils.EnsureAnnotation(ctx, platformClient, cr, apiconst.OperationAnnotation, apiconst.OperationAnnotationValueReconcile, true); err != nil {
-		return errutils.WithReason(fmt.Errorf("error adding reconcile annotation to preemptive ClusterRequest '%s': %w", cr.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-	}
-	return nil
 }

@@ -3,6 +3,5 @@ kind: ClusterRequest
 metadata:
   name: shared3
   namespace: foo
-  uid: 7642e165-196c-478f-a225-765bd97a29d8
 spec:
   purpose: shared-twice
