@@ -8,124 +8,153 @@ import (
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 )
 
+const MaxInt = int(^uint(0) >> 1)
+
 // Strategy defines how a cluster for scheduling is chosen if there are multiple fitting clusters.
-type Strategy interface {
+type Strategy[T any] interface {
 	// Name returns the strategy's name. For logging and debugging purposes only.
 	Name() string
-	// Choose selects a cluster from the provided list based on the strategy's logic.
-	// It is assumed that all clusters in the list are fitting for the given ClusterDefinition and have enough capacity to host the request.
-	// Might return nil if it cannot choose a cluster (e.g., if the list is empty).
-	Choose(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (*clustersv1alpha1.Cluster, error)
+	// Choose selects a cluster from the provided clusterData slice based on the strategy's logic.
+	// The getCluster function must be able to extract the cluster from any element of clusterData.
+	// Returns the zero value for T if the strategy cannot choose a cluster (e.g., if clusterData is empty).
+	Choose(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error)
 }
 
-type strategyImpl struct {
+type strategyImpl[T any] struct {
 	name   string
-	choose func(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (*clustersv1alpha1.Cluster, error)
+	choose func(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error)
 }
 
-func (s *strategyImpl) Name() string {
+func (s *strategyImpl[T]) Name() string {
 	return s.name
 }
 
-func (s *strategyImpl) Choose(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (*clustersv1alpha1.Cluster, error) {
-	return s.choose(ctx, clusters, cDef, preemptive)
+func (s *strategyImpl[T]) Choose(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error) {
+	return s.choose(ctx, clusterData, getCluster, cDef, preemptive)
 }
 
 // Implement returns a Strategy implementation that uses the provided choose function to select a cluster.
-func Implement(name string, chooseFunc func(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (*clustersv1alpha1.Cluster, error)) Strategy {
-	return &strategyImpl{name: name, choose: chooseFunc}
+func Implement[T any](name string, chooseFunc func(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error)) Strategy[T] {
+	return &strategyImpl[T]{name: name, choose: chooseFunc}
 }
 
 // FromConfig returns a Strategy implementation based on the provided config.Strategy value.
 // If the value is not recognized, it defaults to Balanced.
-func FromConfig(s config.Strategy) Strategy {
+func FromConfig[T any](s config.Strategy) Strategy[T] {
 	switch s {
 	case config.STRATEGY_RANDOM:
-		return Random
+		return Random[T]()
 	case config.STRATEGY_SIMPLE:
-		return Simple
+		return Simple[T]()
 	case config.STRATEGY_BALANCED:
-		return Balanced
+		return Balanced[T]()
 	case config.STRATEGY_BALANCED_IGNORE_EMPTY:
-		return BalancedIgnoreEmpty
+		return BalancedIgnoreEmpty[T]()
 	default:
-		return Balanced
+		return Balanced[T]()
 	}
 }
 
-var (
-	// Random chooses a cluster at random.
-	Random = Implement("Random", func(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (*clustersv1alpha1.Cluster, error) {
-		if len(clusters) == 0 {
-			return nil, nil
+// Random chooses a cluster at random.
+func Random[T any]() Strategy[T] {
+	return Implement("Random", func(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error) {
+		var zero T
+		if len(clusterData) == 0 {
+			return zero, nil
 		}
-		return clusters[rand.IntN(len(clusters))], nil
+		return clusterData[rand.IntN(len(clusterData))], nil
 	})
+}
 
-	// Simple chooses the first cluster in the list.
-	Simple = Implement("Simple", func(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (*clustersv1alpha1.Cluster, error) {
-		if len(clusters) == 0 {
-			return nil, nil
+// Simple chooses the first cluster in the list.
+func Simple[T any]() Strategy[T] {
+	return Implement("Simple", func(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error) {
+		var zero T
+		if len(clusterData) == 0 {
+			return zero, nil
 		}
-		return clusters[0], nil
+		return clusterData[0], nil
 	})
+}
 
-	// Balanced chooses the cluster with the least number of requests, or the first one in case of a tie (preemptive requests are ignored).
-	// For preemptive requests, the logic works the other way around and tries to find the cluster with the most requests (including preemptive ones).
-	Balanced = &balanced{
+// Balanced chooses the cluster with the least number of requests, or the first one in case of a tie (preemptive requests are ignored).
+// For preemptive requests, the logic works the other way around and tries to find the cluster with the most requests (including preemptive ones).
+func Balanced[T any]() Strategy[T] {
+	return &balanced[T]{
 		ignoreEmpty: false,
 	}
+}
 
-	// BalancedIgnoreEmpty works like Balanced, but it favors clusters that have at least one request over empty clusters.
-	// This means that it only really starts balancing after some requests have been deleted and just 'fills up' at the beginning,
-	// but it can prevent unnecessary cluster creation when preemptive requests are used.
-	// The logic for preemptive requests is the same as for Balanced.
-	BalancedIgnoreEmpty = &balanced{
+// BalancedIgnoreEmpty works like Balanced, but it favors clusters that have at least one request over empty clusters.
+// This means that it only really starts balancing after some requests have been deleted and just 'fills up' at the beginning,
+// but it can prevent unnecessary cluster creation when preemptive requests are used.
+// The logic for preemptive requests is the same as for Balanced.
+func BalancedIgnoreEmpty[T any]() Strategy[T] {
+	return &balanced[T]{
 		ignoreEmpty: true,
 	}
-)
+}
 
-type balanced struct {
+type balanced[T any] struct {
 	ignoreEmpty bool
 }
 
-func (s *balanced) Name() string {
+func (s *balanced[T]) Name() string {
 	if s.ignoreEmpty {
 		return "BalancedIgnoreEmpty"
 	}
 	return "Balanced"
 }
 
-func (s *balanced) Choose(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (*clustersv1alpha1.Cluster, error) {
-	if len(clusters) == 0 {
-		return nil, nil
+func (s *balanced[T]) Choose(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error) {
+	var zero T
+	if len(clusterData) == 0 {
+		return zero, nil
 	}
-	cluster := clusters[0]
+	chosen := clusterData[0]
+	count := WorkloadCount(getCluster(chosen), preemptive)
 	if preemptive {
-		count := cluster.GetTenancyCount() + cluster.GetPreemptiveTenancyCount()
-		for _, c := range clusters[1:] {
-			tmp := c.GetTenancyCount() + c.GetPreemptiveTenancyCount()
+		for _, cd := range clusterData[1:] {
+			tmp := WorkloadCount(getCluster(cd), preemptive)
 			if tmp > count {
 				count = tmp
-				cluster = c
+				chosen = cd
 			}
 		}
 	} else {
-		count := cluster.GetTenancyCount()
-		for _, c := range clusters[1:] {
-			tmp := c.GetTenancyCount()
+		for _, cd := range clusterData[1:] {
+			tmp := WorkloadCount(getCluster(cd), preemptive)
 			if s.ignoreEmpty {
 				if tmp != 0 && (tmp < count || count == 0) {
 					count = tmp
-					cluster = c
+					chosen = cd
 				}
 			} else {
 				if tmp < count {
 					count = tmp
-					cluster = c
+					chosen = cd
 				}
 			}
 		}
 	}
-	return cluster, nil
+	return chosen, nil
+}
+
+// Capacity returns the remaining capacity of a cluster based on its tenancy count and the ClusterDefinition.
+// If the cluster is shared unlimitedly, it returns maxInt (unlimited capacity).
+func Capacity(cluster *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) int {
+	if cDef.IsSharedUnlimitedly() {
+		return MaxInt // unlimited capacity
+	}
+	return cDef.TenancyCount - WorkloadCount(cluster, preemptive)
+}
+
+// WorkloadCount returns the number of workloads currently scheduled on the cluster.
+// If preemptive is true, preemptive requests are also counted.
+func WorkloadCount(cluster *clustersv1alpha1.Cluster, preemptive bool) int {
+	count := cluster.GetTenancyCount()
+	if preemptive {
+		count += cluster.GetPreemptiveTenancyCount()
+	}
+	return count
 }
