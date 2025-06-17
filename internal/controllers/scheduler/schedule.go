@@ -7,13 +7,16 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/openmcp-project/controller-utils/pkg/collections/filters"
+	"github.com/openmcp-project/controller-utils/pkg/collections/maps"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
+	"github.com/openmcp-project/controller-utils/pkg/pairs"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
@@ -81,8 +84,8 @@ func (sr *SchedulingResult) Apply(ctx context.Context, platformClient client.Cli
 
 type internalSchedulingResult struct {
 	*SchedulingResult
-	scheduledRegularRequests    map[string]*clustersv1alpha1.Cluster // for internal use, to track scheduled regular requests
-	scheduledPreemptiveRequests map[string]*clustersv1alpha1.Cluster // for internal use, to track scheduled preemptive requests
+	scheduledRegularRequests    map[string]*clustersv1alpha1.Cluster   // for internal use, to track scheduled regular requests
+	scheduledPreemptiveRequests map[string][]*clustersv1alpha1.Cluster // for internal use, to track scheduled preemptive requests
 }
 
 // Current returns what the clusters would look like after applying the changes in the Patch, Create, and Delete fields.
@@ -112,14 +115,30 @@ func (sr *SchedulingResult) Current() ([]*clustersv1alpha1.Cluster, []*clustersv
 type SchedulingRequest struct {
 	// UID is the unique identifier of the request.
 	UID string
-	// Preemptive indicates whether this request is preemptive or not.
-	Preemptive bool
+	// workloadCount specifies how many workloads this request accounts for.
+	// A value of 0 indicates a regular request, which always accounts for 1 workload.
+	// A value greater than 0 indicates a preemptive request, which accounts for the specified number of workloads.
+	// The actual value is only relevant if remove is false.
+	workloadCount int
 	// Remove indicates whether this request is to be removed (true) or added (false).
 	Remove bool
 	// Namespace is the namespace of the k8s resource this request originated from.
 	Namespace string
 	// Purpose is the purpose of the request.
 	Purpose string
+}
+
+func (sr *SchedulingRequest) IsPreemptive() bool {
+	return sr.workloadCount > 0
+}
+
+// WorkloadCount returns the requested workload count.
+// It returns 1 for regular requests and the specified amount for preemptive requests.
+func (sr *SchedulingRequest) WorkloadCount() int {
+	if sr.workloadCount == 0 {
+		return 1
+	}
+	return sr.workloadCount
 }
 
 func RequestFinalizer(uid string, preemptive bool) string {
@@ -132,16 +151,16 @@ func RequestFinalizer(uid string, preemptive bool) string {
 
 // Finalizer returns the finalizer that corresponds to this SchedulingRequest.
 func (sr *SchedulingRequest) Finalizer() string {
-	return RequestFinalizer(sr.UID, sr.Preemptive)
+	return RequestFinalizer(sr.UID, sr.IsPreemptive())
 }
 
-func NewSchedulingRequest(uid string, preemptive bool, remove bool, namespace, purpose string) *SchedulingRequest {
+func NewSchedulingRequest(uid string, workloadCount int, remove bool, namespace, purpose string) *SchedulingRequest {
 	return &SchedulingRequest{
-		UID:        uid,
-		Preemptive: preemptive,
-		Remove:     remove,
-		Namespace:  namespace,
-		Purpose:    purpose,
+		UID:           uid,
+		workloadCount: workloadCount,
+		Remove:        remove,
+		Namespace:     namespace,
+		Purpose:       purpose,
 	}
 }
 
@@ -156,7 +175,7 @@ func SRKey(c *clustersv1alpha1.Cluster) string {
 // Finalizers for non-preemptive requests are never moved between clusters, finalizers for preemptive requests might be moved for efficiency.
 // If requests is empty, the result could still indicate changes, if existing preemptive requests could be cleaned up.
 // Note that the originally passed-in clusters might be modified. Their unmodified versions can be retrieved from the Original field of the SchedulingResult.
-func Schedule(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, strategy strategy.Strategy, requests ...*SchedulingRequest) (*SchedulingResult, error) {
+func Schedule(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, strategy config.Strategy, requests ...*SchedulingRequest) (*SchedulingResult, error) {
 	log := logging.FromContextOrPanic(ctx).WithName("Schedule")
 	ctx = logging.NewContext(ctx, log)
 	isr := &internalSchedulingResult{
@@ -168,7 +187,7 @@ func Schedule(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *c
 			Reschedule: sets.New[string](),
 		},
 		scheduledRegularRequests:    map[string]*clustersv1alpha1.Cluster{},
-		scheduledPreemptiveRequests: map[string]*clustersv1alpha1.Cluster{},
+		scheduledPreemptiveRequests: map[string][]*clustersv1alpha1.Cluster{},
 	}
 	for _, c := range clusters {
 		if c == nil {
@@ -178,7 +197,13 @@ func Schedule(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *c
 			if strings.HasPrefix(fin, clustersv1alpha1.RequestFinalizerOnClusterPrefix) {
 				isr.scheduledRegularRequests[strings.TrimPrefix(fin, clustersv1alpha1.RequestFinalizerOnClusterPrefix)] = c.DeepCopy()
 			} else if strings.HasPrefix(fin, clustersv1alpha1.PreemptiveRequestFinalizerOnClusterPrefix) {
-				isr.scheduledPreemptiveRequests[strings.TrimPrefix(fin, clustersv1alpha1.PreemptiveRequestFinalizerOnClusterPrefix)] = c.DeepCopy()
+				uid := strings.TrimPrefix(fin, clustersv1alpha1.PreemptiveRequestFinalizerOnClusterPrefix)
+				current := isr.scheduledPreemptiveRequests[uid]
+				if current == nil {
+					current = []*clustersv1alpha1.Cluster{}
+				}
+				current = append(current, c.DeepCopy())
+				isr.scheduledPreemptiveRequests[uid] = current
 			}
 		}
 		isr.Original[SRKey(c)] = c.DeepCopy()
@@ -190,7 +215,7 @@ func Schedule(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *c
 	addRegular := []*SchedulingRequest{}
 	removeRegular := []*SchedulingRequest{}
 	for _, req := range requests {
-		switch req.Preemptive {
+		switch req.IsPreemptive() {
 		case true:
 			switch req.Remove {
 			case true:
@@ -198,9 +223,7 @@ func Schedule(ctx context.Context, clusters []*clustersv1alpha1.Cluster, cDef *c
 					removePreemptive = append(removePreemptive, req)
 				}
 			case false:
-				if _, ok := isr.scheduledPreemptiveRequests[req.UID]; !ok {
-					addPreemptive = append(addPreemptive, req)
-				}
+				addPreemptive = append(addPreemptive, req)
 			}
 		case false:
 			switch req.Remove {
@@ -249,8 +272,8 @@ func (sr *internalSchedulingResult) newOrRecoveredCluster(ctx context.Context, r
 	log := logging.FromContextOrPanic(ctx)
 	var c *clustersv1alpha1.Cluster
 	if len(sr.Delete) > 0 {
-		c := GetAny(sr.Delete).Value
-		if controllerutil.AddFinalizer(c, req.Finalizer()) {
+		c := maps.GetAny(sr.Delete).Value
+		if AddFinalizer(c, req.Finalizer(), true) {
 			sr.Patch[SRKey(c)] = c
 		}
 		delete(sr.Delete, SRKey(c))
@@ -261,8 +284,13 @@ func (sr *internalSchedulingResult) newOrRecoveredCluster(ctx context.Context, r
 		log.Debug("Issuing creation of a new cluster to satisfy request", "clusterName", c.Name, "clusterNamespace", c.Namespace)
 	}
 
-	if req.Preemptive {
-		sr.scheduledPreemptiveRequests[req.UID] = c
+	if req.IsPreemptive() {
+		current := sr.scheduledPreemptiveRequests[req.UID]
+		if current == nil {
+			current = []*clustersv1alpha1.Cluster{}
+		}
+		current = append(current, c)
+		sr.scheduledPreemptiveRequests[req.UID] = current
 	} else {
 		sr.scheduledRegularRequests[req.UID] = c
 	}
@@ -271,120 +299,148 @@ func (sr *internalSchedulingResult) newOrRecoveredCluster(ctx context.Context, r
 
 func (sr *internalSchedulingResult) removeRequest(ctx context.Context, req *SchedulingRequest) {
 	logName := "RemoveRegular"
-	uidMapping := sr.scheduledRegularRequests
-	if req.Preemptive {
+	var clusters sets.Set[*clustersv1alpha1.Cluster]
+	var ok bool
+	if req.IsPreemptive() {
 		logName = "RemovePreemptive"
-		uidMapping = sr.scheduledPreemptiveRequests
+		var tmp []*clustersv1alpha1.Cluster
+		tmp, ok = sr.scheduledPreemptiveRequests[req.UID]
+		if ok {
+			clusters = sets.New[*clustersv1alpha1.Cluster](tmp...)
+		}
+	} else {
+		var c *clustersv1alpha1.Cluster
+		c, ok = sr.scheduledRegularRequests[req.UID]
+		if ok {
+			clusters = sets.New[*clustersv1alpha1.Cluster](c)
+		}
 	}
 	log := logging.FromContextOrPanic(ctx).WithName(logName).WithValues("requestUID", req.UID)
-	c, ok := uidMapping[req.UID]
 	if !ok {
 		log.Debug("Request not scheduled on any cluster, nothing to do")
 		return
 	}
-	if controllerutil.RemoveFinalizer(c, req.Finalizer()) {
-		log.Debug("Unscheduling request from cluster", "clusterName", c.Name, "clusterNamespace", c.Namespace)
-		sr.Patch[SRKey(c)] = c
-	}
-	delete(uidMapping, req.UID)
-	// if this was the last request on the cluster and it has the DeleteWithoutRequestsLabel, mark it for deletion
-	if c.GetTenancyCount() == 0 && c.GetPreemptiveTenancyCount() == 0 {
-		val, ok := ctrlutils.GetLabel(c, clustersv1alpha1.DeleteWithoutRequestsLabel)
-		if ok && val == "true" {
-			log.Debug("Cluster has no more requests, marking for deletion", "clusterName", c.Name, "clusterNamespace", c.Namespace)
-			sr.Delete[SRKey(c)] = c
-		} else {
-			log.Debug("Cluster has no more requests, but the label is missing or not set to 'true', not marking it for deletion", "clusterName", c.Name, "clusterNamespace", c.Namespace, "label", clustersv1alpha1.DeleteWithoutRequestsLabel, "labelValue", val)
+	for c := range clusters {
+		if RemoveFinalizer(c, req.Finalizer(), true) {
+			log.Debug("Unscheduling request from cluster", "clusterName", c.Name, "clusterNamespace", c.Namespace)
 		}
+		// if this was the last request on the cluster and it has the DeleteWithoutRequestsLabel, mark it for deletion
+		deleteIt := false
+		if c.GetTenancyCount() == 0 && c.GetPreemptiveTenancyCount() == 0 {
+			val, ok := ctrlutils.GetLabel(c, clustersv1alpha1.DeleteWithoutRequestsLabel)
+			if ok && val == "true" {
+				log.Debug("Cluster has no more requests, marking for deletion", "clusterName", c.Name, "clusterNamespace", c.Namespace)
+				deleteIt = true
+				sr.Delete[SRKey(c)] = c
+			} else {
+				log.Debug("Cluster has no more requests, but the label is missing or not set to 'true', not marking it for deletion", "clusterName", c.Name, "clusterNamespace", c.Namespace, "label", clustersv1alpha1.DeleteWithoutRequestsLabel, "labelValue", val)
+			}
+		}
+		if !deleteIt {
+			// if the cluster is not marked for deletion, it needs to be patched
+			sr.Patch[SRKey(c)] = c
+		}
+	}
+	if req.IsPreemptive() {
+		delete(sr.scheduledPreemptiveRequests, req.UID)
+	} else {
+		delete(sr.scheduledRegularRequests, req.UID)
 	}
 }
 
-func (sr *internalSchedulingResult) addRequest(ctx context.Context, req *SchedulingRequest, cDef *config.ClusterDefinition, strategy strategy.Strategy) error {
+func (sr *internalSchedulingResult) addRequest(ctx context.Context, req *SchedulingRequest, cDef *config.ClusterDefinition, stratKey config.Strategy) error {
 	logName := "AddRegular"
-	uidMapping := sr.scheduledRegularRequests
-	if req.Preemptive {
-		logName = "AddPreemptive"
-		uidMapping = sr.scheduledPreemptiveRequests
+	var clusters []*clustersv1alpha1.Cluster
+	if req.IsPreemptive() {
+		logName = "RemovePreemptive"
+		clusters = sr.scheduledPreemptiveRequests[req.UID]
+	} else {
+		c, ok := sr.scheduledRegularRequests[req.UID]
+		if ok {
+			clusters = []*clustersv1alpha1.Cluster{c}
+		}
 	}
 	log := logging.FromContextOrPanic(ctx).WithName(logName).WithValues("requestUID", req.UID)
 	ctx = logging.NewContext(ctx, log)
-	isNewCluster := false
+	currentCount := len(clusters)
+
+	// map new and existing clusters to their remaining capacity
 	existingClusters, newClusters := sr.Current()
-	// check existing clusters first
-	availableClusters := existingClusters
-	// filter out clusters that are in deletion
-	availableClusters = filters.FilterSlice(availableClusters, func(args ...any) bool {
-		c := args[0].(*clustersv1alpha1.Cluster)
-		return c.DeletionTimestamp.IsZero()
-	})
-	// filter out clusters that are already at their tenancy limit
-	if !cDef.IsSharedUnlimitedly() {
-		availableClusters = filters.FilterSlice(availableClusters, func(args ...any) bool {
-			c := args[0].(*clustersv1alpha1.Cluster)
-			tenCount := c.GetTenancyCount()
-			if req.Preemptive {
-				tenCount += c.GetPreemptiveTenancyCount()
-			}
-			return cDef.IsSharedUnlimitedly() || (tenCount < cDef.TenancyCount)
-		})
-	}
-	if !req.Preemptive {
-		// avoid choosing non-ready clusters if ready ones are available
-		readyClusters := filters.FilterSlice(availableClusters, func(args ...any) bool {
-			c := args[0].(*clustersv1alpha1.Cluster)
-			return c.Status.Phase == clustersv1alpha1.CLUSTER_PHASE_READY
-		})
-		if len(readyClusters) > 0 {
-			log.Debug("Excluding some non-ready clusters from scheduling", "availableClusters", len(availableClusters), "readyClusters", len(readyClusters))
-			availableClusters = readyClusters
-		}
-	}
-	if len(availableClusters) == 0 {
-		// check new clusters if no fitting one exists
-		availableClusters = newClusters
-		isNewCluster = true
-		// filter out clusters that are in deletion
-		availableClusters = filters.FilterSlice(availableClusters, func(args ...any) bool {
-			c := args[0].(*clustersv1alpha1.Cluster)
-			return c.DeletionTimestamp.IsZero()
-		})
-		// filter out clusters that are already at their tenancy limit
-		if !cDef.IsSharedUnlimitedly() {
-			availableClusters = filters.FilterSlice(availableClusters, func(args ...any) bool {
-				c := args[0].(*clustersv1alpha1.Cluster)
-				tenCount := c.GetTenancyCount()
-				if req.Preemptive {
-					tenCount += c.GetPreemptiveTenancyCount()
-				}
-				return cDef.IsSharedUnlimitedly() || (tenCount < cDef.TenancyCount)
+	existingClustersCap := capacityMapping(existingClusters, req, cDef, false, false)
+	newClustersCap := capacityMapping(newClusters, req, cDef, false, false)
+
+	// TODO: if the request is preemptive, check if we can re-assign some request finalizers to potentiall free existing clusters
+
+	for range max(0, req.WorkloadCount()-currentCount) {
+		isNewCluster := false
+		// check existing clusters first
+		availableClustersCap := existingClustersCap
+		if !req.IsPreemptive() {
+			existingReadyClusters := filters.FilterSlice(existingClustersCap, func(args ...any) bool {
+				p := args[0].(*pairs.Pair[*clustersv1alpha1.Cluster, int])
+				return p.Key.Status.Phase == clustersv1alpha1.CLUSTER_PHASE_READY
 			})
+			if len(existingReadyClusters) > 0 {
+				log.Debug("Excluding some non-ready clusters from scheduling", "existingClusters", len(availableClustersCap), "existingReadyClusters", len(existingReadyClusters))
+				availableClustersCap = existingReadyClusters
+			}
 		}
-	}
-	if len(availableClusters) == 0 {
-		log.Debug("No clusters available for scheduling regular request")
-		c := sr.newOrRecoveredCluster(ctx, req, cDef)
-		uidMapping[req.UID] = c
-		return nil
-	}
-	// choose a cluster using the configured strategy
-	log.Debug("Fitting clusters available, choosing one according to strategy", "availableClusters", len(availableClusters), "strategy", strategy.Name())
-	chosenCluster, err := strategy.Choose(ctx, availableClusters, cDef, req.Preemptive)
-	if err != nil {
-		return fmt.Errorf("error choosing cluster for request '%s': %w", req.UID, err)
-	}
-	if chosenCluster == nil {
-		log.Debug("Strategy did not choose a cluster", "strategy", strategy.Name())
-		c := sr.newOrRecoveredCluster(ctx, req, cDef)
-		uidMapping[req.UID] = c
-		return nil
-	}
-	if controllerutil.AddFinalizer(chosenCluster, req.Finalizer()) {
-		if !isNewCluster {
-			sr.Patch[SRKey(chosenCluster)] = chosenCluster
+
+		if len(availableClustersCap) == 0 {
+			availableClustersCap = newClustersCap
+			isNewCluster = true
 		}
+		var chosenPair *pairs.Pair[*clustersv1alpha1.Cluster, int]
+		if len(availableClustersCap) > 0 {
+			// choose a cluster using the configured strategy
+			strat := strategy.FromConfig[*pairs.Pair[*clustersv1alpha1.Cluster, int]](stratKey)
+			log.Debug("Fitting clusters available, choosing one according to strategy", "availableClusters", len(availableClustersCap), "strategy", strat.Name())
+			var err error
+			chosenPair, err = strat.Choose(ctx, availableClustersCap, func(p *pairs.Pair[*clustersv1alpha1.Cluster, int]) *clustersv1alpha1.Cluster {
+				return p.Key
+			}, cDef, req.IsPreemptive())
+			if err != nil {
+				return fmt.Errorf("error choosing cluster for request '%s': %w", req.UID, err)
+			}
+		}
+		if chosenPair != nil {
+			// found a fitting cluster
+			// add request finalizer to the cluster
+			if AddFinalizer(chosenPair.Key, req.Finalizer(), req.IsPreemptive()) && !isNewCluster {
+				// if the cluster is not new, it needs to be patched
+				sr.Patch[SRKey(chosenPair.Key)] = chosenPair.Key
+			}
+			// re-compute cluster capacity
+			chosenPair.Value = strategy.Capacity(chosenPair.Key, cDef, req.IsPreemptive())
+		} else {
+			// no cluster could be chosen
+			log.Debug("Either no fitting clusters were available or the strategy did not choose a cluster, creating a new one", "availableClusters", len(availableClustersCap), "strategy", stratKey)
+			isNewCluster = true
+			c := sr.newOrRecoveredCluster(ctx, req, cDef)
+			chosenPair = ptr.To(pairs.New(c, strategy.Capacity(c, cDef, req.IsPreemptive())))
+			newClustersCap = append(newClustersCap, chosenPair)
+		}
+		log.Debug("Scheduling request on cluster", "clusterName", chosenPair.Key.Name, "clusterGenerateName", chosenPair.Key.GenerateName, "clusterNamespace", chosenPair.Key.Namespace, "isNewCluster", isNewCluster)
+		if req.IsPreemptive() {
+			current := sr.scheduledPreemptiveRequests[req.UID]
+			if current == nil {
+				current = []*clustersv1alpha1.Cluster{}
+			}
+			current = append(current, chosenPair.Key)
+			sr.scheduledPreemptiveRequests[req.UID] = current
+		} else {
+			sr.scheduledRegularRequests[req.UID] = chosenPair.Key
+		}
+
+		// remove clusters with capacity 0 from the list of available clusters
+		hasCapacity := func(args ...any) bool {
+			p := args[0].(*pairs.Pair[*clustersv1alpha1.Cluster, int])
+			return p.Value > 0
+		}
+		existingClustersCap = filters.FilterSlice(existingClustersCap, hasCapacity)
+		newClustersCap = filters.FilterSlice(newClustersCap, hasCapacity)
 	}
-	log.Debug("Scheduling request on cluster", "clusterName", chosenCluster.Name, "clusterGenerateName", chosenCluster.GenerateName, "clusterNamespace", chosenCluster.Namespace, "isNewCluster", isNewCluster)
-	uidMapping[req.UID] = chosenCluster
+
 	return nil
 }
 
@@ -408,9 +464,9 @@ func (sr *internalSchedulingResult) identifyToBeRescheduledRequests(ctx context.
 				log.Error(nil, "Tenancy limit is exceeded and cannot be reached by rescheduling preemptive requests", "clusterName", c.Name, "clusterNamespace", c.Namespace, "tenancyLimit", cDef.TenancyCount, "tenancy", rCount, "preemptiveTenancy", pCount, "exceed", exceed)
 				break
 			}
-			p := GetAny(pUIDs).Key
+			p := maps.GetAny(pUIDs).Key
 			sr.Reschedule.Insert(p)
-			controllerutil.RemoveFinalizer(c, RequestFinalizer(p, true))
+			RemoveFinalizer(c, RequestFinalizer(p, true), false)
 			changed = true
 			exceed--
 			pCount--
@@ -484,4 +540,61 @@ func initializeNewCluster(ctx context.Context, req *SchedulingRequest, cDef *con
 	}
 
 	return cluster
+}
+
+// AddFinalizer adds a finalizer to the given object.
+// Returns true if the object's finalizers were actually modified.
+// If multi is true, the finalizer is always added, otherwise it is only added if it is not already present.
+func AddFinalizer(obj client.Object, fin string, multi bool) bool {
+	if obj == nil {
+		return false
+	}
+	if !multi {
+		return controllerutil.AddFinalizer(obj, fin)
+	}
+	fins := obj.GetFinalizers()
+	if fins == nil {
+		fins = []string{}
+	}
+	obj.SetFinalizers(append(fins, fin))
+	return true
+}
+
+// RemoveFinalizer removes a finalizer from the given object.
+// If all is true, all occurrences of the finalizer are removed, otherwise only the first occurrence.
+// Returns true if the object's finalizers were actually modified.
+func RemoveFinalizer(obj client.Object, fin string, all bool) bool {
+	if obj == nil {
+		return false
+	}
+	if all {
+		return controllerutil.RemoveFinalizer(obj, fin)
+	}
+	fins := obj.GetFinalizers()
+	for i, f := range fins {
+		if f == fin {
+			obj.SetFinalizers(append(fins[:i], fins[i+1:]...))
+			return true
+		}
+	}
+	return false
+}
+
+// capacityMapping returns a list of pairs of clusters and their remaining capacity.
+// The list is sorted by capacity, from lowest to highest.
+// If includeFull is true, clusters with zero or exceeded capacity are included as well, otherwise only ones with positive capacity are included.
+// If includeDeleting is true, clusters that are in deletion are included as well, otherwise they are filtered out.
+func capacityMapping(clusters []*clustersv1alpha1.Cluster, req *SchedulingRequest, cDef *config.ClusterDefinition, includeFull, includeDeleting bool) []*pairs.Pair[*clustersv1alpha1.Cluster, int] {
+	clustersCap := make([]*pairs.Pair[*clustersv1alpha1.Cluster, int], 0, len(clusters))
+	for _, c := range clusters {
+		cap := strategy.Capacity(c, cDef, req.IsPreemptive())
+		if (includeFull || cap > 0) && (includeDeleting || c.DeletionTimestamp.IsZero()) {
+			clustersCap = append(clustersCap, ptr.To(pairs.New(c, cap)))
+		}
+	}
+	// sort by capacity, from lowest to highest
+	slices.SortFunc(clustersCap, func(a, b *pairs.Pair[*clustersv1alpha1.Cluster, int]) int {
+		return a.Value - b.Value
+	})
+	return clustersCap
 }
