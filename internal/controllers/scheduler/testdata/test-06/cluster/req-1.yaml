@@ -1,0 +1,13 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: shared-1
+  namespace: foo
+  uid: cbbb4c8b-e271-4800-bcef-cfdf47a2e37b
+spec:
+  purpose: shared-four
+status:
+  phase: Granted
+  cluster:
+    name: shared-1
+    namespace: shared-four
