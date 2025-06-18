@@ -1,0 +1,8 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: PreemptiveClusterRequest
+metadata:
+  name: shared2-p-m
+  namespace: foo
+spec:
+  purpose: shared-four
+  workload: 3

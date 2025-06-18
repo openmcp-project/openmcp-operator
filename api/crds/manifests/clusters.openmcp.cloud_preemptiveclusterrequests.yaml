@@ -23,7 +23,7 @@ spec:
     - jsonPath: .spec.purpose
       name: Purpose
       type: string
-    - jsonPath: .spec.workloadCount
+    - jsonPath: .spec.workload
       name: Workload
       type: string
     - jsonPath: .status.phase
@@ -59,15 +59,15 @@ spec:
                 x-kubernetes-validations:
                 - message: purpose is immutable
                   rule: self == oldSelf
-              workloadCount:
+              workload:
                 description: |-
-                  WorkloadCount specifies for how many workloads this preemptive cluster request should account.
+                  Workload specifies for how many workloads this preemptive cluster request should account.
                   Must be greater than 0.
                 minimum: 1
                 type: integer
             required:
             - purpose
-            - workloadCount
+            - workload
             type: object
           status:
             properties:

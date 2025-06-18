@@ -1,0 +1,7 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: shared5
+  namespace: foo
+spec:
+  purpose: shared-four

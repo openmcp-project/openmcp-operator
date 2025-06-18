@@ -32,6 +32,8 @@ var scheme = install.InstallOperatorAPIs(runtime.NewScheme())
 const (
 	exclusiveString       = "exclusive"
 	sharedTwiceString     = "shared-twice"
+	sharedThriceString    = "shared-thrice"
+	sharedFourString      = "shared-four"
 	sharedUnlimitedString = "shared-unlimited"
 )
 
