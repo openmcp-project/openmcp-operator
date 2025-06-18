@@ -70,18 +70,20 @@ const (
 	// For AccessRequests, the generic controller that is part of the openMCP Operator sets it.
 	ProviderLabel = GroupName + "/provider"
 
-	// DeleteWithoutRequestsLabel marks that the corresponding cluster can be deleted if the scheduler removes the last request pointing to it.
-	// Its value must be "true" for the label to take effect.
-	DeleteWithoutRequestsLabel = GroupName + "/delete-without-requests"
 	// ProfileLabel is used to make the profile information easily accessible on AccessRequests.
 	ProfileLabel = GroupName + "/profile"
 )
 
 const (
+	// DeleteWithoutRequestsLabel marks that the corresponding cluster can be deleted if the scheduler removes the last request pointing to it.
+	// Its value must be "true" for the label to take effect.
+	DeleteWithoutRequestsLabel = GroupName + "/delete-without-requests"
 	// ClusterRequestFinalizer is the finalizer used on ClusterRequest resources
 	ClusterRequestFinalizer = GroupName + "/request"
 	// RequestFinalizerOnClusterPrefix is the prefix for the finalizers that mark a Cluster as being referenced by a ClusterRequest.
 	RequestFinalizerOnClusterPrefix = "request." + GroupName + "/"
 	// PreemptiveRequestFinalizerOnClusterPrefix is the prefix for the finalizers that mark a Cluster as being referenced by a preemptive ClusterRequest.
 	PreemptiveRequestFinalizerOnClusterPrefix = "preemptive." + GroupName + "/"
+	// SchedulerCreationIDLabel can be used to track which scheduling operation created a specific Cluster. Mainly for internal purposes.
+	SchedulerCreationIDLabel = GroupName + "/creation-id"
 )

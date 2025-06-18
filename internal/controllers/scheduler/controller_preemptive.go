@@ -3,7 +3,6 @@ package scheduler
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -12,7 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
-	"github.com/openmcp-project/controller-utils/pkg/collections/filters"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
@@ -151,48 +149,32 @@ func (r *PreemptiveScheduler) handleDelete(ctx context.Context, req reconcile.Re
 
 	log.Info("Deleting resource")
 
-	// fetch all clusters and filter for the ones that have a finalizer from this request
-	fin := pcr.FinalizerForCluster()
-	clusterList := &clustersv1alpha1.ClusterList{}
-	if err := r.PlatformCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: r.Config.Selectors.Clusters.Completed()}); err != nil {
-		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+	// fetch cluster definition
+	purpose := pcr.Spec.Purpose
+	cDef, ok := r.Config.PurposeMappings[purpose]
+	if !ok {
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("no cluster definition found for purpose '%s'", purpose), cconst.ReasonConfigurationProblem)
 		return rr
 	}
-	clusters := make([]*clustersv1alpha1.Cluster, len(clusterList.Items))
-	for i := range clusterList.Items {
-		clusters[i] = &clusterList.Items[i]
-	}
-	clusters = filters.FilterSlice(clusters, func(args ...any) bool {
-		c, ok := args[0].(*clustersv1alpha1.Cluster)
-		if !ok {
-			return false
-		}
-		return slices.Contains(c.Finalizers, fin)
-	})
 
-	// remove finalizer from all clusters
-	errs := errutils.NewReasonableErrorList()
-	for _, c := range clusters {
-		log.Debug("Removing finalizers from cluster", "clusterName", c.Name, "clusterNamespace", c.Namespace, "finalizer", fin)
-		oldCluster := c.DeepCopy()
-		if RemoveFinalizer(c, fin, true) {
-			if err := r.PlatformCluster.Client().Patch(ctx, c, client.MergeFrom(oldCluster)); err != nil {
-				errs.Append(errutils.WithReason(fmt.Errorf("error patching finalizer '%s' on cluster '%s/%s': %w", fin, c.Namespace, c.Name, err), cconst.ReasonPlatformClusterInteractionProblem))
-			}
-		}
-		if c.GetTenancyCount() == 0 && c.GetPreemptiveTenancyCount() == 0 && ctrlutils.HasLabelWithValue(c, clustersv1alpha1.DeleteWithoutRequestsLabel, "true") {
-			log.Info("Deleting cluster without requests", "clusterName", c.Name, "clusterNamespace", c.Namespace)
-			if err := r.PlatformCluster.Client().Delete(ctx, c); err != nil {
-				if apierrors.IsNotFound(err) {
-					log.Info("Cluster already deleted", "clusterName", c.Name, "clusterNamespace", c.Namespace)
-				} else {
-					errs.Append(errutils.WithReason(fmt.Errorf("error deleting cluster '%s/%s': %w", c.Namespace, c.Name, err), cconst.ReasonPlatformClusterInteractionProblem))
-				}
-			}
-		}
+	// fetch relevant clusters
+	clusters, rerr := fetchRelevantClusters(ctx, r.PlatformCluster.Client(), r.Config.Scope, cDef, pcr.Spec.Purpose, pcr.Namespace)
+	if rerr != nil {
+		rr.ReconcileError = rerr
+		return rr
 	}
-	rr.ReconcileError = errs.Aggregate()
-	if rr.ReconcileError != nil {
+
+	// run the scheduling algorithm to remove the finalizers from this request
+	sr, err := Schedule(ctx, clusters, cDef, r.Config.Strategy, NewSchedulingRequest(string(pcr.UID), pcr.Spec.Workload, true, pcr.Namespace, pcr.Spec.Purpose))
+	if err != nil {
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error unscheduling request '%s': %w", req.String(), err), cconst.ReasonSchedulingFailed)
+		return rr
+	}
+
+	// apply required changes to the cluster
+	_, err = sr.Apply(ctx, r.PlatformCluster.Client())
+	if err != nil {
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error applying scheduling result for request '%s': %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
 		return rr
 	}
 

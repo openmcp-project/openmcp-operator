@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 
+	"github.com/openmcp-project/controller-utils/pkg/collections"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // ClusterSpec defines the desired state of Cluster
@@ -122,34 +122,40 @@ func (cs *ClusterStatus) SetProviderStatus(from any) error {
 
 // GetTenancyCount returns the number of ClusterRequests currently pointing to this cluster.
 // This is determined by counting the finalizers that have the corresponding prefix.
-// Note that only unique finalizers are counted, so if there are multiple identical request finalizers
-// (which should not happen), this method's return value might not match the actual number of finalizers with the prefix.
 func (c *Cluster) GetTenancyCount() int {
-	return c.GetRequestUIDs().Len()
+	return collections.AggregateMap(c.GetRequestUIDs(), func(_ string, count int, current int) int {
+		return count + current
+	}, 0)
 }
 
-// GetRequestUIDs returns the UIDs of all ClusterRequests that have marked this cluster with a corresponding finalizer.
-func (c *Cluster) GetRequestUIDs() sets.Set[string] {
-	res := sets.New[string]()
+// GetRequestUIDs returns the UIDs of all ClusterRequests that have marked this cluster with a corresponding finalizer,
+// mapped to their respective counts.
+// Note that a regular request is currently expected to have exactly one finalizer, so the counts for each UID should be 1.
+func (c *Cluster) GetRequestUIDs() map[string]int {
+	res := map[string]int{}
 	for _, fin := range c.Finalizers {
 		if strings.HasPrefix(fin, RequestFinalizerOnClusterPrefix) {
-			res.Insert(strings.TrimPrefix(fin, RequestFinalizerOnClusterPrefix))
+			res[strings.TrimPrefix(fin, RequestFinalizerOnClusterPrefix)]++
 		}
 	}
 	return res
 }
 
-// GetPreemptiveTenancyCount works like GetTenancyCount, but for preemptive ClusterRequests.
+// GetPreemptiveTenancyCount returns the number of PreemptiveClusterRequests currently pointing to this cluster.
+// This is determined by counting the finalizers that have the corresponding prefix.
 func (c *Cluster) GetPreemptiveTenancyCount() int {
-	return c.GetPreemptiveRequestUIDs().Len()
+	return collections.AggregateMap(c.GetPreemptiveRequestUIDs(), func(_ string, count int, current int) int {
+		return count + current
+	}, 0)
 }
 
-// GetPreemptiveRequestUIDs returns the UIDs of all preemptive ClusterRequests that have marked this cluster with a corresponding finalizer.
-func (c *Cluster) GetPreemptiveRequestUIDs() sets.Set[string] {
-	res := sets.New[string]()
+// GetPreemptiveRequestUIDs returns the UIDs of all PreemptiveClusterRequests that have marked this cluster with a corresponding finalizer,
+// mapped to their respective counts.
+func (c *Cluster) GetPreemptiveRequestUIDs() map[string]int {
+	res := map[string]int{}
 	for _, fin := range c.Finalizers {
 		if strings.HasPrefix(fin, PreemptiveRequestFinalizerOnClusterPrefix) {
-			res.Insert(strings.TrimPrefix(fin, PreemptiveRequestFinalizerOnClusterPrefix))
+			res[strings.TrimPrefix(fin, PreemptiveRequestFinalizerOnClusterPrefix)]++
 		}
 	}
 	return res
