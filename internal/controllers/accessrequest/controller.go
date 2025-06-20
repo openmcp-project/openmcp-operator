@@ -40,7 +40,7 @@ type AccessRequestReconciler struct {
 
 var _ reconcile.Reconciler = &AccessRequestReconciler{}
 
-type ReconcileResult = ctrlutils.ReconcileResult[*clustersv1alpha1.AccessRequest, clustersv1alpha1.ConditionStatus]
+type ReconcileResult = ctrlutils.ReconcileResult[*clustersv1alpha1.AccessRequest, *clustersv1alpha1.AccessRequestStatus]
 
 func (r *AccessRequestReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(ControllerName)
@@ -48,7 +48,7 @@ func (r *AccessRequestReconciler) Reconcile(ctx context.Context, req reconcile.R
 	log.Info("Starting reconcile")
 	rr := r.reconcile(ctx, req)
 	// status update
-	return ctrlutils.NewStatusUpdaterBuilder[*clustersv1alpha1.AccessRequest, clustersv1alpha1.RequestPhase, clustersv1alpha1.ConditionStatus]().
+	return ctrlutils.NewStatusUpdaterBuilder[*clustersv1alpha1.AccessRequest, clustersv1alpha1.RequestPhase, clustersv1alpha1.AccessRequestStatus]().
 		WithNestedStruct("CommonStatus").
 		WithFieldOverride(ctrlutils.STATUS_FIELD_PHASE, "Phase").
 		WithoutFields(ctrlutils.STATUS_FIELD_CONDITIONS).
