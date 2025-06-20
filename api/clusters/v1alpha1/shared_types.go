@@ -1,105 +1,31 @@
 package v1alpha1
 
 import (
-	"time"
-
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-type ConditionStatus string
+// These are standard condition types that can be used across resources
+const (
+	// ReadyConditionType indicates whether the resource is ready
+	ReadyConditionType = "Ready"
+	// AvailableConditionType indicates whether the resource is available
+	AvailableConditionType = "Available"
+	// ReconcileSuccessConditionType indicates whether the last reconciliation was successful
+	ReconcileSuccessConditionType = "ReconcileSuccess"
+)
 
-type Condition struct {
-	// Type is the type of the condition.
-	// Must be unique within the resource.
-	Type string `json:"type"`
-
-	// Status is the status of the condition.
-	Status ConditionStatus `json:"status"`
-
-	// Reason is expected to contain a CamelCased string that provides further information regarding the condition.
-	// It should have a fixed value set (like an enum) to be machine-readable. The value set depends on the condition type.
-	// It is optional, but should be filled at least when Status is not "True".
-	// +optional
-	Reason string `json:"reason,omitempty"`
-
-	// Message contains further details regarding the condition.
-	// It is meant for human users, Reason should be used for programmatic evaluation instead.
-	// It is optional, but should be filled at least when Status is not "True".
-	// +optional
-	Message string `json:"message,omitempty"`
-
-	// LastTransitionTime specifies the time when this condition's status last changed.
-	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
-}
-
-// Implement the Condition interface from our controller-utils library
-func (c *Condition) GetType() string {
-	return c.Type
-}
-func (c *Condition) SetType(t string) {
-	c.Type = t
-}
-func (c *Condition) GetStatus() ConditionStatus {
-	return c.Status
-}
-func (c *Condition) SetStatus(s ConditionStatus) {
-	c.Status = s
-}
-func (c *Condition) GetReason() string {
-	return c.Reason
-}
-func (c *Condition) SetReason(r string) {
-	c.Reason = r
-}
-func (c *Condition) GetMessage() string {
-	return c.Message
-}
-func (c *Condition) SetMessage(m string) {
-	c.Message = m
-}
-func (c *Condition) GetLastTransitionTime() time.Time {
-	return c.LastTransitionTime.Time
-}
-func (c *Condition) SetLastTransitionTime(t time.Time) {
-	c.LastTransitionTime = metav1.NewTime(t)
-}
-
-// ConditionList is a list of Conditions.
-type ConditionList []Condition
-
-// ConditionStatusFromBoolPtr converts a bool pointer into the corresponding ConditionStatus.
-// If nil, "Unknown" is returned.
-func ConditionStatusFromBoolPtr(src *bool) ConditionStatus {
-	if src == nil {
-		return CONDITION_UNKNOWN
-	}
-	return ConditionStatusFromBool(*src)
-}
-
-// ConditionStatusFromBool converts a bool into the corresponding ConditionStatus.
-func ConditionStatusFromBool(src bool) ConditionStatus {
-	if src {
-		return CONDITION_TRUE
-	}
-	return CONDITION_FALSE
-}
-
-// IsTrue returns true if the Condition's status is "True".
-// Note that the status can be "Unknown", so !IsTrue() is not the same as IsFalse().
-func (cc Condition) IsTrue() bool {
-	return cc.Status == CONDITION_TRUE
-}
-
-// IsFalse returns true if the Condition's status is "False".
-// Note that the status can be "Unknown", so !IsFalse() is not the same as IsTrue().
-func (cc Condition) IsFalse() bool {
-	return cc.Status == CONDITION_FALSE
-}
-
-// IsUnknown returns true if the Condition's status is "Unknown".
-func (cc Condition) IsUnknown() bool {
-	return cc.Status == CONDITION_UNKNOWN
-}
+// These are standard condition reasons that can be used across resources
+const (
+	// ReconcileSuccessReason indicates that the reconciliation was successful
+	ReconcileSuccessReason = "ReconcileSuccess"
+	// ReconcileErrorReason indicates that there was an error during reconciliation
+	ReconcileErrorReason = "ReconcileError"
+	// ResourceAvailableReason indicates that the resource is available
+	ResourceAvailableReason = "ResourceAvailable"
+	// ResourceUnavailableReason indicates that the resource is not available
+	ResourceUnavailableReason = "ResourceUnavailable"
+)
 
 type ObjectReference struct {
 	// Name is the name of the referenced resource.
@@ -114,9 +40,8 @@ type NamespacedObjectReference struct {
 	Namespace string `json:"namespace"`
 }
 
-// CommonStatus is a status shared by multiple resource.
-// Note that a 'phase' is also part of the status, but it cannot be included in this struct.
-// The reason is that we want to use string-like types for the phase, but the goddamn code generation does not support generics, no matter which annotations are added.
+// CommonStatus is a status shared by multiple resources.
+// It uses standard Kubernetes conditions for status representation.
 type CommonStatus struct {
 	// ObservedGeneration is the generation of this resource that was last reconciled by the controller.
 	ObservedGeneration int64 `json:"observedGeneration"`
@@ -132,7 +57,42 @@ type CommonStatus struct {
 	// +optional
 	Message string `json:"message,omitempty"`
 
-	// Conditions contains the conditions.
+	// Conditions contains the conditions of this resource using the standard Kubernetes condition format.
 	// +optional
-	Conditions ConditionList `json:"conditions,omitempty"`
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// GetCondition returns the condition with the provided type.
+// Returns nil if the condition is not found.
+func (s *CommonStatus) GetCondition(conditionType string) *metav1.Condition {
+	return meta.FindStatusCondition(s.Conditions, conditionType)
+}
+
+// SetCondition sets the status condition. It either overwrites the existing condition or
+// creates a new one if the condition wasn't present.
+func (s *CommonStatus) SetCondition(condition metav1.Condition) {
+	meta.SetStatusCondition(&s.Conditions, condition)
+}
+
+// RemoveCondition removes the condition with the specified type.
+func (s *CommonStatus) RemoveCondition(conditionType string) {
+	meta.RemoveStatusCondition(&s.Conditions, conditionType)
+}
+
+// IsReady returns true if the Ready condition is present and set to True.
+func (s *CommonStatus) IsReady() bool {
+	condition := s.GetCondition(ReadyConditionType)
+	return condition != nil && condition.Status == metav1.ConditionTrue
+}
+
+// IsAvailable returns true if the Available condition is present and set to True.
+func (s *CommonStatus) IsAvailable() bool {
+	condition := s.GetCondition(AvailableConditionType)
+	return condition != nil && condition.Status == metav1.ConditionTrue
+}
+
+// HasReconcileSucceeded returns true if the ReconcileSuccess condition is present and set to True.
+func (s *CommonStatus) HasReconcileSucceeded() bool {
+	condition := s.GetCondition(ReconcileSuccessConditionType)
+	return condition != nil && condition.Status == metav1.ConditionTrue
 }
