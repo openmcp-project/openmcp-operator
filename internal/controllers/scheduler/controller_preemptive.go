@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -24,8 +25,22 @@ import (
 const PreemptiveControllerName = "PreemptiveScheduler"
 
 type PreemptiveScheduler struct {
+	Lock            *sync.Mutex
 	PlatformCluster *clusters.Cluster
 	Config          *config.SchedulerConfig
+}
+
+// NewPreemptiveScheduler creates a new PreemptiveScheduler.
+// Note that this is already called by the NewScheduler constructor function, there should be no need to call this outside of tests.
+func NewPreemptiveScheduler(platformCluster *clusters.Cluster, cfg *config.SchedulerConfig) *PreemptiveScheduler {
+	if cfg == nil {
+		cfg = &config.SchedulerConfig{}
+	}
+	return &PreemptiveScheduler{
+		Lock:            &sync.Mutex{},
+		PlatformCluster: platformCluster,
+		Config:          cfg,
+	}
 }
 
 var _ reconcile.Reconciler = &PreemptiveScheduler{}
@@ -35,6 +50,8 @@ type PreemptiveReconcileResult = ctrlutils.ReconcileResult[*clustersv1alpha1.Pre
 func (r *PreemptiveScheduler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(PreemptiveControllerName)
 	ctx = logging.NewContext(ctx, log)
+	r.Lock.Lock()
+	defer r.Lock.Unlock()
 	log.Info("Starting reconcile")
 	rr := r.reconcile(ctx, req)
 	// status update
