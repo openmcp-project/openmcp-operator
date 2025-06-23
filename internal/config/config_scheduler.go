@@ -44,8 +44,6 @@ type Strategy string
 const (
 	STRATEGY_BALANCED_IGNORE_EMPTY Strategy = "BalancedIgnoreEmpty"
 	STRATEGY_BALANCED              Strategy = "Balanced"
-	STRATEGY_RANDOM                Strategy = "Random"
-	STRATEGY_SIMPLE                Strategy = "Simple"
 )
 
 type ClusterDefinition struct {
@@ -89,7 +87,7 @@ func (c *SchedulerConfig) Validate(fldPath *field.Path) error {
 	if !slices.Contains(validScopes, string(c.Scope)) {
 		errs = append(errs, field.NotSupported(fldPath.Child("scope"), string(c.Scope), validScopes))
 	}
-	validStrategies := []string{string(STRATEGY_BALANCED), string(STRATEGY_RANDOM), string(STRATEGY_SIMPLE)}
+	validStrategies := []string{string(STRATEGY_BALANCED), string(STRATEGY_BALANCED_IGNORE_EMPTY)}
 	if !slices.Contains(validStrategies, string(c.Strategy)) {
 		errs = append(errs, field.NotSupported(fldPath.Child("strategy"), string(c.Strategy), validStrategies))
 	}
