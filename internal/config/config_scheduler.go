@@ -71,7 +71,7 @@ func (c *SchedulerConfig) Default(_ *field.Path) error {
 		c.Scope = SCOPE_NAMESPACED
 	}
 	if c.Strategy == "" {
-		c.Strategy = STRATEGY_BALANCED
+		c.Strategy = STRATEGY_BALANCED_IGNORE_EMPTY
 	}
 	if c.PurposeMappings == nil {
 		c.PurposeMappings = map[string]*ClusterDefinition{}
