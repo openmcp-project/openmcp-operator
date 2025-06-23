@@ -16,7 +16,6 @@ type PreemptiveClusterRequestSpec struct {
 	Workload int `json:"workload"`
 }
 
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.cluster) || has(self.cluster)", message="cluster may not be removed once set"
 type PreemptiveClusterRequestStatus struct {
 	CommonStatus `json:",inline"`
 
