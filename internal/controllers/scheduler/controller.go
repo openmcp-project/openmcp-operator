@@ -38,17 +38,14 @@ func NewClusterScheduler(setupLog *logging.Logger, platformCluster *clusters.Clu
 		setupLog.WithName(ControllerName).Info("Initializing cluster scheduler", "scope", string(config.Scope), "strategy", string(config.Strategy), "knownPurposes", strings.Join(sets.List(sets.KeySet(config.PurposeMappings)), ","))
 	}
 	return &ClusterScheduler{
-		Preemptive: PreemptiveScheduler{
-			PlatformCluster: platformCluster,
-			Config:          config,
-		},
+		Preemptive:      NewPreemptiveScheduler(platformCluster, config),
 		PlatformCluster: platformCluster,
 		Config:          config,
 	}, nil
 }
 
 type ClusterScheduler struct {
-	Preemptive      PreemptiveScheduler
+	Preemptive      *PreemptiveScheduler
 	PlatformCluster *clusters.Cluster
 	Config          *config.SchedulerConfig
 }
@@ -60,6 +57,8 @@ type ReconcileResult = ctrlutils.ReconcileResult[*clustersv1alpha1.ClusterReques
 func (r *ClusterScheduler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(ControllerName)
 	ctx = logging.NewContext(ctx, log)
+	r.Preemptive.Lock.Lock()
+	defer r.Preemptive.Lock.Unlock()
 	log.Info("Starting reconcile")
 	rr := r.reconcile(ctx, req)
 	// status update

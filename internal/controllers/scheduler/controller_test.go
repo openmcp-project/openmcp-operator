@@ -60,10 +60,7 @@ func defaultTestSetup(testDirPathSegments ...string) (*config.SchedulerConfig, *
 			return r
 		}, platform).
 		WithReconcilerConstructor(pSchedulerRec, func(c ...client.Client) reconcile.Reconciler {
-			return &scheduler.PreemptiveScheduler{
-				PlatformCluster: clusters.NewTestClusterFromClient(platform, c[0]),
-				Config:          cfg.Scheduler,
-			}
+			return scheduler.NewPreemptiveScheduler(clusters.NewTestClusterFromClient(platform, c[0]), cfg.Scheduler)
 		}, platform).
 		WithUIDs(platform).
 		Build()
