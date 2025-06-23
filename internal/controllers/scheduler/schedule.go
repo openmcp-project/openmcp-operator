@@ -13,6 +13,7 @@ import (
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
+	"github.com/openmcp-project/controller-utils/pkg/retry"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
@@ -47,12 +48,13 @@ type SchedulingResult struct {
 func (sr *SchedulingResult) Apply(ctx context.Context, platformClient client.Client) ([]*clustersv1alpha1.Cluster, errutils.ReasonableError) {
 	errs := errutils.NewReasonableErrorList()
 	res := make([]*clustersv1alpha1.Cluster, 0, len(sr.Backup)-len(sr.Delete)+len(sr.Create))
+	rc := retry.NewRetryingClient(platformClient).WithMaxAttempts(3)
 
 	// patch clusters
 	for k, cOld := range sr.Backup {
 		updated := cOld
 		if c, ok := sr.Patch[k]; ok {
-			if err := platformClient.Patch(ctx, c, client.MergeFrom(cOld)); err != nil {
+			if err := rc.Patch(ctx, c, client.MergeFrom(cOld)); err != nil {
 				errs.Append(errutils.WithReason(fmt.Errorf("error patching cluster '%s': %w", k, err), cconst.ReasonPlatformClusterInteractionProblem))
 			}
 			updated = c
@@ -62,7 +64,7 @@ func (sr *SchedulingResult) Apply(ctx context.Context, platformClient client.Cli
 
 	// create new clusters
 	for _, c := range sr.Create {
-		if err := platformClient.Create(ctx, c); err != nil {
+		if err := rc.Create(ctx, c); err != nil {
 			errs.Append(errutils.WithReason(fmt.Errorf("error creating cluster: %w", err), cconst.ReasonPlatformClusterInteractionProblem))
 		}
 		res = append(res, c)
@@ -70,14 +72,14 @@ func (sr *SchedulingResult) Apply(ctx context.Context, platformClient client.Cli
 
 	// delete clusters
 	for k, c := range sr.Delete {
-		if err := platformClient.Delete(ctx, c); client.IgnoreNotFound(err) != nil {
+		if err := rc.Delete(ctx, c); client.IgnoreNotFound(err) != nil {
 			errs.Append(errutils.WithReason(fmt.Errorf("error deleting cluster '%s': %w", k, err), cconst.ReasonPlatformClusterInteractionProblem))
 		}
 	}
 
 	// patch reconcile annotation on preemptive requests that need to be rescheduled
 	for uid := range sr.Reschedule {
-		errs.Append(ReschedulePreemptiveRequest(ctx, platformClient, uid))
+		errs.Append(ReschedulePreemptiveRequest(ctx, rc, uid))
 	}
 
 	return res, errs.Aggregate()
