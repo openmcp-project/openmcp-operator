@@ -168,10 +168,10 @@ func (sr *internalSchedulingResult) addRequest(ctx context.Context, req *Schedul
 		var chosenPair *pairs.Pair[*clustersv1alpha1.Cluster, int]
 		if len(availableClustersCap) > 0 {
 			// choose a cluster using the configured strategy
-			strat := strategy.FromConfig[*pairs.Pair[*clustersv1alpha1.Cluster, int]](stratKey)
-			log.Debug("Fitting clusters available, choosing one according to strategy", "availableClusters", len(availableClustersCap), "strategy", strat.Name())
+			strat := strategy.FromConfig[*pairs.Pair[*clustersv1alpha1.Cluster, int]](stratKey)                                                                   //nolint:misspell
+			log.Debug("Fitting clusters available, choosing one according to strategy", "availableClusters", len(availableClustersCap), "strategy", strat.Name()) //nolint:misspell
 			var err error
-			chosenPair, err = strat.Choose(ctx, availableClustersCap, func(p *pairs.Pair[*clustersv1alpha1.Cluster, int]) *clustersv1alpha1.Cluster {
+			chosenPair, err = strat.Choose(ctx, availableClustersCap, func(p *pairs.Pair[*clustersv1alpha1.Cluster, int]) *clustersv1alpha1.Cluster { //nolint:misspell
 				return p.Key
 			}, cDef, req.IsPreemptive())
 			if err != nil {
