@@ -2,7 +2,6 @@ package strategy
 
 import (
 	"context"
-	"math/rand/v2"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
@@ -42,39 +41,13 @@ func Implement[T any](name string, chooseFunc func(ctx context.Context, clusterD
 // If the value is not recognized, it defaults to Balanced.
 func FromConfig[T any](s config.Strategy) Strategy[T] {
 	switch s {
-	case config.STRATEGY_RANDOM:
-		return Random[T]()
-	case config.STRATEGY_SIMPLE:
-		return Simple[T]()
 	case config.STRATEGY_BALANCED:
 		return Balanced[T]()
 	case config.STRATEGY_BALANCED_IGNORE_EMPTY:
 		return BalancedIgnoreEmpty[T]()
 	default:
-		return Balanced[T]()
+		return BalancedIgnoreEmpty[T]()
 	}
-}
-
-// Random chooses a cluster at random.
-func Random[T any]() Strategy[T] {
-	return Implement("Random", func(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error) {
-		var zero T
-		if len(clusterData) == 0 {
-			return zero, nil
-		}
-		return clusterData[rand.IntN(len(clusterData))], nil
-	})
-}
-
-// Simple chooses the first cluster in the list.
-func Simple[T any]() Strategy[T] {
-	return Implement("Simple", func(ctx context.Context, clusterData []T, getCluster func(T) *clustersv1alpha1.Cluster, cDef *config.ClusterDefinition, preemptive bool) (T, error) {
-		var zero T
-		if len(clusterData) == 0 {
-			return zero, nil
-		}
-		return clusterData[0], nil
-	})
 }
 
 // Balanced chooses the cluster with the least number of requests, or the first one in case of a tie (preemptive requests are ignored).
