@@ -10,7 +10,7 @@ If not disabled, the scheduler requires a config that looks like this:
 ```yaml
 scheduler:
   scope: Namespaced  # optional
-  strategy: Balanced # optional
+  strategy: BalancedIgnoreEmpty # optional
 
   selectors:                  # optional
     clusters:                 # optional
@@ -63,12 +63,13 @@ The following fields can be specified inside the `scheduler` field:
   - Determines whether the scheduler takes `Cluster` resources in all namespaces into accounts or only in a specific one.
     - In `Namespaced` mode, only `Cluster` resources from a single namespace are taken into account when checking for existing clusters to schedule requests to. If the cluster template that corresponds to the purpose specified in the request has a `metadata.namespace` set, this namespace is used to check for `Cluster` resources and also to create new ones. If not, the namespace of the `ClusterRequest` resource is used instead.
     - In `Cluster` mode, the scheduler takes all clusters into account when trying to find existing clusters that can be reused. New clusters are still created in the namespace specified in the cluster template, or in the request's namespace, if the former one is not set.
-- `strategy` _(optional, defaults to `Balanced`)_
-  - Valid values: `Balanced`, `Random`, `Simple`
+- `strategy` _(optional, defaults to `BalancedIgnoreEmpty`)_
+  - Valid values: `Balanced`, `BalancedIgnoreEmpty`, `Random`, `Simple`
   - Determines how the scheduler chooses a cluster if multiple existing ones qualify for a request.
     - With the `Balanced` strategy, the scheduler chooses the cluster with the fewest requests pointing to it. In case of a tie, the first one is chosen.
-    - With the `Random` strategy, a cluster is chosen randomly.
-    - With the `Simple` strategy, the first cluster in the list (should be in alphabetical order) is chosen.
+      - For preemptive requests, it works the other way around and the fullest cluster is chosen.
+    - `BalancedIgnoreEmpty` works like `Balanced`, but it favors clusters which already have regular requests on them over those that don't.
+      - This is useful in combination with preemptive requests. The regular `Balanced` strategy will immediately schedule the next regular request on a new preemptively scheduled cluster, preventing the scheduler from deleting this cluster again until that regular request is removed. With `BalanceIgnoreEmpty`, the regular request would be scheduled to a different cluster if there was capacity left, which enables the scheduler to reschedule the preemptive requests on the otherwise empty cluster and remove it, if any regular requests are removed. 
 - `selectors.clusters` _(optional)_
   - A label selector that restricts which `Cluster` resources are evaluated by the scheduler. Clusters that don't match the selector are treated as if they didn't exist.
     - The selector syntax is the default k8s one, as it is used in `Deployment` resources, for example.
@@ -125,6 +126,24 @@ Note that the `ClusterRequest` resource is removed immediately and does not wait
 
 ## Preemptive Scheduling
 
-To avoid long waiting times for `ClusterRequest`s, it is possible to request clusters preemptively. A `ClusterRequest` with `spec.preemptive` set to `true` is referred to as a 'preemptive request'. These requests behave like regular requests, with one important difference: a regular request prefers taking over an existing `Cluster` belonging to a preemptive request over creating a new `Cluster`. If that happens, the replaced preemptive request will be rescheduled, potentially resulting in a new `Cluster`.
+To avoid long waiting times for `ClusterRequest`s, it is possible to request clusters preemptively. 'Preemptive requests' behave like regular requests, with one important difference: a regular request prefers taking over an existing `Cluster` belonging to a preemptive request over creating a new `Cluster`. If that happens, the replaced preemptive request will be rescheduled, potentially resulting in a new `Cluster`.
 
 Think of preemptive requests as reservations for clusters (or workload capacity on shared clusters) which are used by regular requests.
+
+The resource for preemptive requests looks like this:
+```yaml
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: PreemptiveClusterRequest
+metadata:
+  name: my-request
+  namespace: my-namespace
+spec:
+  purpose: workload
+  workload: 3
+```
+
+The `spec.workload` field specifies for how many regular requests this preemptive request should account. This is a convenience feature - if you want to reserve capacity for 20 regular requests, you only have to create a single preemptive request, not 20.
+
+A relevant difference between regular and preemptive requests is that the latter ones are allowed to be 'rescheduled' to other clusters. The scheduler will occasionally do this even if no preemptive request was replaced by a regular one to optimize cluster usage. The effectiveness of this also depends on the chosen strategy.
+
+Note that the behavior of preemptive requests depends on the tenancy of the request's purpose, as defined in the scheduler configuration. This means that preemptive requests on clusters with multiple purposes might behave differently.
