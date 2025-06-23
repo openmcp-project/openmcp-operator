@@ -1,19 +1,5 @@
 scheduler:
   purposeMappings:
-    exclusive:
-      template:
-        metadata:
-          namespace: exclusive
-        spec:
-          profile: test-profile
-          tenancy: Exclusive
-    shared-unlimited:
-      template:
-        metadata:
-          namespace: shared-unlimited
-        spec:
-          profile: test-profile
-          tenancy: Shared
     shared-twice:
       tenancyCount: 2
       template:

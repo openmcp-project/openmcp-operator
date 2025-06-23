@@ -1,7 +1,8 @@
 apiVersion: clusters.openmcp.cloud/v1alpha1
-kind: ClusterRequest
+kind: PreemptiveClusterRequest
 metadata:
-  name: exclusive
+  name: exclusive-p
   namespace: foo
 spec:
   purpose: exclusive
+  workload: 1
