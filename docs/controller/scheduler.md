@@ -64,7 +64,7 @@ The following fields can be specified inside the `scheduler` field:
     - In `Namespaced` mode, only `Cluster` resources from a single namespace are taken into account when checking for existing clusters to schedule requests to. If the cluster template that corresponds to the purpose specified in the request has a `metadata.namespace` set, this namespace is used to check for `Cluster` resources and also to create new ones. If not, the namespace of the `ClusterRequest` resource is used instead.
     - In `Cluster` mode, the scheduler takes all clusters into account when trying to find existing clusters that can be reused. New clusters are still created in the namespace specified in the cluster template, or in the request's namespace, if the former one is not set.
 - `strategy` _(optional, defaults to `BalancedIgnoreEmpty`)_
-  - Valid values: `Balanced`, `BalancedIgnoreEmpty`, `Random`, `Simple`
+  - Valid values: `Balanced`, `BalancedIgnoreEmpty`
   - Determines how the scheduler chooses a cluster if multiple existing ones qualify for a request.
     - With the `Balanced` strategy, the scheduler chooses the cluster with the fewest requests pointing to it. In case of a tie, the first one is chosen.
       - For preemptive requests, it works the other way around and the fullest cluster is chosen.
