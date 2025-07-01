@@ -1,0 +1,14 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: shared-1
+  namespace: shared-four
+spec:
+  profile: test-profile
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  - shared-four
+  tenancy: Shared
+  
