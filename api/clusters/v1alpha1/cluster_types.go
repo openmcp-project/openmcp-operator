@@ -52,7 +52,23 @@ type K8sConfiguration struct {
 
 // ClusterStatus defines the observed state of Cluster
 type ClusterStatus struct {
-	CommonStatus `json:",inline"`
+	// ObservedGeneration is the generation of this resource that was last reconciled by the controller.
+	ObservedGeneration int64 `json:"observedGeneration"`
+
+	// LastReconcileTime is the time when the resource was last reconciled by the controller.
+	LastReconcileTime metav1.Time `json:"lastReconcileTime"`
+
+	// Reason is expected to contain a CamelCased string that provides further information in a machine-readable format.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// Message contains further details in a human-readable format.
+	// +optional
+	Message string `json:"message,omitempty"`
+
+	// Conditions contains the conditions of this resource using the standard Kubernetes condition format.
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Phase is the current phase of the cluster.
 	Phase ClusterPhase `json:"phase"`
