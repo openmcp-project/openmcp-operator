@@ -17,7 +17,7 @@ type ClusterSpec struct {
 
 	// ClusterConfigRef is a reference to a cluster configuration.
 	// +optional
-	ClusterConfigRef *ClusterConfigRef `json:"clusterConfigRef,omitempty"`
+	ClusterConfigRef *ObjectReference `json:"clusterConfigRef,omitempty"`
 
 	// Kubernetes configuration for the cluster.
 	Kubernetes K8sConfiguration `json:"kubernetes,omitempty"`
@@ -29,20 +29,6 @@ type ClusterSpec struct {
 	// Tenancy is the tenancy model of the cluster.
 	// +kubebuilder:validation:Enum=Exclusive;Shared
 	Tenancy Tenancy `json:"tenancy"`
-}
-
-// ClusterConfigRef is a reference to a cluster configuration.
-type ClusterConfigRef struct {
-	// APIGroup is the group for the resource being referenced.
-	// +kubebuilder:validation:MinLength=1
-	APIGroup string `json:"apiGroup"`
-	// Kind is the kind of the resource being referenced.
-	// +kubebuilder:validation:MinLength=1
-	Kind string `json:"kind"`
-	// Name is the name of the resource being referenced.
-	// Defaults to the name of the referencing resource, if not specified.
-	// +optional
-	Name string `json:"name,omitempty"`
 }
 
 type K8sConfiguration struct {
