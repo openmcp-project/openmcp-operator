@@ -13,5 +13,28 @@
   ],
   "postUpdateOptions": [
     "gomodTidy"
+  ],
+  "packageRules": [
+    {
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchDepNames": [
+        "go"
+      ],
+      "matchDepTypes": [
+        "golang"
+      ],
+      "rangeStrategy": "bump"
+    },
+    {
+      "matchPackageNames": [
+        "github.com/openmcp-project/*"
+      ],
+      "description": "Update all components from openmcp-project immediately",
+      "rebaseWhen": "auto",
+      "minimumReleaseAge": "0 days",
+      "enabled": true
+    }
   ]
 }
