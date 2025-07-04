@@ -72,22 +72,12 @@ spec:
               clusterConfigRef:
                 description: ClusterConfigRef is a reference to a cluster configuration.
                 properties:
-                  apiGroup:
-                    description: APIGroup is the group for the resource being referenced.
-                    minLength: 1
-                    type: string
-                  kind:
-                    description: Kind is the kind of the resource being referenced.
-                    minLength: 1
-                    type: string
                   name:
-                    description: |-
-                      Name is the name of the resource being referenced.
-                      Defaults to the name of the referencing resource, if not specified.
+                    description: Name is the name of the referenced resource.
+                    minLength: 1
                     type: string
                 required:
-                - apiGroup
-                - kind
+                - name
                 type: object
               kubernetes:
                 description: Kubernetes configuration for the cluster.
