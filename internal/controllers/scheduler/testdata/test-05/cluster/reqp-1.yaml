@@ -1,7 +1,8 @@
 apiVersion: clusters.openmcp.cloud/v1alpha1
-kind: ClusterRequest
+kind: PreemptiveClusterRequest
 metadata:
-  name: no-delete
+  name: no-delete-p
   namespace: foo
 spec:
   purpose: no-delete
+  workload: 1
