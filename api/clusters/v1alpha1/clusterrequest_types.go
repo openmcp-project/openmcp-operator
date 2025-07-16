@@ -4,6 +4,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// ClusterRequestPending is the phase if the ClusterRequest has not been scheduled yet.
+	ClusterRequestPending = "Pending"
+	// ClusterRequestScheduled is the phase if the ClusterRequest has been scheduled.
+	ClusterRequestScheduled = "Scheduled"
+)
+
 // +kubebuilder:validation:XValidation:rule="self == oldSelf",message="spec is immutable"
 type ClusterRequestSpec struct {
 	// Purpose is the purpose of the requested cluster.

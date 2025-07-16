@@ -5,6 +5,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// AccessRequestPending is the phase if the AccessRequest has not been scheduled yet.
+	AccessRequestPending = "Pending"
+	// AccessRequestGranted is the phase if the AccessRequest has been granted.
+	AccessRequestGranted = "Granted"
+)
+
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterRef) || has(self.clusterRef)", message="clusterRef may not be removed once set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.requestRef) || has(self.requestRef)", message="requestRef may not be removed once set"
 type AccessRequestSpec struct {
