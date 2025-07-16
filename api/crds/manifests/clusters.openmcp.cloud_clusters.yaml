@@ -69,16 +69,20 @@ spec:
           spec:
             description: ClusterSpec defines the desired state of Cluster
             properties:
-              clusterConfigRef:
-                description: ClusterConfigRef is a reference to a cluster configuration.
-                properties:
-                  name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
-                    type: string
-                required:
-                - name
-                type: object
+              clusterConfigs:
+                description: |-
+                  ClusterConfigs allows to reference any amount of provider-specific cluster configuration objects.
+                  The k8s resource kind that is referenced by this depends on the provider (which is defined by the profile).
+                items:
+                  properties:
+                    name:
+                      description: Name is the name of the referenced resource.
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
               kubernetes:
                 description: Kubernetes configuration for the cluster.
                 properties:

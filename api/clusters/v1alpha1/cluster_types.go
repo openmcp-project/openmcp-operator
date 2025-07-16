@@ -15,9 +15,10 @@ type ClusterSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="profile is immutable"
 	Profile string `json:"profile"`
 
-	// ClusterConfigRef is a reference to a cluster configuration.
+	// ClusterConfigs allows to reference any amount of provider-specific cluster configuration objects.
+	// The k8s resource kind that is referenced by this depends on the provider (which is defined by the profile).
 	// +optional
-	ClusterConfigRef *ObjectReference `json:"clusterConfigRef,omitempty"`
+	ClusterConfigs []ObjectReference `json:"clusterConfigs,omitempty"`
 
 	// Kubernetes configuration for the cluster.
 	Kubernetes K8sConfiguration `json:"kubernetes,omitempty"`
