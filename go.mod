@@ -14,7 +14,7 @@ require (
 	github.com/openmcp-project/openmcp-operator/api v0.8.3
 	github.com/spf13/cobra v1.9.1
 	k8s.io/api v0.33.2
-	k8s.io/apimachinery v0.33.2
+	k8s.io/apimachinery v0.33.3
 	k8s.io/client-go v0.33.2
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 	sigs.k8s.io/controller-runtime v0.21.0

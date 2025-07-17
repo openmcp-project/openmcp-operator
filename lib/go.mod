@@ -10,7 +10,7 @@ require (
 	github.com/openmcp-project/controller-utils v0.12.0
 	github.com/openmcp-project/openmcp-operator/api v0.8.3
 	k8s.io/api v0.33.2
-	k8s.io/apimachinery v0.33.2
+	k8s.io/apimachinery v0.33.3
 	k8s.io/client-go v0.33.2
 	sigs.k8s.io/controller-runtime v0.21.0
 )
