@@ -201,11 +201,11 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		return reconcile.Result{}, fmt.Errorf("failed to create or update MCP AccessRequest: %w", err)
 	}
 
-	if mcpAccessRequest.Status.Phase.IsDenied() {
+	if mcpAccessRequest.Status.IsDenied() {
 		return reconcile.Result{}, fmt.Errorf("MCP AccessRequest denied")
 	}
 
-	if !mcpAccessRequest.Status.Phase.IsGranted() {
+	if !mcpAccessRequest.Status.IsGranted() {
 		log.Debug("MCP AccessRequest is not yet granted",
 			"accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace, "requestPhase", mcpAccessRequest.Status.Phase)
 		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
@@ -220,11 +220,11 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		return reconcile.Result{}, fmt.Errorf("failed to create or update Workload ClusterRequest: %w", err)
 	}
 
-	if workloadRequest.Status.Phase.IsDenied() {
+	if workloadRequest.Status.IsDenied() {
 		return reconcile.Result{}, fmt.Errorf("workload ClusterRequest denied")
 	}
 
-	if !workloadRequest.Status.Phase.IsGranted() {
+	if !workloadRequest.Status.IsGranted() {
 		log.Debug("Workload ClusterRequest is not yet granted",
 			"clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace, "requestPhase", workloadRequest.Status.Phase)
 		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
@@ -246,11 +246,11 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		return reconcile.Result{}, fmt.Errorf("failed to create or update Workload AccessRequest: %w", err)
 	}
 
-	if workloadAccessRequest.Status.Phase.IsDenied() {
+	if workloadAccessRequest.Status.IsDenied() {
 		return reconcile.Result{}, fmt.Errorf("workload AccessRequest denied")
 	}
 
-	if !workloadAccessRequest.Status.Phase.IsGranted() {
+	if !workloadAccessRequest.Status.IsGranted() {
 		log.Debug("Workload AccessRequest is not yet granted",
 			"accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace, "requestPhase", workloadAccessRequest.Status.Phase)
 		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
@@ -373,7 +373,7 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, clusterName, 
 			m.log.Info("Waiting for ClusterRequest", "name", cr.Name, "phase", cr.Status.Phase)
 		}
 
-		return cr.Status.Phase.IsGranted() || cr.Status.Phase.IsDenied(), nil
+		return cr.Status.IsGranted() || cr.Status.IsDenied(), nil
 	})
 
 	if err != nil {
@@ -412,7 +412,7 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, clusterName, 
 			m.log.Info("Waiting for AccessRequest", "name", ar.Name, "phase", ar.Status.Phase)
 		}
 
-		return ar.Status.Phase.IsGranted() || ar.Status.Phase.IsDenied(), nil
+		return ar.Status.IsGranted() || ar.Status.IsDenied(), nil
 	})
 
 	if err != nil {

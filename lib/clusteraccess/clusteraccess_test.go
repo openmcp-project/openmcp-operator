@@ -25,6 +25,8 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const (
@@ -170,7 +172,9 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 			// set the access request status to "Granted"
 			accessRequestMCP.Status = clustersv1alpha1.AccessRequestStatus{
-				Phase: clustersv1alpha1.REQUEST_GRANTED,
+				Status: commonapi.Status{
+					Phase: clustersv1alpha1.REQUEST_GRANTED,
+				},
 			}
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
 
@@ -182,7 +186,9 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 			// set the cluster request status to "Granted"
 			clusterRequestWorkload.Status = clustersv1alpha1.ClusterRequestStatus{
-				Phase: clustersv1alpha1.REQUEST_GRANTED,
+				Status: commonapi.Status{
+					Phase: clustersv1alpha1.REQUEST_GRANTED,
+				},
 			}
 			Expect(env.Client().Status().Update(env.Ctx, clusterRequestWorkload)).To(Succeed())
 
@@ -194,7 +200,9 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 			// set the access request status to "Granted"
 			accessRequestWorkload.Status = clustersv1alpha1.AccessRequestStatus{
-				Phase: clustersv1alpha1.REQUEST_GRANTED,
+				Status: commonapi.Status{
+					Phase: clustersv1alpha1.REQUEST_GRANTED,
+				},
 			}
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
 
