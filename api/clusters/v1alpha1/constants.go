@@ -14,15 +14,6 @@ const (
 )
 
 const (
-	// CONDITION_UNKNOWN represents an unknown status for the condition.
-	CONDITION_UNKNOWN ConditionStatus = "Unknown"
-	// CONDITION_TRUE marks the condition as true.
-	CONDITION_TRUE ConditionStatus = "True"
-	// CONDITION_FALSE marks the condition as false.
-	CONDITION_FALSE ConditionStatus = "False"
-)
-
-const (
 	// PHASE_UNKNOWN represents an unknown phase for the cluster.
 	PHASE_UNKNOWN string = "Unknown"
 	// PHASE_PROGRESSING indicates that the cluster is being created or updated.
