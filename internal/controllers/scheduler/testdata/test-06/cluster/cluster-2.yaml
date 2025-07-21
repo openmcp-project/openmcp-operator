@@ -1,0 +1,17 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: shared-2
+  namespace: shared-four
+  finalizers:
+  - request.clusters.openmcp.cloud/f50370cc-d091-41f9-bf2a-635e870fa66d
+  - preemptive.clusters.openmcp.cloud/b78f415d-21d8-410c-9cda-202b7b0d2320
+spec:
+  profile: test-profile
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  - shared-four
+  tenancy: Shared
+  

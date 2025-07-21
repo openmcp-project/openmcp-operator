@@ -11,4 +11,6 @@ const (
 	ReasonConfigurationProblem = "ConfigurationProblem"
 	// ReasonInternalError indicates that something went wrong internally.
 	ReasonInternalError = "InternalError"
+	// ReasonSchedulingFailed indicates that there was a problem with scheduling a request.
+	ReasonSchedulingFailed = "SchedulingFailed"
 )

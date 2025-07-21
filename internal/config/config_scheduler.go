@@ -42,9 +42,8 @@ const (
 type Strategy string
 
 const (
-	STRATEGY_BALANCED Strategy = "Balanced"
-	STRATEGY_RANDOM   Strategy = "Random"
-	STRATEGY_SIMPLE   Strategy = "Simple"
+	STRATEGY_BALANCED_IGNORE_EMPTY Strategy = "BalancedIgnoreEmpty"
+	STRATEGY_BALANCED              Strategy = "Balanced"
 )
 
 type ClusterDefinition struct {
@@ -72,7 +71,7 @@ func (c *SchedulerConfig) Default(_ *field.Path) error {
 		c.Scope = SCOPE_NAMESPACED
 	}
 	if c.Strategy == "" {
-		c.Strategy = STRATEGY_BALANCED
+		c.Strategy = STRATEGY_BALANCED_IGNORE_EMPTY
 	}
 	if c.PurposeMappings == nil {
 		c.PurposeMappings = map[string]*ClusterDefinition{}
@@ -88,7 +87,7 @@ func (c *SchedulerConfig) Validate(fldPath *field.Path) error {
 	if !slices.Contains(validScopes, string(c.Scope)) {
 		errs = append(errs, field.NotSupported(fldPath.Child("scope"), string(c.Scope), validScopes))
 	}
-	validStrategies := []string{string(STRATEGY_BALANCED), string(STRATEGY_RANDOM), string(STRATEGY_SIMPLE)}
+	validStrategies := []string{string(STRATEGY_BALANCED), string(STRATEGY_BALANCED_IGNORE_EMPTY)}
 	if !slices.Contains(validStrategies, string(c.Strategy)) {
 		errs = append(errs, field.NotSupported(fldPath.Child("strategy"), string(c.Strategy), validStrategies))
 	}
@@ -171,4 +170,14 @@ func (c *SchedulerConfig) Complete(fldPath *field.Path) error {
 	}
 
 	return nil
+}
+
+func (cd *ClusterDefinition) IsExclusive() bool {
+	return cd.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_EXCLUSIVE
+}
+func (cd *ClusterDefinition) IsShared() bool {
+	return cd.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_SHARED
+}
+func (cd *ClusterDefinition) IsSharedUnlimitedly() bool {
+	return cd.IsShared() && cd.TenancyCount == 0
 }

@@ -219,7 +219,7 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 
 			// cast to ClusterAccessReconciler to access the reconcilerImpl methods
-			reconciler, ok := env.Reconciler().(clusteraccess.Reconciler) // nolint:staticcheck
+			reconciler, ok := env.Reconciler().(clusteraccess.Reconciler) //nolint:staticcheck
 			Expect(ok).To(BeTrue(), "reconcilerImpl should be of type ClusterAccessReconciler")
 
 			mcpCluster, err := reconciler.MCPCluster(env.Ctx, request)
