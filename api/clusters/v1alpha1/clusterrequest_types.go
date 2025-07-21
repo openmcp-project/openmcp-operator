@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const (
@@ -20,12 +22,7 @@ type ClusterRequestSpec struct {
 
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.cluster) || has(self.cluster)", message="cluster may not be removed once set"
 type ClusterRequestStatus struct {
-	CommonStatus `json:",inline"`
-
-	// Phase is the current phase of the request.
-	// +kubebuilder:default=Pending
-	// +kubebuilder:validation:Enum=Pending;Granted;Denied
-	Phase RequestPhase `json:"phase"`
+	commonapi.Status `json:",inline"`
 
 	// Cluster is the reference to the Cluster that was returned as a result of a granted request.
 	// Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
@@ -34,18 +31,16 @@ type ClusterRequestStatus struct {
 	Cluster *NamespacedObjectReference `json:"cluster,omitempty"`
 }
 
-type RequestPhase string
-
-func (p RequestPhase) IsGranted() bool {
-	return p == REQUEST_GRANTED
+func (crs ClusterRequestStatus) IsGranted() bool {
+	return crs.Phase == REQUEST_GRANTED
 }
 
-func (p RequestPhase) IsDenied() bool {
-	return p == REQUEST_DENIED
+func (crs ClusterRequestStatus) IsDenied() bool {
+	return crs.Phase == REQUEST_DENIED
 }
 
-func (p RequestPhase) IsPending() bool {
-	return p == "" || p == REQUEST_PENDING
+func (crs ClusterRequestStatus) IsPending() bool {
+	return crs.Phase == "" || crs.Phase == REQUEST_PENDING
 }
 
 // +kubebuilder:object:root=true

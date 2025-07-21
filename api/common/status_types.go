@@ -11,6 +11,8 @@ const (
 	StatusPhaseTerminating = "Terminating"
 )
 
+// +kubebuilder:object:generate=true
+
 // Status represents the status of an openMCP resource.
 type Status struct {
 	// ObservedGeneration is the generation of this resource that was last reconciled by the controller.

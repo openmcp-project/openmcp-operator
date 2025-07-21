@@ -7,6 +7,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 // ClusterSpec defines the desired state of Cluster
@@ -39,10 +41,7 @@ type K8sConfiguration struct {
 
 // ClusterStatus defines the observed state of Cluster
 type ClusterStatus struct {
-	CommonStatus `json:",inline"`
-
-	// Phase is the current phase of the cluster.
-	Phase ClusterPhase `json:"phase"`
+	commonapi.Status `json:",inline"`
 
 	// APIServer is the API server endpoint of the cluster.
 	// +optional
@@ -54,21 +53,19 @@ type ClusterStatus struct {
 	ProviderStatus *runtime.RawExtension `json:"providerStatus,omitempty"`
 }
 
-type ClusterPhase string
-
 const (
 	// CLUSTER_PHASE_UNKNOWN represents an unknown status for the cluster.
-	CLUSTER_PHASE_UNKNOWN ClusterPhase = "Unknown"
+	CLUSTER_PHASE_UNKNOWN string = "Unknown"
 	// CLUSTER_PHASE_READY represents a cluster that is ready.
-	CLUSTER_PHASE_READY ClusterPhase = "Ready"
+	CLUSTER_PHASE_READY string = "Ready"
 	// CLUSTER_PHASE_NOT_READY represents a cluster that is not ready.
-	CLUSTER_PHASE_NOT_READY ClusterPhase = "Not Ready"
+	CLUSTER_PHASE_NOT_READY string = "Not Ready"
 	// CLUSTER_PHASE_ERROR represents a cluster that could not be reconciled successfully.
-	CLUSTER_PHASE_ERROR ClusterPhase = "Error"
+	CLUSTER_PHASE_ERROR string = "Error"
 	// CLUSTER_PHASE_DELETING represents a cluster that is being deleted.
-	CLUSTER_PHASE_DELETING ClusterPhase = "In Deletion"
+	CLUSTER_PHASE_DELETING string = "In Deletion"
 	// CLUSTER_PHASE_DELETING_ERROR represents a cluster that could not be reconciled successfully while being in deletion.
-	CLUSTER_PHASE_DELETING_ERROR ClusterPhase = "Error In Deletion"
+	CLUSTER_PHASE_DELETING_ERROR string = "Error In Deletion"
 )
 
 // +kubebuilder:object:root=true

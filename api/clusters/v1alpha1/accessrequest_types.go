@@ -3,6 +3,8 @@ package v1alpha1
 import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const (
@@ -46,15 +48,22 @@ type PermissionsRequest struct {
 
 // AccessRequestStatus defines the observed state of AccessRequest
 type AccessRequestStatus struct {
-	CommonStatus `json:",inline"`
-
-	// Phase is the current phase of the request.
-	// +kubebuilder:default=Pending
-	// +kubebuilder:validation:Enum=Pending;Granted;Denied
-	Phase RequestPhase `json:"phase"`
+	commonapi.Status `json:",inline"`
 
 	// SecretRef holds the reference to the secret that contains the actual credentials.
 	SecretRef *NamespacedObjectReference `json:"secretRef,omitempty"`
+}
+
+func (ars AccessRequestStatus) IsGranted() bool {
+	return ars.Phase == REQUEST_GRANTED
+}
+
+func (ars AccessRequestStatus) IsDenied() bool {
+	return ars.Phase == REQUEST_DENIED
+}
+
+func (ars AccessRequestStatus) IsPending() bool {
+	return ars.Phase == "" || ars.Phase == REQUEST_PENDING
 }
 
 // +kubebuilder:object:root=true

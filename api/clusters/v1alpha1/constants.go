@@ -24,26 +24,26 @@ const (
 
 const (
 	// PHASE_UNKNOWN represents an unknown phase for the cluster.
-	PHASE_UNKNOWN ClusterPhase = "Unknown"
+	PHASE_UNKNOWN string = "Unknown"
 	// PHASE_PROGRESSING indicates that the cluster is being created or updated.
-	PHASE_PROGRESSING ClusterPhase = "Progressing"
+	PHASE_PROGRESSING string = "Progressing"
 	// PHASE_SUCCEEDED indicates that the cluster is ready.
-	PHASE_SUCCEEDED ClusterPhase = "Succeeded"
+	PHASE_SUCCEEDED string = "Succeeded"
 	// PHASE_FAILED indicates that an error occurred while creating or updating the cluster.
-	PHASE_FAILED ClusterPhase = "Failed"
+	PHASE_FAILED string = "Failed"
 	// PHASE_DELETING indicates that the cluster is being deleted.
-	PHASE_DELETING ClusterPhase = "Deleting"
+	PHASE_DELETING string = "Deleting"
 	// PHASE_DELETION_FAILED indicates that an error occurred while deleting the cluster.
-	PHASE_DELETION_FAILED ClusterPhase = "DeletionFailed"
+	PHASE_DELETION_FAILED string = "DeletionFailed"
 )
 
 const (
 	// REQUEST_PENDING indicates that the request has neither been granted nor denied yet.
-	REQUEST_PENDING RequestPhase = "Pending"
+	REQUEST_PENDING string = "Pending"
 	// REQUEST_GRANTED indicates that the request has been granted.
-	REQUEST_GRANTED RequestPhase = "Granted"
+	REQUEST_GRANTED string = "Granted"
 	// REQUEST_DENIED indicates that the request has been denied.
-	REQUEST_DENIED RequestPhase = "Denied"
+	REQUEST_DENIED string = "Denied"
 )
 
 type Tenancy string
