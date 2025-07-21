@@ -2,15 +2,17 @@ package v1alpha1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 // ClusterProfileSpec defines the desired state of Provider.
 type ClusterProfileSpec struct {
 	// ProviderRef is a reference to the ClusterProvider
-	ProviderRef ObjectReference `json:"providerRef"`
+	ProviderRef commonapi.ObjectReference `json:"providerRef"`
 
 	// ProviderConfigRef is a reference to the provider-specific configuration.
-	ProviderConfigRef ObjectReference `json:"providerConfigRef"`
+	ProviderConfigRef commonapi.ObjectReference `json:"providerConfigRef"`
 
 	// SupportedVersions are the supported Kubernetes versions.
 	SupportedVersions []SupportedK8sVersion `json:"supportedVersions"`

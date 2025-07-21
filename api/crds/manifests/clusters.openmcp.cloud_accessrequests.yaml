@@ -54,11 +54,10 @@ spec:
                   This value is immutable.
                 properties:
                   name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
+                    description: Name is the name of the object.
                     type: string
                   namespace:
-                    description: Namespace is the namespace of the referenced resource.
+                    description: Namespace is the namespace of the object.
                     type: string
                 required:
                 - name
@@ -139,11 +138,10 @@ spec:
                   This value is immutable.
                 properties:
                   name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
+                    description: Name is the name of the object.
                     type: string
                   namespace:
-                    description: Namespace is the namespace of the referenced resource.
+                    description: Namespace is the namespace of the object.
                     type: string
                 required:
                 - name
@@ -233,11 +231,10 @@ spec:
                   the actual credentials.
                 properties:
                   name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
+                    description: Name is the name of the object.
                     type: string
                   namespace:
-                    description: Namespace is the namespace of the referenced resource.
+                    description: Namespace is the namespace of the object.
                     type: string
                 required:
                 - name

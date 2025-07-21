@@ -101,19 +101,6 @@ func (cc Condition) IsUnknown() bool {
 	return cc.Status == CONDITION_UNKNOWN
 }
 
-type ObjectReference struct {
-	// Name is the name of the referenced resource.
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
-}
-
-type NamespacedObjectReference struct {
-	ObjectReference `json:",inline"`
-
-	// Namespace is the namespace of the referenced resource.
-	Namespace string `json:"namespace"`
-}
-
 // CommonStatus is a status shared by multiple resource.
 // Note that a 'phase' is also part of the status, but it cannot be included in this struct.
 // The reason is that we want to use string-like types for the phase, but the goddamn code generation does not support generics, no matter which annotations are added.

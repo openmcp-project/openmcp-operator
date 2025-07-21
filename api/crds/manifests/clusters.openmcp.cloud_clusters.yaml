@@ -74,13 +74,18 @@ spec:
                   ClusterConfigs allows to reference any amount of provider-specific cluster configuration objects.
                   The k8s resource kind that is referenced by this depends on the provider (which is defined by the profile).
                 items:
+                  description: ObjectReference is a reference to an object in any
+                    namespace.
                   properties:
                     name:
-                      description: Name is the name of the referenced resource.
-                      minLength: 1
+                      description: Name is the name of the object.
+                      type: string
+                    namespace:
+                      description: Namespace is the namespace of the object.
                       type: string
                   required:
                   - name
+                  - namespace
                   type: object
                 type: array
               kubernetes:

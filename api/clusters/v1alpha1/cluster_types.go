@@ -20,7 +20,7 @@ type ClusterSpec struct {
 	// ClusterConfigs allows to reference any amount of provider-specific cluster configuration objects.
 	// The k8s resource kind that is referenced by this depends on the provider (which is defined by the profile).
 	// +optional
-	ClusterConfigs []ObjectReference `json:"clusterConfigs,omitempty"`
+	ClusterConfigs []commonapi.ObjectReference `json:"clusterConfigs,omitempty"`
 
 	// Kubernetes configuration for the cluster.
 	Kubernetes K8sConfiguration `json:"kubernetes,omitempty"`

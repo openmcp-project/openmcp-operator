@@ -74,11 +74,10 @@ spec:
                   Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
                 properties:
                   name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
+                    description: Name is the name of the object.
                     type: string
                   namespace:
-                    description: Namespace is the namespace of the referenced resource.
+                    description: Namespace is the namespace of the object.
                     type: string
                 required:
                 - name

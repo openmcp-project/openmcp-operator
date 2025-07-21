@@ -28,7 +28,7 @@ type ClusterRequestStatus struct {
 	// Note that this information needs to be recoverable in case this status is lost, e.g. by adding a back reference in form of a finalizer to the Cluster resource.
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="cluster is immutable"
-	Cluster *NamespacedObjectReference `json:"cluster,omitempty"`
+	Cluster *commonapi.ObjectReference `json:"cluster,omitempty"`
 }
 
 func (crs ClusterRequestStatus) IsGranted() bool {

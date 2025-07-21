@@ -22,14 +22,14 @@ type AccessRequestSpec struct {
 	// This value is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterRef is immutable"
 	// +optional
-	ClusterRef *NamespacedObjectReference `json:"clusterRef,omitempty"`
+	ClusterRef *commonapi.ObjectReference `json:"clusterRef,omitempty"`
 
 	// RequestRef is the reference to the ClusterRequest for whose Cluster access is requested.
 	// Is ignored if clusterRef is set.
 	// This value is immutable.
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="requestRef is immutable"
 	// +optional
-	RequestRef *NamespacedObjectReference `json:"requestRef,omitempty"`
+	RequestRef *commonapi.ObjectReference `json:"requestRef,omitempty"`
 
 	// Permissions are the requested permissions.
 	Permissions []PermissionsRequest `json:"permissions"`
@@ -51,7 +51,7 @@ type AccessRequestStatus struct {
 	commonapi.Status `json:",inline"`
 
 	// SecretRef holds the reference to the secret that contains the actual credentials.
-	SecretRef *NamespacedObjectReference `json:"secretRef,omitempty"`
+	SecretRef *commonapi.ObjectReference `json:"secretRef,omitempty"`
 }
 
 func (ars AccessRequestStatus) IsGranted() bool {
