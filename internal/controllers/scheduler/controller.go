@@ -23,8 +23,11 @@ import (
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
+	"github.com/openmcp-project/openmcp-operator/api/common"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const ControllerName = "Scheduler"
@@ -163,7 +166,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 	}
 	if cluster != nil {
 		log.Info("Recovered cluster from referencing finalizer", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
-		rr.Object.Status.Cluster = &clustersv1alpha1.NamespacedObjectReference{}
+		rr.Object.Status.Cluster = &commonapi.ObjectReference{}
 		rr.Object.Status.Cluster.Name = cluster.Name
 		rr.Object.Status.Cluster.Namespace = cluster.Namespace
 		return rr
@@ -249,7 +252,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 	}
 
 	// add cluster reference to request
-	rr.Object.Status.Cluster = &clustersv1alpha1.NamespacedObjectReference{}
+	rr.Object.Status.Cluster = &common.ObjectReference{}
 	rr.Object.Status.Cluster.Name = cluster.Name
 	rr.Object.Status.Cluster.Namespace = cluster.Namespace
 

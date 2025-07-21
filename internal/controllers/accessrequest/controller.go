@@ -19,6 +19,8 @@ import (
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const ControllerName = "AccessRequest"
@@ -168,7 +170,7 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 	// set cluster reference, if only the request reference is set
 	if ar.Spec.ClusterRef == nil {
 		log.Info("Setting cluster reference in AccessRequest", "clusterName", c.Name, "clusterNamespace", c.Namespace)
-		ar.Spec.ClusterRef = &clustersv1alpha1.NamespacedObjectReference{}
+		ar.Spec.ClusterRef = &commonapi.ObjectReference{}
 		ar.Spec.ClusterRef.Name = c.Name
 		ar.Spec.ClusterRef.Namespace = c.Namespace
 	}

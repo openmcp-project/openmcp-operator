@@ -207,18 +207,14 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
 
 			// set the secret reference for the MCP access request and the workload access request
-			accessRequestMCP.Status.SecretRef = &clustersv1alpha1.NamespacedObjectReference{
-				ObjectReference: clustersv1alpha1.ObjectReference{
-					Name: "mcp-access",
-				},
+			accessRequestMCP.Status.SecretRef = &commonapi.ObjectReference{
+				Name:      "mcp-access",
 				Namespace: expectedRequestNamespace,
 			}
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
 
-			accessRequestWorkload.Status.SecretRef = &clustersv1alpha1.NamespacedObjectReference{
-				ObjectReference: clustersv1alpha1.ObjectReference{
-					Name: "workload-access",
-				},
+			accessRequestWorkload.Status.SecretRef = &commonapi.ObjectReference{
+				Name:      "workload-access",
 				Namespace: expectedRequestNamespace,
 			}
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
@@ -370,10 +366,8 @@ var _ = Describe("ClusterAccessManager", func() {
 			if accessRequest.Status.Phase != clustersv1alpha1.REQUEST_GRANTED {
 				accessRequest.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
 
-				accessRequest.Status.SecretRef = &clustersv1alpha1.NamespacedObjectReference{
-					ObjectReference: clustersv1alpha1.ObjectReference{
-						Name: "access",
-					},
+				accessRequest.Status.SecretRef = &commonapi.ObjectReference{
+					Name:      "access",
 					Namespace: "default",
 				}
 
