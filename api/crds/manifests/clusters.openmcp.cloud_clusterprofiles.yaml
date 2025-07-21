@@ -55,21 +55,27 @@ spec:
                   configuration.
                 properties:
                   name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
+                    description: Name is the name of the object.
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the object.
                     type: string
                 required:
                 - name
+                - namespace
                 type: object
               providerRef:
                 description: ProviderRef is a reference to the ClusterProvider
                 properties:
                   name:
-                    description: Name is the name of the referenced resource.
-                    minLength: 1
+                    description: Name is the name of the object.
+                    type: string
+                  namespace:
+                    description: Namespace is the namespace of the object.
                     type: string
                 required:
                 - name
+                - namespace
                 type: object
               supportedVersions:
                 description: SupportedVersions are the supported Kubernetes versions.

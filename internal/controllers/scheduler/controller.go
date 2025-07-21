@@ -25,6 +25,8 @@ import (
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const ControllerName = "Scheduler"
@@ -52,7 +54,7 @@ type ClusterScheduler struct {
 
 var _ reconcile.Reconciler = &ClusterScheduler{}
 
-type ReconcileResult = ctrlutils.ReconcileResult[*clustersv1alpha1.ClusterRequest, clustersv1alpha1.ConditionStatus]
+type ReconcileResult = ctrlutils.ReconcileResult[*clustersv1alpha1.ClusterRequest]
 
 func (r *ClusterScheduler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(ControllerName)
@@ -60,11 +62,10 @@ func (r *ClusterScheduler) Reconcile(ctx context.Context, req reconcile.Request)
 	log.Info("Starting reconcile")
 	rr := r.reconcile(ctx, req)
 	// status update
-	return ctrlutils.NewStatusUpdaterBuilder[*clustersv1alpha1.ClusterRequest, clustersv1alpha1.RequestPhase, clustersv1alpha1.ConditionStatus]().
-		WithNestedStruct("CommonStatus").
-		WithFieldOverride(ctrlutils.STATUS_FIELD_PHASE, "Phase").
+	return ctrlutils.NewOpenMCPStatusUpdaterBuilder[*clustersv1alpha1.ClusterRequest]().
+		WithNestedStruct("Status").
 		WithoutFields(ctrlutils.STATUS_FIELD_CONDITIONS).
-		WithPhaseUpdateFunc(func(obj *clustersv1alpha1.ClusterRequest, rr ReconcileResult) (clustersv1alpha1.RequestPhase, error) {
+		WithPhaseUpdateFunc(func(obj *clustersv1alpha1.ClusterRequest, rr ctrlutils.ReconcileResult[*clustersv1alpha1.ClusterRequest]) (string, error) {
 			if rr.ReconcileError != nil || rr.Object == nil || rr.Object.Status.Cluster == nil {
 				return clustersv1alpha1.REQUEST_PENDING, nil
 			}
@@ -164,7 +165,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 	}
 	if cluster != nil {
 		log.Info("Recovered cluster from referencing finalizer", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
-		rr.Object.Status.Cluster = &clustersv1alpha1.NamespacedObjectReference{}
+		rr.Object.Status.Cluster = &commonapi.ObjectReference{}
 		rr.Object.Status.Cluster.Name = cluster.Name
 		rr.Object.Status.Cluster.Namespace = cluster.Namespace
 		return rr
@@ -250,7 +251,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 	}
 
 	// add cluster reference to request
-	rr.Object.Status.Cluster = &clustersv1alpha1.NamespacedObjectReference{}
+	rr.Object.Status.Cluster = &commonapi.ObjectReference{}
 	rr.Object.Status.Cluster.Name = cluster.Name
 	rr.Object.Status.Cluster.Namespace = cluster.Namespace
 

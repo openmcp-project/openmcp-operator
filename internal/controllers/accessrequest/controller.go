@@ -19,6 +19,8 @@ import (
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const ControllerName = "AccessRequest"
@@ -40,7 +42,7 @@ type AccessRequestReconciler struct {
 
 var _ reconcile.Reconciler = &AccessRequestReconciler{}
 
-type ReconcileResult = ctrlutils.ReconcileResult[*clustersv1alpha1.AccessRequest, clustersv1alpha1.ConditionStatus]
+type ReconcileResult = ctrlutils.ReconcileResult[*clustersv1alpha1.AccessRequest]
 
 func (r *AccessRequestReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(ControllerName)
@@ -48,11 +50,10 @@ func (r *AccessRequestReconciler) Reconcile(ctx context.Context, req reconcile.R
 	log.Info("Starting reconcile")
 	rr := r.reconcile(ctx, req)
 	// status update
-	return ctrlutils.NewStatusUpdaterBuilder[*clustersv1alpha1.AccessRequest, clustersv1alpha1.RequestPhase, clustersv1alpha1.ConditionStatus]().
-		WithNestedStruct("CommonStatus").
-		WithFieldOverride(ctrlutils.STATUS_FIELD_PHASE, "Phase").
+	return ctrlutils.NewOpenMCPStatusUpdaterBuilder[*clustersv1alpha1.AccessRequest]().
+		WithNestedStruct("Status").
 		WithoutFields(ctrlutils.STATUS_FIELD_CONDITIONS).
-		WithPhaseUpdateFunc(func(obj *clustersv1alpha1.AccessRequest, rr ReconcileResult) (clustersv1alpha1.RequestPhase, error) {
+		WithPhaseUpdateFunc(func(obj *clustersv1alpha1.AccessRequest, rr ctrlutils.ReconcileResult[*clustersv1alpha1.AccessRequest]) (string, error) {
 			return clustersv1alpha1.REQUEST_PENDING, nil
 		}).
 		Build().
@@ -169,7 +170,7 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 	// set cluster reference, if only the request reference is set
 	if ar.Spec.ClusterRef == nil {
 		log.Info("Setting cluster reference in AccessRequest", "clusterName", c.Name, "clusterNamespace", c.Namespace)
-		ar.Spec.ClusterRef = &clustersv1alpha1.NamespacedObjectReference{}
+		ar.Spec.ClusterRef = &commonapi.ObjectReference{}
 		ar.Spec.ClusterRef.Name = c.Name
 		ar.Spec.ClusterRef.Namespace = c.Namespace
 	}

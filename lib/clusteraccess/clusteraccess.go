@@ -21,6 +21,8 @@ import (
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	constv1alpha1 "github.com/openmcp-project/openmcp-operator/api/constants"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
+
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const (
@@ -190,10 +192,8 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 	log.Debug("Create and wait for MCP cluster access request", "accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace)
 
 	mcpAccessRequest, err := ensureAccessRequest(ctx, r.platformClusterClient,
-		requestNameMCP, requestNamespace, &clustersv1alpha1.NamespacedObjectReference{
-			ObjectReference: clustersv1alpha1.ObjectReference{
-				Name: request.Name,
-			},
+		requestNameMCP, requestNamespace, &commonapi.ObjectReference{
+			Name:      request.Name,
 			Namespace: requestNamespace,
 		}, nil, r.mcpPermissions, metadata)
 
@@ -201,11 +201,11 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		return reconcile.Result{}, fmt.Errorf("failed to create or update MCP AccessRequest: %w", err)
 	}
 
-	if mcpAccessRequest.Status.Phase.IsDenied() {
+	if mcpAccessRequest.Status.IsDenied() {
 		return reconcile.Result{}, fmt.Errorf("MCP AccessRequest denied")
 	}
 
-	if !mcpAccessRequest.Status.Phase.IsGranted() {
+	if !mcpAccessRequest.Status.IsGranted() {
 		log.Debug("MCP AccessRequest is not yet granted",
 			"accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace, "requestPhase", mcpAccessRequest.Status.Phase)
 		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
@@ -220,11 +220,11 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		return reconcile.Result{}, fmt.Errorf("failed to create or update Workload ClusterRequest: %w", err)
 	}
 
-	if workloadRequest.Status.Phase.IsDenied() {
+	if workloadRequest.Status.IsDenied() {
 		return reconcile.Result{}, fmt.Errorf("workload ClusterRequest denied")
 	}
 
-	if !workloadRequest.Status.Phase.IsGranted() {
+	if !workloadRequest.Status.IsGranted() {
 		log.Debug("Workload ClusterRequest is not yet granted",
 			"clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace, "requestPhase", workloadRequest.Status.Phase)
 		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
@@ -235,10 +235,8 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 	log.Debug("Create and wait for Workload cluster access request", "accessRequestName", requestNameWorkload, "accessRequestNamespace", requestNamespace)
 
 	workloadAccessRequest, err := ensureAccessRequest(ctx, r.platformClusterClient,
-		requestNameWorkload, requestNamespace, &clustersv1alpha1.NamespacedObjectReference{
-			ObjectReference: clustersv1alpha1.ObjectReference{
-				Name: requestNameWorkload,
-			},
+		requestNameWorkload, requestNamespace, &commonapi.ObjectReference{
+			Name:      requestNameWorkload,
 			Namespace: requestNamespace,
 		}, nil, r.workloadPermissions, metadata)
 
@@ -246,11 +244,11 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		return reconcile.Result{}, fmt.Errorf("failed to create or update Workload AccessRequest: %w", err)
 	}
 
-	if workloadAccessRequest.Status.Phase.IsDenied() {
+	if workloadAccessRequest.Status.IsDenied() {
 		return reconcile.Result{}, fmt.Errorf("workload AccessRequest denied")
 	}
 
-	if !workloadAccessRequest.Status.Phase.IsGranted() {
+	if !workloadAccessRequest.Status.IsGranted() {
 		log.Debug("Workload AccessRequest is not yet granted",
 			"accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace, "requestPhase", workloadAccessRequest.Status.Phase)
 		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
@@ -373,7 +371,7 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, clusterName, 
 			m.log.Info("Waiting for ClusterRequest", "name", cr.Name, "phase", cr.Status.Phase)
 		}
 
-		return cr.Status.Phase.IsGranted() || cr.Status.Phase.IsDenied(), nil
+		return cr.Status.IsGranted() || cr.Status.IsDenied(), nil
 	})
 
 	if err != nil {
@@ -388,10 +386,8 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, clusterName, 
 	}
 
 	accessRequestMutator := newAccessRequestMutator(ar.Name, ar.Namespace)
-	accessRequestMutator.WithRequestRef(&clustersv1alpha1.NamespacedObjectReference{
-		ObjectReference: clustersv1alpha1.ObjectReference{
-			Name: cr.Name,
-		},
+	accessRequestMutator.WithRequestRef(&commonapi.ObjectReference{
+		Name:      cr.Name,
 		Namespace: cr.Namespace,
 	})
 	accessRequestMutator.WithPermissions(permissions)
@@ -412,7 +408,7 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, clusterName, 
 			m.log.Info("Waiting for AccessRequest", "name", ar.Name, "phase", ar.Status.Phase)
 		}
 
-		return ar.Status.Phase.IsGranted() || ar.Status.Phase.IsDenied(), nil
+		return ar.Status.IsGranted() || ar.Status.IsDenied(), nil
 	})
 
 	if err != nil {
@@ -470,7 +466,7 @@ func ensureClusterRequest(ctx context.Context, platformClusterClient client.Clie
 }
 
 func ensureAccessRequest(ctx context.Context, platformClusterClient client.Client, requestName, requestNamespace string,
-	requestRef *clustersv1alpha1.NamespacedObjectReference, clusterRef *clustersv1alpha1.NamespacedObjectReference,
+	requestRef *commonapi.ObjectReference, clusterRef *commonapi.ObjectReference,
 	permissions []clustersv1alpha1.PermissionsRequest, metadata resources.MetadataMutator) (*clustersv1alpha1.AccessRequest, error) {
 
 	mutator := newAccessRequestMutator(requestName, requestNamespace).
@@ -641,8 +637,8 @@ func (m *clusterRequestMutator) Mutate(clusterRequest *clustersv1alpha1.ClusterR
 type accessRequestMutator struct {
 	name        string
 	namespace   string
-	requestRef  *clustersv1alpha1.NamespacedObjectReference
-	clusterRef  *clustersv1alpha1.NamespacedObjectReference
+	requestRef  *commonapi.ObjectReference
+	clusterRef  *commonapi.ObjectReference
 	permissions []clustersv1alpha1.PermissionsRequest
 	metadata    resources.MetadataMutator
 }
@@ -654,12 +650,12 @@ func newAccessRequestMutator(name, namespace string) *accessRequestMutator {
 	}
 }
 
-func (m *accessRequestMutator) WithRequestRef(requestRef *clustersv1alpha1.NamespacedObjectReference) *accessRequestMutator {
+func (m *accessRequestMutator) WithRequestRef(requestRef *commonapi.ObjectReference) *accessRequestMutator {
 	m.requestRef = requestRef
 	return m
 }
 
-func (m *accessRequestMutator) WithClusterRef(clusterRef *clustersv1alpha1.NamespacedObjectReference) *accessRequestMutator {
+func (m *accessRequestMutator) WithClusterRef(clusterRef *commonapi.ObjectReference) *accessRequestMutator {
 	m.clusterRef = clusterRef
 	return m
 }
