@@ -362,7 +362,7 @@ func (in *ClusterSpec) DeepCopyInto(out *ClusterSpec) {
 	*out = *in
 	if in.ClusterConfigs != nil {
 		in, out := &in.ClusterConfigs, &out.ClusterConfigs
-		*out = make([]common.ObjectReference, len(*in))
+		*out = make([]common.LocalObjectReference, len(*in))
 		copy(*out, *in)
 	}
 	out.Kubernetes = in.Kubernetes
