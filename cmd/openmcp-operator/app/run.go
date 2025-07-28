@@ -25,6 +25,7 @@ import (
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
+	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
@@ -303,7 +304,11 @@ func (o *RunOptions) Run(ctx context.Context) error {
 
 	// setup accessrequest controller
 	if slices.Contains(o.Controllers, strings.ToLower(accessrequest.ControllerName)) {
-		if err := accessrequest.NewAccessRequestReconciler(o.Clusters.Platform, o.Config.AccessRequest).SetupWithManager(mgr); err != nil {
+		var arConfig *config.AccessRequestConfig
+		if o.Config != nil {
+			arConfig = o.Config.AccessRequest
+		}
+		if err := accessrequest.NewAccessRequestReconciler(o.Clusters.Platform, arConfig).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to setup accessrequest controller: %w", err)
 		}
 	}
