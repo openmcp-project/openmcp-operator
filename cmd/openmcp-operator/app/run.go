@@ -25,6 +25,7 @@ import (
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
+	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
@@ -67,7 +68,7 @@ func NewRunCommand(so *SharedOptions) *cobra.Command {
 func (o *RunOptions) AddFlags(cmd *cobra.Command) {
 	// kubebuilder default flags
 	cmd.Flags().StringVar(&o.MetricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
-	cmd.Flags().StringVar(&o.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	cmd.Flags().StringVar(&o.ProbeAddr, "health-probe-bind-address", ":8082", "The address the probe endpoint binds to.")
 	cmd.Flags().StringVar(&o.PprofAddr, "pprof-bind-address", "", "The address the pprof endpoint binds to. Expected format is ':<port>'. Leave empty to disable pprof endpoint.")
 	cmd.Flags().BoolVar(&o.EnableLeaderElection, "leader-elect", false, "Enable leader election for controller manager. Enabling this will ensure there is only one active controller manager.")
 	cmd.Flags().BoolVar(&o.SecureMetrics, "metrics-secure", true, "If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
@@ -303,7 +304,11 @@ func (o *RunOptions) Run(ctx context.Context) error {
 
 	// setup accessrequest controller
 	if slices.Contains(o.Controllers, strings.ToLower(accessrequest.ControllerName)) {
-		if err := accessrequest.NewAccessRequestReconciler(o.Clusters.Platform, o.Config.AccessRequest).SetupWithManager(mgr); err != nil {
+		var arConfig *config.AccessRequestConfig
+		if o.Config != nil {
+			arConfig = o.Config.AccessRequest
+		}
+		if err := accessrequest.NewAccessRequestReconciler(o.Clusters.Platform, arConfig).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to setup accessrequest controller: %w", err)
 		}
 	}
