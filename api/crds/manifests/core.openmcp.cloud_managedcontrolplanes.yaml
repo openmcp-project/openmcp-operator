@@ -1,0 +1,298 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.18.0
+  labels:
+    openmcp.cloud/cluster: onboarding
+  name: managedcontrolplanes.core.openmcp.cloud
+spec:
+  group: core.openmcp.cloud
+  names:
+    kind: ManagedControlPlane
+    listKind: ManagedControlPlaneList
+    plural: managedcontrolplanes
+    shortNames:
+    - mcp
+    singular: managedcontrolplane
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v2alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              authentication:
+                description: Authentication contains the configuration for the enabled
+                  OpenID Connect identity providers
+                properties:
+                  enableSystemIdentityProvider:
+                    type: boolean
+                  identityProviders:
+                    items:
+                      description: IdentityProvider contains the configuration for
+                        an OpenID Connect identity provider
+                      properties:
+                        caBundle:
+                          description: |-
+                            CABundle: When set, the OpenID server's certificate will be verified by one of the authorities in the bundle.
+                            Otherwise, the host's root CA set will be used.
+                          type: string
+                        clientConfig:
+                          description: ClientAuthentication contains configuration
+                            for OIDC clients
+                          properties:
+                            clientSecret:
+                              description: |-
+                                ClientSecret is a references to a secret containing the client secret.
+                                The client secret will be added to the generated kubeconfig with the "--oidc-client-secret" flag.
+                              properties:
+                                key:
+                                  description: Key is the key in the secret to use.
+                                  type: string
+                                name:
+                                  default: ""
+                                  description: |-
+                                    Name of the referent.
+                                    This field is effectively required, but due to backwards compatibility is
+                                    allowed to be empty. Instances of this type with an empty value here are
+                                    almost certainly wrong.
+                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                  type: string
+                              required:
+                              - key
+                              type: object
+                              x-kubernetes-map-type: atomic
+                            extraConfig:
+                              additionalProperties:
+                                description: SingleOrMultiStringValue is a type that
+                                  can hold either a single string value or a list
+                                  of string values.
+                                properties:
+                                  value:
+                                    description: Value is a single string value.
+                                    type: string
+                                  values:
+                                    description: Values is a list of string values.
+                                    items:
+                                      type: string
+                                    type: array
+                                type: object
+                              description: |-
+                                ExtraConfig is added to the client configuration in the kubeconfig.
+                                Can either be a single string value, a list of string values or no value.
+                                Must not contain any of the following keys:
+                                - "client-id"
+                                - "client-secret"
+                                - "issuer-url"
+                              type: object
+                          type: object
+                        clientID:
+                          description: ClientID is the client ID of the identity provider.
+                          type: string
+                        groupsClaim:
+                          description: GroupsClaim is the claim that contains the
+                            groups.
+                          type: string
+                        issuerURL:
+                          description: IssuerURL is the issuer URL of the identity
+                            provider.
+                          type: string
+                        name:
+                          description: |-
+                            Name is the name of the identity provider.
+                            The name must be unique among all identity providers.
+                            The name must only contain lowercase letters.
+                            The length must not exceed 63 characters.
+                          maxLength: 63
+                          pattern: ^[a-z]+$
+                          type: string
+                        requiredClaims:
+                          additionalProperties:
+                            type: string
+                          description: RequiredClaims is a map of required claims.
+                            If set, the identity provider must provide these claims
+                            in the ID token.
+                          type: object
+                        signingAlgs:
+                          description: SigningAlgs is the list of allowed JOSE asymmetric
+                            signing algorithms.
+                          items:
+                            type: string
+                          type: array
+                        usernameClaim:
+                          description: UsernameClaim is the claim that contains the
+                            username.
+                          type: string
+                      required:
+                      - clientID
+                      - issuerURL
+                      - name
+                      - usernameClaim
+                      type: object
+                    type: array
+                type: object
+              authorization:
+                description: Authorization contains the configuration of the subjects
+                  assigned to control plane roles
+                properties:
+                  members:
+                    description: Members is a list of members with their assigned
+                      roles.
+                    items:
+                      properties:
+                        kind:
+                          description: Kind of object being referenced. Can be "User",
+                            "Group", or "ServiceAccount".
+                          enum:
+                          - User
+                          - Group
+                          - ServiceAccount
+                          type: string
+                        name:
+                          description: Name of the object being referenced.
+                          type: string
+                        namespace:
+                          description: Namespace of the referenced object. Required
+                            if Kind is "ServiceAccount". Must not be specified if
+                            Kind is "User" or "Group".
+                          type: string
+                        roles:
+                          description: Roles is a list of roles assigned to the subject.
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - kind
+                      - name
+                      type: object
+                      x-kubernetes-validations:
+                      - message: Namespace must not be specified if Kind is User or
+                          Group
+                        rule: self.kind == 'ServiceAccount' || !has(self.__namespace__)
+                      - message: Namespace is required for ServiceAccount
+                        rule: self.kind != 'ServiceAccount' || has(self.__namespace__)
+                    type: array
+                type: object
+            type: object
+          status:
+            properties:
+              access:
+                description: Access contains a reference to a secret holding the kubeconfig
+                  for the ManagedControlPlane.
+                properties:
+                  key:
+                    description: Key is the key in the secret to use.
+                    type: string
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                required:
+                - key
+                type: object
+                x-kubernetes-map-type: atomic
+              conditions:
+                description: Conditions contains the conditions.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the generation of this resource
+                  that was last reconciled by the controller.
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the current phase of the resource.
+                type: string
+            required:
+            - observedGeneration
+            - phase
+            type: object
+        type: object
+    selectableFields:
+    - jsonPath: .status.phase
+    served: true
+    storage: true
+    subresources:
+      status: {}

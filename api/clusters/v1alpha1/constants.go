@@ -74,3 +74,14 @@ const (
 	// RequestFinalizerOnClusterPrefix is the prefix for the finalizers that mark a Cluster as being referenced by a ClusterRequest.
 	RequestFinalizerOnClusterPrefix = "request." + GroupName + "/"
 )
+
+const (
+	// SecretKeyKubeconfig is the name of the key in the AccessRequest secret that contains the kubeconfig.
+	SecretKeyKubeconfig = "kubeconfig"
+	// SecretKeyExpirationTimestamp is the name of the key in the AccessRequest secret that contains the expiration timestamp.
+	// This value is optional and must not be set for non-expiring authentication methods.
+	SecretKeyExpirationTimestamp = "expirationTimestamp"
+	// SecretKeyCreationTimestamp is the name of the key in the AccessRequest secret that contains the creation timestamp.
+	// This value is optional and must not be set for non-expiring authentication methods.
+	SecretKeyCreationTimestamp = "creationTimestamp"
+)
