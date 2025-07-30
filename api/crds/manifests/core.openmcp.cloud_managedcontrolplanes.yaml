@@ -45,181 +45,262 @@ spec:
             type: object
           spec:
             properties:
-              authentication:
-                description: Authentication contains the configuration for the enabled
-                  OpenID Connect identity providers
+              iam:
+                description: IAM contains the access management configuration for
+                  the ManagedControlPlane.
                 properties:
-                  enableSystemIdentityProvider:
-                    type: boolean
-                  identityProviders:
+                  oidcProviders:
+                    description: |-
+                      OIDCProviders is a list of OIDC providers that should be configured for the ManagedControlPlane.
+                      They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
                     items:
-                      description: IdentityProvider contains the configuration for
-                        an OpenID Connect identity provider
                       properties:
-                        caBundle:
-                          description: |-
-                            CABundle: When set, the OpenID server's certificate will be verified by one of the authorities in the bundle.
-                            Otherwise, the host's root CA set will be used.
-                          type: string
-                        clientConfig:
-                          description: ClientAuthentication contains configuration
-                            for OIDC clients
-                          properties:
-                            clientSecret:
-                              description: |-
-                                ClientSecret is a references to a secret containing the client secret.
-                                The client secret will be added to the generated kubeconfig with the "--oidc-client-secret" flag.
-                              properties:
-                                key:
-                                  description: Key is the key in the secret to use.
-                                  type: string
-                                name:
-                                  default: ""
-                                  description: |-
-                                    Name of the referent.
-                                    This field is effectively required, but due to backwards compatibility is
-                                    allowed to be empty. Instances of this type with an empty value here are
-                                    almost certainly wrong.
-                                    More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                  type: string
-                              required:
-                              - key
-                              type: object
-                              x-kubernetes-map-type: atomic
-                            extraConfig:
-                              additionalProperties:
-                                description: SingleOrMultiStringValue is a type that
-                                  can hold either a single string value or a list
-                                  of string values.
-                                properties:
-                                  value:
-                                    description: Value is a single string value.
-                                    type: string
-                                  values:
-                                    description: Values is a list of string values.
-                                    items:
-                                      type: string
-                                    type: array
-                                type: object
-                              description: |-
-                                ExtraConfig is added to the client configuration in the kubeconfig.
-                                Can either be a single string value, a list of string values or no value.
-                                Must not contain any of the following keys:
-                                - "client-id"
-                                - "client-secret"
-                                - "issuer-url"
-                              type: object
-                          type: object
                         clientID:
-                          description: ClientID is the client ID of the identity provider.
+                          description: ClientID is the client ID to use for the OIDC
+                            provider.
                           type: string
                         groupsClaim:
-                          description: GroupsClaim is the claim that contains the
-                            groups.
+                          default: groups
+                          description: |-
+                            GroupsClaim is the claim in the OIDC token that contains the groups.
+                            If empty, the default claim "groups" will be used.
                           type: string
-                        issuerURL:
-                          description: IssuerURL is the issuer URL of the identity
-                            provider.
+                        groupsPrefix:
+                          description: |-
+                            GroupsPrefix is a prefix that will be added to all group names when referenced in RBAC rules.
+                            This is required to avoid conflicts with Kubernetes built-in groups.
+                            If the prefix does not end with a colon (:), it will be added automatically.
+                          minLength: 1
+                          type: string
+                        issuer:
+                          description: Issuer is the issuer URL of the OIDC provider.
                           type: string
                         name:
                           description: |-
-                            Name is the name of the identity provider.
-                            The name must be unique among all identity providers.
-                            The name must only contain lowercase letters.
-                            The length must not exceed 63 characters.
-                          maxLength: 63
-                          pattern: ^[a-z]+$
+                            Name is the name of the OIDC provider.
+                            May be used in k8s resources, therefore has to be a valid k8s name.
+                          maxLength: 253
+                          minLength: 1
+                          pattern: '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*'
                           type: string
-                        requiredClaims:
-                          additionalProperties:
-                            type: string
-                          description: RequiredClaims is a map of required claims.
-                            If set, the identity provider must provide these claims
-                            in the ID token.
-                          type: object
-                        signingAlgs:
-                          description: SigningAlgs is the list of allowed JOSE asymmetric
-                            signing algorithms.
+                        roleBindings:
+                          description: |-
+                            RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
+                            Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
                           items:
-                            type: string
+                            properties:
+                              roleRefs:
+                                description: |-
+                                  RoleRefs is a list of (cluster) role references that the subjects should be bound to.
+                                  Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
+                                items:
+                                  properties:
+                                    kind:
+                                      description: |-
+                                        Kind is the kind of the role to bind to the subjects.
+                                        It must be 'Role' or 'ClusterRole'.
+                                      enum:
+                                      - Role
+                                      - ClusterRole
+                                      type: string
+                                    name:
+                                      description: Name is the name of the role or
+                                        cluster role to bind to the subjects.
+                                      minLength: 1
+                                      type: string
+                                    namespace:
+                                      description: |-
+                                        Namespace is the namespace of the role to bind to the subjects.
+                                        It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
+                                      type: string
+                                  required:
+                                  - kind
+                                  - name
+                                  type: object
+                                  x-kubernetes-validations:
+                                  - message: namespace must be set if kind is 'Role'
+                                    rule: self.kind == 'Role' && has(self.namespace)
+                                      && self.namespace != ”
+                                  - message: namespace must not be set if kind is
+                                      'ClusterRole'
+                                    rule: self.kind == 'ClusterRole' && (!has(self.namespace)
+                                      || self.namespace == ”)
+                                type: array
+                              subjects:
+                                description: |-
+                                  Subjects is a list of subjects that should be bound to the specified roles.
+                                  The subjects' names will be prefixed with the username prefix of the OIDC provider.
+                                items:
+                                  description: |-
+                                    Subject contains a reference to the object or user identities a role binding applies to.  This can either hold a direct API object reference,
+                                    or a value for non-objects such as user and group names.
+                                  properties:
+                                    apiGroup:
+                                      description: |-
+                                        APIGroup holds the API group of the referenced subject.
+                                        Defaults to "" for ServiceAccount subjects.
+                                        Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
+                                      type: string
+                                    kind:
+                                      description: |-
+                                        Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
+                                        If the Authorizer does not recognized the kind value, the Authorizer should report an error.
+                                      type: string
+                                    name:
+                                      description: Name of the object being referenced.
+                                      type: string
+                                    namespace:
+                                      description: |-
+                                        Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
+                                        the Authorizer should report an error.
+                                      type: string
+                                  required:
+                                  - kind
+                                  - name
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                                type: array
+                            required:
+                            - roleRefs
+                            - subjects
+                            type: object
                           type: array
                         usernameClaim:
-                          description: UsernameClaim is the claim that contains the
-                            username.
+                          default: sub
+                          description: |-
+                            UsernameClaim is the claim in the OIDC token that contains the username.
+                            If empty, the default claim "sub" will be used.
+                          type: string
+                        usernamePrefix:
+                          description: |-
+                            UsernamePrefix is a prefix that will be added to all usernames when referenced in RBAC rules.
+                            This is required to avoid conflicts with Kubernetes built-in users.
+                            If the prefix does not end with a colon (:), it will be added automatically.
+                          minLength: 1
                           type: string
                       required:
                       - clientID
-                      - issuerURL
+                      - groupsPrefix
+                      - issuer
                       - name
-                      - usernameClaim
-                      type: object
-                    type: array
-                type: object
-              authorization:
-                description: Authorization contains the configuration of the subjects
-                  assigned to control plane roles
-                properties:
-                  members:
-                    description: Members is a list of members with their assigned
-                      roles.
-                    items:
-                      properties:
-                        kind:
-                          description: Kind of object being referenced. Can be "User",
-                            "Group", or "ServiceAccount".
-                          enum:
-                          - User
-                          - Group
-                          - ServiceAccount
-                          type: string
-                        name:
-                          description: Name of the object being referenced.
-                          type: string
-                        namespace:
-                          description: Namespace of the referenced object. Required
-                            if Kind is "ServiceAccount". Must not be specified if
-                            Kind is "User" or "Group".
-                          type: string
-                        roles:
-                          description: Roles is a list of roles assigned to the subject.
-                          items:
-                            type: string
-                          type: array
-                      required:
-                      - kind
-                      - name
+                      - roleBindings
+                      - usernamePrefix
                       type: object
                       x-kubernetes-validations:
-                      - message: Namespace must not be specified if Kind is User or
-                          Group
-                        rule: self.kind == 'ServiceAccount' || !has(self.__namespace__)
-                      - message: Namespace is required for ServiceAccount
-                        rule: self.kind != 'ServiceAccount' || has(self.__namespace__)
+                      - message: OIDC provider name must not be 'default' as this
+                          is reserved for the standard OIDC provider
+                        rule: self.name != 'default'
+                    type: array
+                  roleBindings:
+                    description: |-
+                      RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
+                      These bindings refer to the standard OIDC provider. If empty, the standard OIDC provider is disabled.
+                      Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
+                    items:
+                      properties:
+                        roleRefs:
+                          description: |-
+                            RoleRefs is a list of (cluster) role references that the subjects should be bound to.
+                            Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
+                          items:
+                            properties:
+                              kind:
+                                description: |-
+                                  Kind is the kind of the role to bind to the subjects.
+                                  It must be 'Role' or 'ClusterRole'.
+                                enum:
+                                - Role
+                                - ClusterRole
+                                type: string
+                              name:
+                                description: Name is the name of the role or cluster
+                                  role to bind to the subjects.
+                                minLength: 1
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace is the namespace of the role to bind to the subjects.
+                                  It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
+                                type: string
+                            required:
+                            - kind
+                            - name
+                            type: object
+                            x-kubernetes-validations:
+                            - message: namespace must be set if kind is 'Role'
+                              rule: self.kind == 'Role' && has(self.namespace) &&
+                                self.namespace != ”
+                            - message: namespace must not be set if kind is 'ClusterRole'
+                              rule: self.kind == 'ClusterRole' && (!has(self.namespace)
+                                || self.namespace == ”)
+                          type: array
+                        subjects:
+                          description: |-
+                            Subjects is a list of subjects that should be bound to the specified roles.
+                            The subjects' names will be prefixed with the username prefix of the OIDC provider.
+                          items:
+                            description: |-
+                              Subject contains a reference to the object or user identities a role binding applies to.  This can either hold a direct API object reference,
+                              or a value for non-objects such as user and group names.
+                            properties:
+                              apiGroup:
+                                description: |-
+                                  APIGroup holds the API group of the referenced subject.
+                                  Defaults to "" for ServiceAccount subjects.
+                                  Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
+                                type: string
+                              kind:
+                                description: |-
+                                  Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
+                                  If the Authorizer does not recognized the kind value, the Authorizer should report an error.
+                                type: string
+                              name:
+                                description: Name of the object being referenced.
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
+                                  the Authorizer should report an error.
+                                type: string
+                            required:
+                            - kind
+                            - name
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          type: array
+                      required:
+                      - roleRefs
+                      - subjects
+                      type: object
                     type: array
                 type: object
+            required:
+            - iam
             type: object
           status:
             properties:
               access:
-                description: Access contains a reference to a secret holding the kubeconfig
-                  for the ManagedControlPlane.
-                properties:
-                  key:
-                    description: Key is the key in the secret to use.
-                    type: string
-                  name:
-                    default: ""
-                    description: |-
-                      Name of the referent.
-                      This field is effectively required, but due to backwards compatibility is
-                      allowed to be empty. Instances of this type with an empty value here are
-                      almost certainly wrong.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                    type: string
-                required:
-                - key
+                additionalProperties:
+                  description: LocalObjectReference is a reference to an object in
+                    the same namespace as the resource referencing it.
+                  properties:
+                    name:
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                description: |-
+                  Access is a mapping from OIDC provider names to secret references.
+                  Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ManagedControlPlane.
+                  The default OIDC provider, if configured, uses the name "default" in this mapping.
+                  The "default" key is also used if the ClusterProvider does not support OIDC-based access and created a serviceaccount with a token instead.
                 type: object
-                x-kubernetes-map-type: atomic
               conditions:
                 description: Conditions contains the conditions.
                 items:
@@ -286,6 +367,7 @@ spec:
                 description: Phase is the current phase of the resource.
                 type: string
             required:
+            - access
             - observedGeneration
             - phase
             type: object

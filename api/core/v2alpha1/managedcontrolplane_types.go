@@ -7,18 +7,32 @@ import (
 )
 
 type ManagedControlPlaneSpec struct {
-	// Authentication contains the configuration for the enabled OpenID Connect identity providers
-	Authentication *AuthenticationConfiguration `json:"authentication,omitempty"`
-
-	// Authorization contains the configuration of the subjects assigned to control plane roles
-	Authorization *AuthorizationConfiguration `json:"authorization,omitempty"`
+	// IAM contains the access management configuration for the ManagedControlPlane.
+	IAM IAMConfig `json:"iam"`
 }
 
 type ManagedControlPlaneStatus struct {
 	commonapi.Status `json:",inline"`
 
-	// Access contains a reference to a secret holding the kubeconfig for the ManagedControlPlane.
-	Access *commonapi.LocalSecretReference `json:"access,omitempty"`
+	// Access is a mapping from OIDC provider names to secret references.
+	// Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ManagedControlPlane.
+	// The default OIDC provider, if configured, uses the name "default" in this mapping.
+	// The "default" key is also used if the ClusterProvider does not support OIDC-based access and created a serviceaccount with a token instead.
+	Access map[string]commonapi.LocalObjectReference `json:"access"`
+}
+
+type IAMConfig struct {
+	// RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
+	// These bindings refer to the standard OIDC provider. If empty, the standard OIDC provider is disabled.
+	// Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
+	// +optional
+	RoleBindings []commonapi.RoleBindings `json:"roleBindings,omitempty"`
+
+	// OIDCProviders is a list of OIDC providers that should be configured for the ManagedControlPlane.
+	// They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
+	// +kubebuilder:validation:items:XValidation:rule="self.name != 'default'", message="OIDC provider name must not be 'default' as this is reserved for the standard OIDC provider"
+	// +optional
+	OIDCProviders []*commonapi.OIDCProviderConfig `json:"oidcProviders,omitempty"`
 }
 
 // +kubebuilder:object:root=true
