@@ -66,8 +66,146 @@ spec:
                 x-kubernetes-validations:
                 - message: clusterRef is immutable
                   rule: self == oldSelf
+              oidcProvider:
+                description: |-
+                  OIDCProvider is a configuration for an OIDC provider that should be used for authentication and associated role bindings.
+                  If set, the handling ClusterProvider will create an OIDC-based access for the AccessRequest, if supported.
+                  Otherwise, a serviceaccount with a token will be created and bound to the requested permissions.
+                properties:
+                  clientID:
+                    description: ClientID is the client ID to use for the OIDC provider.
+                    type: string
+                  groupsClaim:
+                    default: groups
+                    description: |-
+                      GroupsClaim is the claim in the OIDC token that contains the groups.
+                      If empty, the default claim "groups" will be used.
+                    type: string
+                  groupsPrefix:
+                    description: |-
+                      GroupsPrefix is a prefix that will be added to all group names when referenced in RBAC rules.
+                      This is required to avoid conflicts with Kubernetes built-in groups.
+                      If the prefix does not end with a colon (:), it will be added automatically.
+                    minLength: 1
+                    type: string
+                  issuer:
+                    description: Issuer is the issuer URL of the OIDC provider.
+                    type: string
+                  name:
+                    description: |-
+                      Name is the name of the OIDC provider.
+                      May be used in k8s resources, therefore has to be a valid k8s name.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*'
+                    type: string
+                  roleBindings:
+                    description: |-
+                      RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
+                      Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
+                    items:
+                      properties:
+                        roleRefs:
+                          description: |-
+                            RoleRefs is a list of (cluster) role references that the subjects should be bound to.
+                            Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
+                          items:
+                            properties:
+                              kind:
+                                description: |-
+                                  Kind is the kind of the role to bind to the subjects.
+                                  It must be 'Role' or 'ClusterRole'.
+                                enum:
+                                - Role
+                                - ClusterRole
+                                type: string
+                              name:
+                                description: Name is the name of the role or cluster
+                                  role to bind to the subjects.
+                                minLength: 1
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace is the namespace of the role to bind to the subjects.
+                                  It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
+                                type: string
+                            required:
+                            - kind
+                            - name
+                            type: object
+                            x-kubernetes-validations:
+                            - message: namespace must be set if kind is 'Role'
+                              rule: self.kind == 'Role' && has(self.namespace) &&
+                                self.namespace != ”
+                            - message: namespace must not be set if kind is 'ClusterRole'
+                              rule: self.kind == 'ClusterRole' && (!has(self.namespace)
+                                || self.namespace == ”)
+                          type: array
+                        subjects:
+                          description: |-
+                            Subjects is a list of subjects that should be bound to the specified roles.
+                            The subjects' names will be prefixed with the username prefix of the OIDC provider.
+                          items:
+                            description: |-
+                              Subject contains a reference to the object or user identities a role binding applies to.  This can either hold a direct API object reference,
+                              or a value for non-objects such as user and group names.
+                            properties:
+                              apiGroup:
+                                description: |-
+                                  APIGroup holds the API group of the referenced subject.
+                                  Defaults to "" for ServiceAccount subjects.
+                                  Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
+                                type: string
+                              kind:
+                                description: |-
+                                  Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
+                                  If the Authorizer does not recognized the kind value, the Authorizer should report an error.
+                                type: string
+                              name:
+                                description: Name of the object being referenced.
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
+                                  the Authorizer should report an error.
+                                type: string
+                            required:
+                            - kind
+                            - name
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          type: array
+                      required:
+                      - roleRefs
+                      - subjects
+                      type: object
+                    type: array
+                  usernameClaim:
+                    default: sub
+                    description: |-
+                      UsernameClaim is the claim in the OIDC token that contains the username.
+                      If empty, the default claim "sub" will be used.
+                    type: string
+                  usernamePrefix:
+                    description: |-
+                      UsernamePrefix is a prefix that will be added to all usernames when referenced in RBAC rules.
+                      This is required to avoid conflicts with Kubernetes built-in users.
+                      If the prefix does not end with a colon (:), it will be added automatically.
+                    minLength: 1
+                    type: string
+                required:
+                - clientID
+                - groupsPrefix
+                - issuer
+                - name
+                - roleBindings
+                - usernamePrefix
+                type: object
               permissions:
-                description: Permissions are the requested permissions.
+                description: |-
+                  Permissions are the requested permissions.
+                  If not empty, corresponding Roles and ClusterRoles will be created in the target cluster, potentially also creating namespaces for Roles.
+                  For token-based access, the serviceaccount will be bound to the created Roles and ClusterRoles.
                 items:
                   properties:
                     namespace:
@@ -150,8 +288,6 @@ spec:
                 x-kubernetes-validations:
                 - message: requestRef is immutable
                   rule: self == oldSelf
-            required:
-            - permissions
             type: object
             x-kubernetes-validations:
             - message: clusterRef may not be removed once set

@@ -32,7 +32,16 @@ type AccessRequestSpec struct {
 	RequestRef *commonapi.ObjectReference `json:"requestRef,omitempty"`
 
 	// Permissions are the requested permissions.
-	Permissions []PermissionsRequest `json:"permissions"`
+	// If not empty, corresponding Roles and ClusterRoles will be created in the target cluster, potentially also creating namespaces for Roles.
+	// For token-based access, the serviceaccount will be bound to the created Roles and ClusterRoles.
+	// +optional
+	Permissions []PermissionsRequest `json:"permissions,omitempty"`
+
+	// OIDCProvider is a configuration for an OIDC provider that should be used for authentication and associated role bindings.
+	// If set, the handling ClusterProvider will create an OIDC-based access for the AccessRequest, if supported.
+	// Otherwise, a serviceaccount with a token will be created and bound to the requested permissions.
+	// +optional
+	OIDCProvider *commonapi.OIDCProviderConfig `json:"oidcProvider,omitempty"`
 }
 
 type PermissionsRequest struct {
