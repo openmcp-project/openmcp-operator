@@ -21,9 +21,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ServiceProviderSpec defines the desired state of ServiceProvider.
 type ServiceProviderSpec struct {
 	DeploymentSpec `json:",inline"`
@@ -32,6 +29,9 @@ type ServiceProviderSpec struct {
 // ServiceProviderStatus defines the observed state of ServiceProvider.
 type ServiceProviderStatus struct {
 	DeploymentStatus `json:",inline"`
+
+	// Resources is a list of Group/Version/Kind that specifies which service resources this provider exposes.
+	Resources []metav1.GroupVersionKind `json:"resources,omitempty"`
 }
 
 // +kubebuilder:object:root=true

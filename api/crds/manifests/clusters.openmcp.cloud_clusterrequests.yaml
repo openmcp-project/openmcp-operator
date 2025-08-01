@@ -60,6 +60,15 @@ spec:
                 description: Purpose is the purpose of the requested cluster.
                 minLength: 1
                 type: string
+              waitForClusterDeletion:
+                description: |-
+                  WaitForClusterDeletion specifies whether the ClusterProvider should remove its finalizer from the ClusterRequest only after the corresponding Cluster has been deleted.
+                  'true' means that the finalizer stays until the Cluster is gone, 'false' means that the finalizer can be removed before the Cluster has been deleted.
+                  If not specified, this defaults to 'true' if the cluster's tenancy is 'Exclusive' and to 'false' otherwise.
+                  Note that the delayed finalizer removal only occurs if the deletion of the ClusterRequest actually triggers the deletion of the Cluster.
+                  If the cluster is shared with further ClusterRequests using it or if it does not have the 'clusters.openmcp.cloud/delete-without-requests' label set to 'true',
+                  the finalizer will be removed without waiting for the Cluster deletion, independently of this setting.
+                type: boolean
             required:
             - purpose
             type: object
