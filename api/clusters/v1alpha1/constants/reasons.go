@@ -11,4 +11,8 @@ const (
 	ReasonConfigurationProblem = "ConfigurationProblem"
 	// ReasonInternalError indicates that something went wrong internally.
 	ReasonInternalError = "InternalError"
+	// ReasonWaitingForClusterRequest indicates that something is waiting for a ClusterRequest to become ready.
+	ReasonWaitingForClusterRequest = "WaitingForClusterRequest"
+	// ReasonWaitingForAccessRequest indicates that something is waiting for an AccessRequest to become ready.
+	ReasonWaitingForAccessRequest = "WaitingForAccessRequest"
 )
