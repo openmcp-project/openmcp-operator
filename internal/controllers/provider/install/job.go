@@ -76,6 +76,7 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 							"init",
 							"--environment=" + m.values.Environment(),
 							"--verbosity=" + m.values.Verbosity(),
+							"--provider-name=" + m.values.provider.GetName(),
 						},
 						Env: env,
 					},

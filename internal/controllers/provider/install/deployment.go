@@ -73,6 +73,7 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 							"run",
 							"--environment=" + m.values.Environment(),
 							"--verbosity=" + m.values.Verbosity(),
+							"--provider-name=" + m.values.provider.GetName(),
 						},
 						Env: env,
 					},
