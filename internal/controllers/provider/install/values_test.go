@@ -33,8 +33,6 @@ var _ = Describe("Installer", func() {
 			env, err := v.EnvironmentVariables()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(env).To(ContainElement(corev1.EnvVar{Name: envName1, Value: envValue1}))
-			Expect(env).To(ContainElement(corev1.EnvVar{Name: constants.EnvVariableProviderName, Value: providerName}))
-			Expect(env).To(ContainElement(corev1.EnvVar{Name: constants.EnvVariablePlatformClusterNamespace, Value: v.Namespace()}))
 		})
 
 		It("should detect a name conflict", func() {
@@ -43,7 +41,7 @@ var _ = Describe("Installer", func() {
 			provider.SetName(providerName)
 			spec := &v1alpha1.DeploymentSpec{
 				Env: []v1alpha1.EnvVar{
-					{Name: constants.EnvVariableProviderName, Value: envValue1},
+					{Name: constants.EnvVariablePodNamespace, Value: envValue1},
 				},
 			}
 			v := NewValues(provider, spec, "test")

@@ -64,7 +64,8 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("init"), "Job container args should contain the init command")
 			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--environment=test-environment"), "Job container args should contain the environment")
 			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--verbosity=DEBUG"), "Job container args should contain the verbosity")
-			Expect(job.Spec.Template.Spec.Containers[0].Env).To(HaveLen(3), "Job container should have an environment variables")
+			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--provider-name="+req.Name), "Job container args should contain the provider name")
+			Expect(job.Spec.Template.Spec.Containers[0].Env).To(HaveLen(5), "Job container should have an environment variables")
 			Expect(job.Spec.Template.Spec.Containers[0].Env[0].Name).To(Equal("NAME"), "Job container environment variable name should match the provider spec")
 			Expect(job.Spec.Template.Spec.Containers[0].Env[0].Value).To(Equal("test-name"), "Job container environment variable value should match the provider spec")
 
@@ -82,7 +83,8 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("run"), "Deployment container args should contain the run command")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--environment=test-environment"), "Deployment container args should contain the environment")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--verbosity=DEBUG"), "Deployment container args should contain the verbosity")
-			Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(HaveLen(3), "Deployment container should have an environment variables")
+			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--provider-name="+req.Name), "Deployment container args should contain the provider name")
+			Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(HaveLen(5), "Deployment container should have an environment variables")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Env[0].Name).To(Equal("NAME"), "Deployment container environment variable name should match the provider spec")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Env[0].Value).To(Equal("test-name"), "Deployment container environment variable value should match the provider spec")
 

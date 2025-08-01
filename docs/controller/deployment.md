@@ -10,12 +10,15 @@ The deployments are specified in kubernetes resources of the kinds `ClusterProvi
 
 ## Provider Image
 
-To be deployable, each provider must have an image available in a container registry. The image must have an executable as entrypoint. It will be used twice: to initialize the provider and to run it. For the initialization, a Job is started with the executable, and the following arguments are supplied:
+To be deployable, each provider must have an image available in a container registry. The image must have an executable 
+as entrypoint. It will be used twice: to initialize the provider and to run it. For the initialization, a Job is started 
+with the executable, and the following arguments are supplied:
 
 ```shell
 init
 --environment <environment>
---verbosity <DEBUG, INFO, or ERROR>
+--verbosity <DEBUG|INFO|ERROR>
+--provider-name <name of the ClusterProvider|ServiceProvider|PlatformService resource>
 ```
 
 Once the initialization job has completed, a Deployment is created/updated with the same image and the following arguments:
@@ -24,6 +27,7 @@ Once the initialization job has completed, a Deployment is created/updated with 
 run
 --environment <environment>
 --verbosity <DEBUG|INFO|ERROR>
+--provider-name <name of the ClusterProvider|ServiceProvider|PlatformService resource>,
 ```
 
 ### Env Variables
@@ -32,8 +36,10 @@ The environment variables below are available in the pods of the init job and th
 
 - the environment variables specified in the [provider resource](#provider-resource), in field `spec.env`;
 - the following predefined environment variables:
-  - `OPENMCP_PROVIDER_NAME`: the name of the provider resource;
-  - `OPENMCP_PLATFORM_CLUSTER_NAMESPACE`: the namespace on the platform cluster in which the provider is running.
+  - `POD_NAME`: the name of the pod in which the provider is running,
+  - `POD_NAMESPACE`: the namespace of the pod in which the pod is running,
+  - `POD_IP`: the IP address of the pod in which the provider is running,
+  - `POD_SERVICE_ACCOUNT_NAME`: the name of the service account under which the pod is running.
 
 
 ## Provider Resource

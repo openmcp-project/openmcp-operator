@@ -112,8 +112,30 @@ func (v *Values) Verbosity() string {
 func (v *Values) EnvironmentVariables() ([]corev1.EnvVar, error) {
 	varList := append(
 		v.providerEnvironmentVariables(),
-		corev1.EnvVar{Name: constants.EnvVariableProviderName, Value: v.provider.GetName()},
-		corev1.EnvVar{Name: constants.EnvVariablePlatformClusterNamespace, Value: v.namespace},
+		corev1.EnvVar{
+			Name: constants.EnvVariablePodName,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.name"},
+			},
+		},
+		corev1.EnvVar{
+			Name: constants.EnvVariablePodNamespace,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "metadata.namespace"},
+			},
+		},
+		corev1.EnvVar{
+			Name: constants.EnvVariablePodIP,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "status.podIP"},
+			},
+		},
+		corev1.EnvVar{
+			Name: constants.EnvVariablePodServiceAccountName,
+			ValueFrom: &corev1.EnvVarSource{
+				FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.serviceAccountName"},
+			},
+		},
 	)
 
 	if err := v.checkUniquenessOfVariableNames(varList); err != nil {
