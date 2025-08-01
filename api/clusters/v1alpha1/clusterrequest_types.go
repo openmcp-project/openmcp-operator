@@ -18,6 +18,15 @@ type ClusterRequestSpec struct {
 	// Purpose is the purpose of the requested cluster.
 	// +kubebuilder:validation:MinLength=1
 	Purpose string `json:"purpose"`
+
+	// WaitForClusterDeletion specifies whether the ClusterProvider should remove its finalizer from the ClusterRequest only after the corresponding Cluster has been deleted.
+	// 'true' means that the finalizer stays until the Cluster is gone, 'false' means that the finalizer can be removed before the Cluster has been deleted.
+	// If not specified, this defaults to 'true' if the cluster's tenancy is 'Exclusive' and to 'false' otherwise.
+	// Note that the delayed finalizer removal only occurs if the deletion of the ClusterRequest actually triggers the deletion of the Cluster.
+	// If the cluster is shared with further ClusterRequests using it or if it does not have the 'clusters.openmcp.cloud/delete-without-requests' label set to 'true',
+	// the finalizer will be removed without waiting for the Cluster deletion, independently of this setting.
+	// +optional
+	WaitForClusterDeletion *bool `json:"waitForClusterDeletion,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.cluster) || has(self.cluster)", message="cluster may not be removed once set"
