@@ -6,14 +6,11 @@ import (
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -178,7 +175,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	createCon := ctrlutils.GenerateCreateConditionFunc(&rr)
 
 	// ensure that the ClusterRequest exists
-	// since ClusterRequests are basically immutable, updating it is not required
+	// since ClusterRequests are basically immutable, updating them is not required
 	namespace := libutils.StableRequestNamespace(mcp.Namespace)
 	cr := &clustersv1alpha1.ClusterRequest{}
 	cr.Name = mcp.Name
@@ -213,192 +210,16 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	log.Debug("ClusterRequest is ready", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace)
 	createCon(corev2alpha1.ConditionClusterRequestReady, metav1.ConditionTrue, "", "ClusterRequest is ready")
 
-	// create or update AccessRequests for the ManagedControlPlane
-	updatedAccessRequests := map[string]*clustersv1alpha1.AccessRequest{}
-
-	oidcProviders := make([]*commonapi.OIDCProviderConfig, 0, len(mcp.Spec.IAM.OIDCProviders)+1)
-	if r.Config.StandardOIDCProvider != nil && len(mcp.Spec.IAM.RoleBindings) > 0 {
-		// add default OIDC provider, unless it has been disabled
-		defaultOidc := r.Config.StandardOIDCProvider.DeepCopy()
-		defaultOidc.Name = corev2alpha1.DefaultOIDCProviderName
-		defaultOidc.RoleBindings = mcp.Spec.IAM.RoleBindings
-		oidcProviders = append(oidcProviders, defaultOidc)
-	}
-	oidcProviders = append(oidcProviders, mcp.Spec.IAM.OIDCProviders...)
-	for _, oidc := range oidcProviders {
-		log.Debug("Creating/updating AccessRequest for OIDC provider", "oidcProviderName", oidc.Name)
-		arName := ctrlutils.K8sNameHash(mcp.Name, oidc.Name)
-		ar := &clustersv1alpha1.AccessRequest{}
-		ar.Name = arName
-		ar.Namespace = namespace
-		if _, err := controllerutil.CreateOrUpdate(ctx, r.PlatformCluster.Client(), ar, func() error {
-			ar.Spec.RequestRef = &commonapi.ObjectReference{
-				Name:      cr.Name,
-				Namespace: cr.Namespace,
-			}
-			ar.Spec.OIDCProvider = oidc
-
-			// set labels
-			if ar.Labels == nil {
-				ar.Labels = map[string]string{}
-			}
-			ar.Labels[corev2alpha1.MCPLabel] = mcp.Name
-			ar.Labels[apiconst.ManagedByLabel] = ControllerName
-			ar.Labels[corev2alpha1.OIDCProviderLabel] = corev2alpha1.DefaultOIDCProviderName
-
-			return nil
-		}); err != nil {
-			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating/updating AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-			createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+oidc.Name, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
-			createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Error creating/updating AccessRequest for OIDC provider "+oidc.Name)
-			return rr
-		}
-		updatedAccessRequests[corev2alpha1.DefaultOIDCProviderName] = ar
-	}
-
-	// delete all AccessRequests that have previously been created for this ManagedControlPlane but are not needed anymore
-	oidcARs := &clustersv1alpha1.AccessRequestList{}
-	if err := r.PlatformCluster.Client().List(ctx, oidcARs, client.InNamespace(namespace), client.HasLabels{corev2alpha1.OIDCProviderLabel}, client.MatchingLabels{
-		corev2alpha1.MCPLabel:   mcp.Name,
-		apiconst.ManagedByLabel: ControllerName,
-	}); err != nil {
-		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing AccessRequests for ManagedControlPlane '%s/%s': %w", mcp.Namespace, mcp.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+	// manage AccessRequests
+	allAccessReady, rerr := r.manageAccessRequests(ctx, mcp, cr, createCon)
+	if rerr != nil {
+		rr.ReconcileError = rerr
 		return rr
-	}
-	accessRequestsInDeletion := sets.New[string]()
-	errs := errutils.NewReasonableErrorList()
-	for _, ar := range oidcARs.Items {
-		if _, ok := updatedAccessRequests[ar.Spec.OIDCProvider.Name]; ok {
-			continue
-		}
-		providerName := "<unknown>"
-		if ar.Spec.OIDCProvider != nil {
-			providerName = ar.Spec.OIDCProvider.Name
-		}
-		accessRequestsInDeletion.Insert(ar.Name)
-		if !ar.DeletionTimestamp.IsZero() {
-			log.Debug("Waiting for deletion of AccessRequest that is no longer required", "accessRequestName", ar.Name, "accessRequestNamespace", ar.Namespace, "oidcProviderName", providerName)
-			createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "AccessRequest is being deleted")
-			continue
-		}
-		log.Debug("Deleting AccessRequest that is no longer needed", "accessRequestName", ar.Name, "accessRequestNamespace", ar.Namespace, "oidcProviderName", providerName)
-		if err := r.PlatformCluster.Client().Delete(ctx, &ar); client.IgnoreNotFound(err) != nil {
-			rerr := errutils.WithReason(fmt.Errorf("error deleting AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-			errs.Append(rerr)
-			createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
-		}
-		createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "AccessRequest is being deleted")
-	}
-	if err := errs.Aggregate(); err != nil {
-		rr.ReconcileError = err
-		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Error deleting AccessRequests that are no longer needed")
-		return rr
-	}
-
-	// delete all AccessRequest secrets that have been copied to the Onboarding cluster and belong to AccessRequests that are no longer needed
-	mcpSecrets := &corev1.SecretList{}
-	if err := r.OnboardingCluster.Client().List(ctx, mcpSecrets, client.InNamespace(mcp.Namespace), client.HasLabels{corev2alpha1.OIDCProviderLabel}, client.MatchingLabels{
-		corev2alpha1.MCPLabel:   mcp.Name,
-		apiconst.ManagedByLabel: ControllerName,
-	}); err != nil {
-		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing secrets for ManagedControlPlane '%s/%s': %w", mcp.Namespace, mcp.Name, err), cconst.ReasonOnboardingClusterInteractionProblem)
-		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
-		return rr
-	}
-	for _, mcpSecret := range mcpSecrets.Items {
-		providerName := mcpSecret.Labels[corev2alpha1.OIDCProviderLabel]
-		if providerName == "" {
-			log.Error(nil, "Secret for ManagedControlPlane has an empty OIDCProvider label, this should not happen", "secretName", mcpSecret.Name, "secretNamespace", mcpSecret.Namespace)
-			continue
-		}
-		if _, ok := updatedAccessRequests[providerName]; ok {
-			continue
-		}
-		accessRequestsInDeletion.Insert(providerName)
-		if !mcpSecret.DeletionTimestamp.IsZero() {
-			log.Debug("Waiting for deletion of AccessRequest secret that is no longer required", "secretName", mcpSecret.Name, "secretNamespace", mcpSecret.Namespace, "oidcProviderName", providerName)
-			createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "AccessRequest secret is being deleted")
-			continue
-		}
-		log.Debug("Deleting AccessRequest secret that is no longer required", "secretName", mcpSecret.Name, "secretNamespace", mcpSecret.Namespace, "oidcProviderName", providerName)
-		if err := r.OnboardingCluster.Client().Delete(ctx, &mcpSecret); client.IgnoreNotFound(err) != nil {
-			rerr := errutils.WithReason(fmt.Errorf("error deleting AccessRequest secret '%s/%s': %w", mcpSecret.Namespace, mcpSecret.Name, err), cconst.ReasonOnboardingClusterInteractionProblem)
-			errs.Append(rerr)
-			createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
-		}
-		createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "AccessRequest secret is being deleted")
-	}
-
-	// remove conditions for AccessRequests that are neither required nor in deletion (= have been deleted already)
-	cu := conditions.ConditionUpdater(mcp.Status.Conditions, false).WithEventRecorder(r.eventRecorder, conditions.EventPerChange)
-	for _, con := range mcp.Status.Conditions {
-		if !strings.HasPrefix(con.Type, corev2alpha1.ConditionPrefixOIDCAccessReady) {
-			continue
-		}
-		providerName := strings.TrimPrefix(con.Type, corev2alpha1.ConditionPrefixOIDCAccessReady)
-		if _, ok := updatedAccessRequests[providerName]; !ok && !accessRequestsInDeletion.Has(providerName) {
-			cu.RemoveCondition(corev2alpha1.ConditionPrefixOIDCAccessReady + providerName)
-		}
-	}
-	rr.Object.Status.Conditions, _ = cu.Record(mcp).Conditions()
-
-	// check if all required access requests are ready
-	allAccessReady := true
-	if rr.Object.Status.Access == nil {
-		rr.Object.Status.Access = map[string]commonapi.LocalObjectReference{}
-	}
-	for providerName, ar := range updatedAccessRequests {
-		if !ar.Status.IsGranted() || ar.Status.SecretRef == nil {
-			log.Debug("AccessRequest is not ready yet", "accessRequestName", ar.Name, "accessRequestNamespace", ar.Namespace, "oidcProviderName", providerName)
-			createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "AccessRequest is not ready yet")
-			allAccessReady = false
-		} else {
-			// copy access request secret and reference it in the ManagedControlPlane status
-			arSecret := &corev1.Secret{}
-			arSecret.Name = ar.Status.SecretRef.Name
-			arSecret.Namespace = ar.Status.SecretRef.Namespace
-			if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(arSecret), arSecret); err != nil {
-				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error getting AccessRequest secret '%s/%s': %w", arSecret.Namespace, arSecret.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-				createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
-				createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Error getting AccessRequest secret for OIDC provider "+providerName)
-				return rr
-			}
-			mcpSecret := &corev1.Secret{}
-			mcpSecret.Name = ctrlutils.K8sNameHash(mcp.Name, providerName)
-			mcpSecret.Namespace = mcp.Namespace
-			if _, err := controllerutil.CreateOrUpdate(ctx, r.OnboardingCluster.Client(), mcpSecret, func() error {
-				mcpSecret.Data = arSecret.Data
-				if mcpSecret.Labels == nil {
-					mcpSecret.Labels = map[string]string{}
-				}
-				mcpSecret.Labels[corev2alpha1.MCPLabel] = mcp.Name
-				mcpSecret.Labels[corev2alpha1.OIDCProviderLabel] = providerName
-				mcpSecret.Labels[apiconst.ManagedByLabel] = ControllerName
-
-				if err := controllerutil.SetControllerReference(mcp, mcpSecret, r.OnboardingCluster.Scheme()); err != nil {
-					return err
-				}
-				return nil
-			}); err != nil {
-				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating/updating AccessRequest secret '%s/%s': %w", mcpSecret.Namespace, mcpSecret.Name, err), cconst.ReasonOnboardingClusterInteractionProblem)
-				createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
-				createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Error creating/updating AccessRequest secret for OIDC provider "+providerName)
-				return rr
-			}
-			log.Debug("Access secret for ManagedControlPlane created/updated", "secretName", mcpSecret.Name, "oidcProviderName", providerName)
-			rr.Object.Status.Access[providerName] = commonapi.LocalObjectReference{
-				Name: mcpSecret.Name,
-			}
-			createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionTrue, "", "")
-		}
 	}
 
 	if allAccessReady {
-		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionTrue, "", "All accesses are ready")
 		rr.Result, _ = r.sr.For(mcp).Never()
 	} else {
-		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Not all accesses are ready")
 		rr.Result, _ = r.sr.For(mcp).Backoff()
 	}
 
