@@ -21,7 +21,6 @@ import (
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/controller-utils/pkg/conditions"
-	"github.com/openmcp-project/controller-utils/pkg/controller"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	"github.com/openmcp-project/controller-utils/pkg/controller/smartrequeue"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
@@ -135,9 +134,9 @@ func (r *ManagedControlPlaneReconciler) reconcile(ctx context.Context, req recon
 	// doing this here means that only the 'interesting' cases of backoff and reset have to be handled in the reconcile logic
 	if rr.Object != nil {
 		if rr.ReconcileError != nil {
-			r.sr.For(rr.Object).Error(rr.ReconcileError)
+			r.sr.For(rr.Object).Error(rr.ReconcileError) //nolint:errcheck
 		} else if rr.Result.IsZero() {
-			r.sr.For(rr.Object).Never()
+			r.sr.For(rr.Object).Never() //nolint:errcheck
 		}
 	}
 	return rr
@@ -153,7 +152,7 @@ func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error
 				return nil
 			}
 			return []ctrl.Request{testutils.RequestFromObject(obj)}
-		}), controller.ToTypedPredicate[*corev2alpha1.ManagedControlPlane](predicate.And(
+		}), ctrlutils.ToTypedPredicate[*corev2alpha1.ManagedControlPlane](predicate.And(
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.DeletionTimestampChangedPredicate{},
@@ -176,7 +175,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 		OldObject:  mcp.DeepCopy(),
 		Conditions: []metav1.Condition{},
 	}
-	createCon := controller.GenerateCreateConditionFunc(&rr)
+	createCon := ctrlutils.GenerateCreateConditionFunc(&rr)
 
 	// ensure that the ClusterRequest exists
 	// since ClusterRequests are basically immutable, updating it is not required
@@ -226,9 +225,9 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 		oidcProviders = append(oidcProviders, defaultOidc)
 	}
 	oidcProviders = append(oidcProviders, mcp.Spec.IAM.OIDCProviders...)
-	for _, oidc := range mcp.Spec.IAM.OIDCProviders {
+	for _, oidc := range oidcProviders {
 		log.Debug("Creating/updating AccessRequest for OIDC provider", "oidcProviderName", oidc.Name)
-		arName := controller.K8sNameHash(mcp.Name, oidc.Name)
+		arName := ctrlutils.K8sNameHash(mcp.Name, oidc.Name)
 		ar := &clustersv1alpha1.AccessRequest{}
 		ar.Name = arName
 		ar.Namespace = namespace
@@ -366,7 +365,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 				return rr
 			}
 			mcpSecret := &corev1.Secret{}
-			mcpSecret.Name = controller.K8sNameHash(mcp.Name, providerName)
+			mcpSecret.Name = ctrlutils.K8sNameHash(mcp.Name, providerName)
 			mcpSecret.Namespace = mcp.Namespace
 			if _, err := controllerutil.CreateOrUpdate(ctx, r.OnboardingCluster.Client(), mcpSecret, func() error {
 				mcpSecret.Data = arSecret.Data
