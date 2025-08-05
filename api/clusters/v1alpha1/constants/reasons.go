@@ -15,4 +15,6 @@ const (
 	ReasonWaitingForClusterRequest = "WaitingForClusterRequest"
 	// ReasonWaitingForAccessRequest indicates that something is waiting for an AccessRequest to become ready.
 	ReasonWaitingForAccessRequest = "WaitingForAccessRequest"
+	// ReasonWaitingForServices indicates that something is waiting for one or more service providers to do something.
+	ReasonWaitingForServices = "WaitingForServices"
 )

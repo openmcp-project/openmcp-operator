@@ -11,7 +11,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/openmcp-project/controller-utils/pkg/conditions"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
@@ -25,41 +24,40 @@ import (
 )
 
 // manageAccessRequests aligns the existing AccessRequests for the MCP with the currently configured OIDC providers.
-// It uses the given createCon function to create conditions for AccessRequests and removes outdated AccessRequest related conditions directly from the MCP status.
+// It uses the given createCon function to create conditions for AccessRequests and returns a set of conditions that should be removed from the MCP status.
 // The bool return value specifies whether everything related to MCP access is in the desired state or not. If 'false', it is recommended to requeue the MCP.
-func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (bool, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (bool, sets.Set[string], errutils.ReasonableError) {
 	updatedAccessRequests, rerr := r.createOrUpdateDesiredAccessRequests(ctx, mcp, cr, createCon)
 	if rerr != nil {
-		return false, rerr
+		return false, nil, rerr
 	}
 
 	accessRequestsInDeletion, rerr := r.deleteUndesiredAccessRequests(ctx, mcp, updatedAccessRequests, createCon)
 	if rerr != nil {
-		return false, rerr
+		return false, nil, rerr
 	}
 
 	allAccessReady, rerr := r.syncAccessSecrets(ctx, mcp, updatedAccessRequests, createCon)
 	if rerr != nil {
-		return false, rerr
+		return false, nil, rerr
 	}
 
 	accessSecretsInDeletion, rerr := r.deleteUndesiredAccessSecrets(ctx, mcp, updatedAccessRequests, createCon)
 	if rerr != nil {
-		return false, rerr
+		return false, nil, rerr
 	}
 
 	// remove conditions for AccessRequests that are neither required nor in deletion (= have been deleted already)
-	cu := conditions.ConditionUpdater(mcp.Status.Conditions, false).WithEventRecorder(r.eventRecorder, conditions.EventPerChange)
+	removeConditions := sets.New[string]()
 	for _, con := range mcp.Status.Conditions {
 		if !strings.HasPrefix(con.Type, corev2alpha1.ConditionPrefixOIDCAccessReady) {
 			continue
 		}
 		providerName := strings.TrimPrefix(con.Type, corev2alpha1.ConditionPrefixOIDCAccessReady)
 		if _, ok := updatedAccessRequests[providerName]; !ok && !accessRequestsInDeletion.Has(providerName) {
-			cu.RemoveCondition(corev2alpha1.ConditionPrefixOIDCAccessReady + providerName)
+			removeConditions.Insert(con.Type)
 		}
 	}
-	mcp.Status.Conditions, _ = cu.Record(mcp).Conditions()
 
 	everythingReady := accessRequestsInDeletion.Len() == 0 && accessSecretsInDeletion.Len() == 0 && allAccessReady
 	if everythingReady {
@@ -68,7 +66,7 @@ func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context
 		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Not all accesses are ready")
 	}
 
-	return everythingReady, nil
+	return everythingReady, removeConditions, nil
 }
 
 // createOrUpdateDesiredAccessRequests creates/updates all AccessRequests that are desired according to the ManagedControlPlane's configured OIDC providers.
