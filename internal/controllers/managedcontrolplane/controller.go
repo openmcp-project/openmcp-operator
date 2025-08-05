@@ -204,7 +204,8 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 
 		log.Info("ClusterRequest not found, creating it", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "purpose", r.Config.MCPClusterPurpose)
 		cr.Spec = clustersv1alpha1.ClusterRequestSpec{
-			Purpose: r.Config.MCPClusterPurpose,
+			Purpose:                r.Config.MCPClusterPurpose,
+			WaitForClusterDeletion: ptr.To(true),
 		}
 		if err := r.PlatformCluster.Client().Create(ctx, cr); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
