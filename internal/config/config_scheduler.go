@@ -11,6 +11,10 @@ import (
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 )
 
+var _ Defaultable = &SchedulerConfig{}
+var _ Validatable = &SchedulerConfig{}
+var _ Completable = &SchedulerConfig{}
+
 type SchedulerConfig struct {
 	// Scope determines whether the scheduler considers all clusters or only the ones in the same namespace as the ClusterRequest.
 	// Defaults to "Namespaced".
