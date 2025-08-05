@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/openmcp-project/controller-utils/pkg/collections"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
@@ -48,16 +49,21 @@ func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context
 	}
 
 	// remove conditions for AccessRequests that are neither required nor in deletion (= have been deleted already)
-	removeConditions := sets.New[string]()
-	for _, con := range mcp.Status.Conditions {
-		if !strings.HasPrefix(con.Type, corev2alpha1.ConditionPrefixOIDCAccessReady) {
-			continue
+	// first, build a set of OIDC provider names that have a condition in the MCP status
+	removeConditions := collections.AggregateSlice(mcp.Status.Conditions, func(con metav1.Condition, cur sets.Set[string]) sets.Set[string] {
+		if providerName, found := strings.CutPrefix(con.Type, corev2alpha1.ConditionPrefixOIDCAccessReady); found {
+			cur.Insert(providerName)
 		}
-		providerName := strings.TrimPrefix(con.Type, corev2alpha1.ConditionPrefixOIDCAccessReady)
-		if _, ok := updatedAccessRequests[providerName]; !ok && !accessRequestsInDeletion.Has(providerName) {
-			removeConditions.Insert(con.Type)
-		}
-	}
+		return cur
+	}, sets.New[string]())
+	// then, remove all conditions from it which belong to updated AccessRequests
+	removeConditions = removeConditions.Difference(sets.KeySet(updatedAccessRequests))
+	// and all conditions that are in deletion
+	removeConditions = removeConditions.Difference(accessRequestsInDeletion)
+	// now, add the condition prefix again
+	removeConditions = collections.ProjectMapToMap(removeConditions, func(providerName string, _ sets.Empty) (string, sets.Empty) {
+		return corev2alpha1.ConditionPrefixOIDCAccessReady + providerName, sets.Empty{}
+	})
 
 	everythingReady := accessRequestsInDeletion.Len() == 0 && accessSecretsInDeletion.Len() == 0 && allAccessReady
 	if everythingReady {
@@ -111,7 +117,7 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 			}
 			ar.Labels[corev2alpha1.MCPLabel] = mcp.Name
 			ar.Labels[apiconst.ManagedByLabel] = ControllerName
-			ar.Labels[corev2alpha1.OIDCProviderLabel] = corev2alpha1.DefaultOIDCProviderName
+			ar.Labels[corev2alpha1.OIDCProviderLabel] = oidc.Name
 
 			return nil
 		}); err != nil {
@@ -120,7 +126,7 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 			createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Error creating/updating AccessRequest for OIDC provider "+oidc.Name)
 			return nil, rerr
 		}
-		updatedAccessRequests[corev2alpha1.DefaultOIDCProviderName] = ar
+		updatedAccessRequests[oidc.Name] = ar
 	}
 
 	return updatedAccessRequests, nil
@@ -154,7 +160,7 @@ func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessRequests(ctx contex
 		if ar.Spec.OIDCProvider != nil {
 			providerName = ar.Spec.OIDCProvider.Name
 		}
-		accessRequestsInDeletion.Insert(ar.Name)
+		accessRequestsInDeletion.Insert(providerName)
 		if !ar.DeletionTimestamp.IsZero() {
 			log.Debug("Waiting for deletion of AccessRequest that is no longer required", "accessRequestName", ar.Name, "accessRequestNamespace", ar.Namespace, "oidcProviderName", providerName)
 			createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "AccessRequest is being deleted")
@@ -177,6 +183,7 @@ func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessRequests(ctx contex
 }
 
 // deleteUndesiredAccessSecrets deletes all access secrets belonging to the ManagedControlPlane that are not copied from an up-to-date AccessRequest.
+// It also deletes all mappings for which no secret exists from the ManagedControlPlane status.
 // It returns a set of OIDC provider names for which the AccessRequest secrets are still in deletion.
 func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessSecrets(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (sets.Set[string], errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
@@ -223,6 +230,11 @@ func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessSecrets(ctx context
 		return accessSecretsInDeletion, rerr
 	}
 
+	// delete all references to access secrets that are being deleted from the ManagedControlPlane status
+	for providerName := range accessSecretsInDeletion {
+		delete(mcp.Status.Access, providerName)
+	}
+
 	return accessSecretsInDeletion, nil
 }
 
@@ -244,7 +256,7 @@ func (r *ManagedControlPlaneReconciler) syncAccessSecrets(ctx context.Context, m
 			// copy access request secret and reference it in the ManagedControlPlane status
 			arSecret := &corev1.Secret{}
 			arSecret.Name = ar.Status.SecretRef.Name
-			arSecret.Namespace = ar.Status.SecretRef.Namespace
+			arSecret.Namespace = ar.Namespace
 			if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(arSecret), arSecret); err != nil {
 				rerr := errutils.WithReason(fmt.Errorf("error getting AccessRequest secret '%s/%s': %w", arSecret.Namespace, arSecret.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
 				createCon(corev2alpha1.ConditionPrefixOIDCAccessReady+providerName, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
