@@ -353,6 +353,12 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 		}
 	}
 	createCon(corev2alpha1.ConditionMeta, metav1.ConditionTrue, "", "MCP finalizer removed")
+	if len(mcp.Finalizers) == 0 {
+		// if we just removed the last finalizer on the MCP
+		// (which should usually be the case, unless something external added one)
+		// the MCP is now gone and updating the status will fail
+		rr.Object = nil
+	}
 
 	return rr
 }
