@@ -81,7 +81,7 @@ func defaultTestSetup(testDirPathSegments ...string) (*managedcontrolplane.Manag
 
 var _ = Describe("ManagedControlPlane Controller", func() {
 
-	It("should correctly handle create and update operations for the MCP", func() {
+	It("should correctly handle the creation, update, and deletion flow for MCP resources", func() {
 		rec, env := defaultTestSetup("testdata", "test-01")
 
 		mcp := &corev2alpha1.ManagedControlPlane{}
@@ -122,7 +122,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		))
 
 		// fake ClusterRequest ready status
-		By("faking ClusterRequest readiness")
+		By("fake: ClusterRequest readiness")
 		cr.Status.Phase = commonapi.StatusPhaseReady
 		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
 
@@ -169,9 +169,9 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		}
 
 		// fake AccessRequest ready status
-		By("faking AccessRequest readiness")
+		By("fake: AccessRequest readiness")
 		for _, oidc := range oidcProviders {
-			By("faking AccessRequest readiness for oidc provider: " + oidc.Name)
+			By("fake: AccessRequest readiness for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
 			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
@@ -228,16 +228,16 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		By("=== UPDATE ===")
 
 		// change the rolebindings in the MCP spec and remove one OIDC provider
-		By("update MCP spec")
+		By("updating MCP spec")
 		mcp.Spec.IAM.RoleBindings = mcp.Spec.IAM.RoleBindings[:len(mcp.Spec.IAM.RoleBindings)-1]
 		removedOIDCProviderName := mcp.Spec.IAM.OIDCProviders[len(mcp.Spec.IAM.OIDCProviders)-1].Name
 		toBeRemovedSecretName := mcp.Status.Access[removedOIDCProviderName].Name
 		mcp.Spec.IAM.OIDCProviders = mcp.Spec.IAM.OIDCProviders[:len(mcp.Spec.IAM.OIDCProviders)-1]
 		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
 
-		By("add finalizers to AccessRequests")
+		By("fake: adding finalizers to AccessRequests")
 		for _, oidc := range oidcProviders {
-			By("adding finalizer to AccessRequest for oidc provider: " + oidc.Name)
+			By("fake: adding finalizer to AccessRequest for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
 			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
@@ -302,7 +302,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(ar.GetDeletionTimestamp().IsZero()).To(BeFalse())
 
 		// remove dummy finalizer from AccessRequest belonging to the removed OIDC provider
-		By("removing dummy finalizer from AccessRequest for removed OIDC provider: " + removedOIDCProviderName)
+		By("fake: removing dummy finalizer from AccessRequest for removed OIDC provider: " + removedOIDCProviderName)
 		controllerutil.RemoveFinalizer(ar, "dummy")
 		Expect(env.Client(platform).Update(env.Ctx, ar)).To(Succeed())
 
@@ -337,6 +337,171 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + removedOIDCProviderName),
 			),
 		))
+
+		By("=== DELETE ===")
+
+		// fake some more ClusterRequests
+		By("fake: some more ClusterRequests")
+		cr2 := &clustersv1alpha1.ClusterRequest{}
+		cr2.SetName("cr2")
+		cr2.SetNamespace(platformNamespace)
+		cr2.Finalizers = []string{"dummy"}
+		Expect(env.Client(platform).Create(env.Ctx, cr2)).To(Succeed())
+		cr3 := &clustersv1alpha1.ClusterRequest{}
+		cr3.SetName("cr3")
+		cr3.SetNamespace(platformNamespace)
+		cr3.Finalizers = []string{"dummy"}
+		Expect(env.Client(platform).Create(env.Ctx, cr3)).To(Succeed())
+		mcp.Finalizers = append(mcp.Finalizers, corev2alpha1.ClusterRequestFinalizerPrefix+cr2.Name, corev2alpha1.ClusterRequestFinalizerPrefix+cr3.Name)
+		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
+
+		// put a finalizer on the MCP cr
+		cr.Finalizers = append(cr.Finalizers, "dummy")
+		Expect(env.Client(platform).Update(env.Ctx, cr)).To(Succeed())
+
+		// delete the MCP
+		By("deleting the MCP")
+		Expect(env.Client(onboarding).Delete(env.Ctx, mcp)).To(Succeed())
+
+		// reconcile the MCP
+		// expected outcome:
+		// - all service resources that depend on the MCP have a deletion timestamp
+		// - the MCP conditions reflect that it is waiting for services to be deleted
+		// - neither ClusterRequests nor AccessRequests have deletion timestamps
+		// - the MCP should be requeued with a short requeueAfter duration
+		By("first MCP reconciliation after delete")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute))
+		// TODO
+
+		// remove service finalizers
+		By("fake: removing service finalizers")
+		// TODO
+
+		// reconcile the MCP again
+		// expected outcome:
+		// - all AccessRequests have deletion timestamps
+		// - all access secrets have been deleted
+		// - the MCP conditions reflect that it is waiting for AccessRequests to be deleted
+		// - no ClusterRequests should have deletion timestamps
+		// - the MCP should be requeued with a short requeueAfter duration
+		By("second MCP reconciliation after delete")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute))
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionClusterRequestReady).
+				WithStatus(metav1.ConditionTrue)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionAllAccessReady).
+				WithStatus(metav1.ConditionFalse).
+				WithReason(cconst.ReasonWaitingForAccessRequest)),
+		))
+		for _, oidc := range oidcProviders {
+			By("verifying AccessRequest and access secret deletion status for oidc provider: " + oidc.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			Expect(ar.DeletionTimestamp.IsZero()).To(BeFalse())
+			Expect(mcp.Status.Conditions).To(ContainElements(
+				MatchCondition(TestCondition().
+					WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
+					WithStatus(metav1.ConditionFalse).
+					WithReason(cconst.ReasonWaitingForAccessRequest),
+				),
+			))
+		}
+		Expect(mcp.Status.Access).To(BeEmpty())
+		secs := &corev1.SecretList{}
+		Expect(env.Client(onboarding).List(env.Ctx, secs, client.InNamespace(mcp.Namespace))).To(Succeed())
+		Expect(secs.Items).To(BeEmpty())
+		for _, obj := range []client.Object{cr, cr2, cr3} {
+			By("verifying that ClusterRequest has not been deleted: " + obj.GetName())
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+			Expect(obj.GetDeletionTimestamp().IsZero()).To(BeTrue())
+		}
+
+		// remove AccessRequest finalizers
+		By("fake: removing AccessRequest finalizers")
+		for _, oidc := range oidcProviders {
+			By("fake: removing finalizer from AccessRequest for oidc provider: " + oidc.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			controllerutil.RemoveFinalizer(ar, "dummy")
+			Expect(env.Client(platform).Update(env.Ctx, ar)).To(Succeed())
+		}
+
+		// reconcile the MCP again
+		// expected outcome:
+		// - cr2 and cr3 have deletion timestamps, cr has not
+		// - the AccessRequests are deleted
+		// - the MCP has a condition stating that it is waiting for the ClusterRequests to be deleted
+		// - the MCP should be requeued with a short requeueAfter duration
+		By("third MCP reconciliation after delete")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute))
+		By("verifying ClusterRequest deletion status")
+		for _, obj := range []client.Object{cr, cr2, cr3} {
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+		}
+		Expect(cr.GetDeletionTimestamp().IsZero()).To(BeTrue(), "ClusterRequest should not be marked for deletion")
+		Expect(cr2.GetDeletionTimestamp().IsZero()).To(BeFalse())
+		Expect(cr3.GetDeletionTimestamp().IsZero()).To(BeFalse())
+		By("verifying AccessRequest deletion")
+		for _, oidc := range oidcProviders {
+			By("verifying AccessRequest deletion for oidc provider: " + oidc.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		}
+
+		// remove finalizers from cr2 and cr3
+		By("fake: removing finalizers from additional ClusterRequests")
+		controllerutil.RemoveFinalizer(cr2, "dummy")
+		Expect(env.Client(platform).Update(env.Ctx, cr2)).To(Succeed())
+		controllerutil.RemoveFinalizer(cr3, "dummy")
+		Expect(env.Client(platform).Update(env.Ctx, cr3)).To(Succeed())
+
+		// reconcile the MCP again
+		// expected outcome:
+		// - cr2 and cr3 have been deleted
+		// - cr has a deletion timestamp
+		// - the MCP has a condition stating that it is waiting for the ClusterRequest to be deleted
+		// - the MCP should be requeued with a short requeueAfter duration
+		By("fourth MCP reconciliation after delete")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute))
+		By("verifying ClusterRequest deletion status")
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+		Expect(cr.GetDeletionTimestamp().IsZero()).To(BeFalse(), "ClusterRequest should be marked for deletion")
+
+		// remove finalizer from cr
+		By("fake: removing finalizer from primary ClusterRequest")
+		controllerutil.RemoveFinalizer(cr, "dummy")
+		Expect(env.Client(platform).Update(env.Ctx, cr)).To(Succeed())
+
+		// reconcile the MCP again
+		// expected outcome:
+		// - cr has been deleted
+		// - mcp has been deleted
+		// - the MCP should not be requeued
+		By("fifth MCP reconciliation after delete")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		Expect(res.RequeueAfter).To(BeNumerically("~", int64(rec.Config.ReconcileMCPEveryXDays)*24*int64(time.Hour), int64(time.Second)))
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 	})
 
 })
