@@ -21,7 +21,7 @@ const (
 	ConditionMeta = "Meta"
 
 	ConditionClusterRequestReady       = "ClusterRequestReady"
-	ConditionPrefixOIDCAccessReady     = "OIDCAccessReady_"
+	ConditionPrefixOIDCAccessReady     = "OIDCAccessReady:"
 	ConditionAllAccessReady            = "AllAccessReady"
 	ConditionAllServicesDeleted        = "AllServicesDeleted"
 	ConditionAllClusterRequestsDeleted = "AllClusterRequestsDeleted"

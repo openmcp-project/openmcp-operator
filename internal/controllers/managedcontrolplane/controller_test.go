@@ -3,6 +3,7 @@ package managedcontrolplane_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -104,7 +105,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
 		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
 		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute))
-		Expect(mcp.Finalizers).To(ConsistOf(
+		Expect(mcp.Finalizers).To(ContainElements(
 			corev2alpha1.MCPFinalizer,
 			corev2alpha1.ClusterRequestFinalizerPrefix+mcp.Name,
 		))
@@ -265,7 +266,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			MatchCondition(TestCondition().
 				WithType(corev2alpha1.ConditionAllAccessReady).
 				WithStatus(metav1.ConditionFalse).
-				WithReason(cconst.ReasonWaitingForAccessRequest)),
+				WithReason(cconst.ReasonWaitingForAccessRequestDeletion)),
 		))
 		removedOIDCIdx := -1
 		for i, oidc := range oidcProviders {
@@ -276,7 +277,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 					MatchCondition(TestCondition().
 						WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
 						WithStatus(metav1.ConditionFalse).
-						WithReason(cconst.ReasonWaitingForAccessRequest),
+						WithReason(cconst.ReasonWaitingForAccessRequestDeletion),
 					)))
 				Expect(mcp.Status.Access).ToNot(HaveKey(oidc.Name))
 			} else {
@@ -374,11 +375,53 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
 		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
 		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute))
-		// TODO
+		serviceResources := []client.Object{
+			&corev1.ConfigMap{},
+			&corev1.ServiceAccount{},
+			&corev1.Secret{},
+		}
+		for _, obj := range serviceResources {
+			obj.SetName(mcp.Name)
+			obj.SetNamespace(mcp.Namespace)
+			Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+			Expect(obj.GetDeletionTimestamp().IsZero()).To(BeFalse())
+		}
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionAllServicesDeleted).
+				WithStatus(metav1.ConditionFalse).
+				WithReason(cconst.ReasonWaitingForServiceDeletion)),
+		))
+		for _, oidc := range oidcProviders {
+			By("verifying AccessRequest does not have a deletion timestamp for oidc provider: " + oidc.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			Expect(ar.DeletionTimestamp.IsZero()).To(BeTrue())
+		}
+		for _, obj := range []client.Object{cr, cr2, cr3} {
+			By("verifying ClusterRequest does not have a deletion timestamp: " + obj.GetName())
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+			Expect(obj.GetDeletionTimestamp().IsZero()).To(BeTrue())
+		}
 
 		// remove service finalizers
 		By("fake: removing service finalizers")
-		// TODO
+		for _, obj := range serviceResources {
+			By("fake: removing finalizer from service resource: " + obj.GetObjectKind().GroupVersionKind().Kind)
+			Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
+			controllerutil.RemoveFinalizer(obj, "dummy")
+			Expect(env.Client(onboarding).Update(env.Ctx, obj)).To(Succeed())
+		}
+		newFins := []string{}
+		for _, fin := range mcp.Finalizers {
+			if !strings.HasPrefix(fin, corev2alpha1.ServiceDependencyFinalizerPrefix) {
+				newFins = append(newFins, fin)
+			}
+		}
+		mcp.Finalizers = newFins
+		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
 
 		// reconcile the MCP again
 		// expected outcome:
@@ -399,7 +442,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			MatchCondition(TestCondition().
 				WithType(corev2alpha1.ConditionAllAccessReady).
 				WithStatus(metav1.ConditionFalse).
-				WithReason(cconst.ReasonWaitingForAccessRequest)),
+				WithReason(cconst.ReasonWaitingForAccessRequestDeletion)),
 		))
 		for _, oidc := range oidcProviders {
 			By("verifying AccessRequest and access secret deletion status for oidc provider: " + oidc.Name)
@@ -412,7 +455,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				MatchCondition(TestCondition().
 					WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
 					WithStatus(metav1.ConditionFalse).
-					WithReason(cconst.ReasonWaitingForAccessRequest),
+					WithReason(cconst.ReasonWaitingForAccessRequestDeletion),
 				),
 			))
 		}
@@ -464,6 +507,12 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 		}
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionAllClusterRequestsDeleted).
+				WithStatus(metav1.ConditionFalse).
+				WithReason(cconst.ReasonWaitingForClusterRequestDeletion)),
+		))
 
 		// remove finalizers from cr2 and cr3
 		By("fake: removing finalizers from additional ClusterRequests")
@@ -486,6 +535,12 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		By("verifying ClusterRequest deletion status")
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
 		Expect(cr.GetDeletionTimestamp().IsZero()).To(BeFalse(), "ClusterRequest should be marked for deletion")
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionAllClusterRequestsDeleted).
+				WithStatus(metav1.ConditionFalse).
+				WithReason(cconst.ReasonWaitingForClusterRequestDeletion)),
+		))
 
 		// remove finalizer from cr
 		By("fake: removing finalizer from primary ClusterRequest")
@@ -500,7 +555,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		By("fifth MCP reconciliation after delete")
 		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
-		Expect(res.RequeueAfter).To(BeNumerically("~", int64(rec.Config.ReconcileMCPEveryXDays)*24*int64(time.Hour), int64(time.Second)))
+		Expect(res.IsZero()).To(BeTrue())
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 	})
 

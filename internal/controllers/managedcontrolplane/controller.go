@@ -73,11 +73,6 @@ func (r *ManagedControlPlaneReconciler) Reconcile(ctx context.Context, req recon
 	log.Info("Starting reconcile")
 	rr := r.reconcile(ctx, req)
 
-	if rr.Result.IsZero() && r.Config.ReconcileMCPEveryXDays > 0 {
-		// requeue the MCP for periodic reconciliation
-		rr.Result.RequeueAfter = time.Duration(r.Config.ReconcileMCPEveryXDays) * 24 * time.Hour
-	}
-
 	// status update
 	return ctrlutils.NewOpenMCPStatusUpdaterBuilder[*corev2alpha1.ManagedControlPlane]().
 		WithNestedStruct("Status").
@@ -278,7 +273,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 				msg.WriteString(fmt.Sprintf("[%s]%s.%s, ", providerName, res.GetKind(), res.GetAPIVersion()))
 			}
 		}
-		createCon(corev2alpha1.ConditionAllServicesDeleted, metav1.ConditionFalse, cconst.ReasonWaitingForServices, strings.TrimSuffix(msg.String(), ", "))
+		createCon(corev2alpha1.ConditionAllServicesDeleted, metav1.ConditionFalse, cconst.ReasonWaitingForServiceDeletion, strings.TrimSuffix(msg.String(), ", "))
 		rr.SmartRequeue = ctrlutils.SR_BACKOFF
 		return rr
 	}
@@ -295,7 +290,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	}
 	if !accessReady {
 		log.Info("Waiting for AccessRequests to be deleted")
-		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Waiting for AccessRequests to be deleted")
+		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequestDeletion, "Waiting for AccessRequests to be deleted")
 		rr.SmartRequeue = ctrlutils.SR_BACKOFF
 		return rr
 	}
@@ -314,7 +309,8 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 		if !ok {
 			return false
 		}
-		return strings.HasPrefix(fin, corev2alpha1.ClusterRequestFinalizerPrefix) && !remainingCRs.Has(strings.TrimPrefix(fin, corev2alpha1.ClusterRequestFinalizerPrefix))
+		crName, ok := strings.CutPrefix(fin, corev2alpha1.ClusterRequestFinalizerPrefix)
+		return ok && !remainingCRs.Has(crName)
 	})...)
 	if len(finalizersToRemove) > 0 {
 		log.Debug("Removing ClusterRequest finalizers for deleted ClusterRequests from MCP", "finalizers", strings.Join(sets.List(finalizersToRemove), ", "))
@@ -336,7 +332,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	if remainingCRs.Len() > 0 {
 		tmp := strings.Join(sets.List(remainingCRs), ", ")
 		log.Info("Waiting for ClusterRequests to be deleted", "remainingClusterRequests", tmp)
-		createCon(corev2alpha1.ConditionAllClusterRequestsDeleted, metav1.ConditionFalse, cconst.ReasonWaitingForClusterRequest, fmt.Sprintf("Waiting for the following ClusterRequests to be deleted: %s", tmp))
+		createCon(corev2alpha1.ConditionAllClusterRequestsDeleted, metav1.ConditionFalse, cconst.ReasonWaitingForClusterRequestDeletion, fmt.Sprintf("Waiting for the following ClusterRequests to be deleted: %s", tmp))
 		rr.SmartRequeue = ctrlutils.SR_BACKOFF
 		return rr
 	}
@@ -353,6 +349,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 		}
 	}
 	createCon(corev2alpha1.ConditionMeta, metav1.ConditionTrue, "", "MCP finalizer removed")
+	rr.Result.RequeueAfter = 0
 	if len(mcp.Finalizers) == 0 {
 		// if we just removed the last finalizer on the MCP
 		// (which should usually be the case, unless something external added one)

@@ -3,6 +3,9 @@ kind: ManagedControlPlane
 metadata:
   name: mcp-01
   namespace: test
+  finalizers:
+  - services.openmcp.cloud/sp-01
+  - services.openmcp.cloud/sp-02
 spec:
   iam:
     roleBindings:

@@ -34,8 +34,8 @@ func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Cont
 
 	// identify service finalizers
 	for _, fin := range mcp.Finalizers {
-		if strings.HasPrefix(fin, corev2alpha1.ServiceDependencyFinalizerPrefix) {
-			serviceProviderNames.Insert(strings.TrimPrefix(fin, corev2alpha1.ServiceDependencyFinalizerPrefix))
+		if service, ok := strings.CutPrefix(fin, corev2alpha1.ServiceDependencyFinalizerPrefix); ok {
+			serviceProviderNames.Insert(service)
 		}
 	}
 
