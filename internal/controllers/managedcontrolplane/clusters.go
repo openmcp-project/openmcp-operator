@@ -31,8 +31,8 @@ func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context
 
 	// identify cluster request finalizers
 	for _, fin := range mcp.Finalizers {
-		if strings.HasPrefix(fin, corev2alpha1.ClusterRequestFinalizerPrefix) {
-			crNames.Insert(strings.TrimPrefix(fin, corev2alpha1.ClusterRequestFinalizerPrefix))
+		if crName, ok := strings.CutPrefix(fin, corev2alpha1.ClusterRequestFinalizerPrefix); ok {
+			crNames.Insert(crName)
 		}
 	}
 

@@ -1,0 +1,13 @@
+apiVersion: openmcp.cloud/v1alpha1
+kind: ServiceProvider
+metadata:
+  name: sp-01
+spec: {}
+status:
+  resources:
+  - group: ""
+    version: v1
+    kind: ConfigMap
+  - group: ""
+    version: v1
+    kind: ServiceAccount
