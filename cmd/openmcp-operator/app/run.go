@@ -27,6 +27,7 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
 )
@@ -36,6 +37,7 @@ var allControllers = []string{
 	strings.ToLower(scheduler.ControllerName),
 	strings.ToLower(provider.ControllerName),
 	strings.ToLower(accessrequest.ControllerName),
+	strings.ToLower(managedcontrolplane.ControllerName),
 }
 
 func NewRunCommand(so *SharedOptions) *cobra.Command {
@@ -292,6 +294,13 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		}
 		if err := sc.SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to setup cluster scheduler with manager: %w", err)
+		}
+	}
+
+	// setup MCP controller
+	if slices.Contains(o.Controllers, strings.ToLower(managedcontrolplane.ControllerName)) {
+		if err := managedcontrolplane.NewManagedControlPlaneReconciler(o.Clusters.Platform, o.Clusters.Onboarding, mgr.GetEventRecorderFor(managedcontrolplane.ControllerName), o.Config.ManagedControlPlane).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to setup managedcontrolplane controller: %w", err)
 		}
 	}
 
