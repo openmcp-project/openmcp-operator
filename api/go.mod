@@ -1,6 +1,6 @@
 module github.com/openmcp-project/openmcp-operator/api
 
-go 1.24.5
+go 1.24.6
 
 require (
 	github.com/openmcp-project/controller-utils v0.15.0
