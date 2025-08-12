@@ -44,6 +44,10 @@ type OIDCProviderConfig struct {
 	// +kubebuilder:validation:MinLength=1
 	UsernamePrefix string `json:"usernamePrefix"`
 
+	// ExtraScopes is a list of extra scopes that should be requested from the OIDC provider.
+	// +optional
+	ExtraScopes []string `json:"extraScopes,omitempty"`
+
 	// RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
 	// Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
 	RoleBindings []RoleBindings `json:"roleBindings"`
