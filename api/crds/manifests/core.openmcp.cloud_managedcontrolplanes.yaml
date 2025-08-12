@@ -59,6 +59,12 @@ spec:
                           description: ClientID is the client ID to use for the OIDC
                             provider.
                           type: string
+                        extraScopes:
+                          description: ExtraScopes is a list of extra scopes that
+                            should be requested from the OIDC provider.
+                          items:
+                            type: string
+                          type: array
                         groupsClaim:
                           default: groups
                           description: |-
