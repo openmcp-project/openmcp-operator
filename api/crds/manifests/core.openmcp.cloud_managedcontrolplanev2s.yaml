@@ -6,16 +6,16 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.18.0
   labels:
     openmcp.cloud/cluster: onboarding
-  name: managedcontrolplanes.core.openmcp.cloud
+  name: managedcontrolplanev2s.core.openmcp.cloud
 spec:
   group: core.openmcp.cloud
   names:
-    kind: ManagedControlPlane
-    listKind: ManagedControlPlaneList
-    plural: managedcontrolplanes
+    kind: ManagedControlPlaneV2
+    listKind: ManagedControlPlaneV2List
+    plural: managedcontrolplanev2s
     shortNames:
-    - mcp
-    singular: managedcontrolplane
+    - mcpv2
+    singular: managedcontrolplanev2
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -47,11 +47,11 @@ spec:
             properties:
               iam:
                 description: IAM contains the access management configuration for
-                  the ManagedControlPlane.
+                  the ManagedControlPlaneV2.
                 properties:
                   oidcProviders:
                     description: |-
-                      OIDCProviders is a list of OIDC providers that should be configured for the ManagedControlPlane.
+                      OIDCProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
                       They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
                     items:
                       properties:
@@ -303,7 +303,7 @@ spec:
                   x-kubernetes-map-type: atomic
                 description: |-
                   Access is a mapping from OIDC provider names to secret references.
-                  Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ManagedControlPlane.
+                  Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ManagedControlPlaneV2.
                   The default OIDC provider, if configured, uses the name "default" in this mapping.
                   The "default" key is also used if the ClusterProvider does not support OIDC-based access and created a serviceaccount with a token instead.
                 type: object
