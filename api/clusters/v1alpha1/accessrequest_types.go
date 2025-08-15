@@ -45,6 +45,12 @@ type AccessRequestSpec struct {
 }
 
 type PermissionsRequest struct {
+	// Name is an optional name for the (Cluster)Role that will be created for the requested permissions.
+	// If not set, a randomized name that is unique in the cluster will be generated.
+	// Note that the AccessRequest will not be granted if the to-be-created (Cluster)Role already exists, but is not managed by the AccessRequest, so choose this name carefully.
+	// +optional
+	Name string `json:"name,omitempty"`
+
 	// Namespace is the namespace for which the permissions are requested.
 	// If empty, this will result in a ClusterRole, otherwise in a Role in the respective namespace.
 	// Note that for a Role, the namespace needs to either exist or a permission to create it must be included in the requested permissions (it will be created automatically then), otherwise the request will be rejected.
