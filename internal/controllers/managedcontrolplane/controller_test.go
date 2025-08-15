@@ -155,7 +155,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithStatus(metav1.ConditionFalse).
 				WithReason(cconst.ReasonWaitingForAccessRequest)),
 		))
-		oidcProviders := []commonapi.OIDCProviderConfig{*rec.Config.StandardOIDCProvider.DeepCopy()}
+		oidcProviders := []commonapi.OIDCProviderConfig{*rec.Config.DefaultOIDCProvider.DeepCopy()}
 		oidcProviders[0].RoleBindings = mcp.Spec.IAM.RoleBindings
 		for _, addProv := range mcp.Spec.IAM.OIDCProviders {
 			oidcProviders = append(oidcProviders, *addProv.DeepCopy())
