@@ -362,7 +362,6 @@ spec:
                 description: Phase is the current phase of the resource.
                 type: string
             required:
-            - access
             - observedGeneration
             - phase
             type: object

@@ -1,0 +1,49 @@
+apiVersion: core.openmcp.cloud/v2alpha1
+kind: ManagedControlPlaneV2
+metadata:
+  name: mcp-01
+  namespace: test
+  finalizers:
+  - services.openmcp.cloud/sp-01
+  - services.openmcp.cloud/sp-02
+spec:
+  iam:
+    roleBindings:
+    - subjects:
+      - kind: User
+        name: user1
+      - kind: User
+        name: user2
+      roleRefs:
+      - kind: ClusterRole
+        name: cluster-admin
+    - subjects:
+      - kind: Group
+        name: group1
+      roleRefs:
+      - kind: ClusterRole
+        name: cluster-viewer
+
+    oidcProviders:
+    - name: add1
+      issuer: https://example.com/add1
+      groupsPrefix: 'add1groups:'
+      usernamePrefix: 'add1user:'
+      roleBindings:
+      - subjects:
+        - kind: User
+          name: user3
+        roleRefs:
+        - kind: ClusterRole
+          name: cluster-admin
+    - name: add2
+      issuer: https://example.com/add2
+      groupsPrefix: 'add2groups:'
+      usernamePrefix: 'add2user:'
+      roleBindings:
+      - subjects:
+        - kind: Group
+          name: group2
+        roleRefs:
+        - kind: ClusterRole
+          name: cluster-viewer
