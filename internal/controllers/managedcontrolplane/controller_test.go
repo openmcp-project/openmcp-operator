@@ -85,7 +85,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 	It("should correctly handle the creation, update, and deletion flow for MCP resources", func() {
 		rec, env := defaultTestSetup("testdata", "test-01")
 
-		mcp := &corev2alpha1.ManagedControlPlane{}
+		mcp := &corev2alpha1.ManagedControlPlaneV2{}
 		mcp.SetName("mcp-01")
 		mcp.SetNamespace("test")
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
