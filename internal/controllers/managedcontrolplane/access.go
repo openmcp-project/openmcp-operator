@@ -90,9 +90,9 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 	// create or update AccessRequests for the ManagedControlPlane
 	if mcp.DeletionTimestamp.IsZero() {
 		oidcProviders = make([]*commonapi.OIDCProviderConfig, 0, len(mcp.Spec.IAM.OIDCProviders)+1)
-		if r.Config.StandardOIDCProvider != nil && len(mcp.Spec.IAM.RoleBindings) > 0 {
+		if r.Config.DefaultOIDCProvider != nil && len(mcp.Spec.IAM.RoleBindings) > 0 {
 			// add default OIDC provider, unless it has been disabled
-			defaultOidc := r.Config.StandardOIDCProvider.DeepCopy()
+			defaultOidc := r.Config.DefaultOIDCProvider.DeepCopy()
 			defaultOidc.Name = corev2alpha1.DefaultOIDCProviderName
 			defaultOidc.RoleBindings = mcp.Spec.IAM.RoleBindings
 			oidcProviders = append(oidcProviders, defaultOidc)
