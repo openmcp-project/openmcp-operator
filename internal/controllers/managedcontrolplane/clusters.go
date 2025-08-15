@@ -15,10 +15,9 @@ import (
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
-	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
-func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) (sets.Set[string], errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, platformNamespace string) (sets.Set[string], errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// delete depending cluster requests, if any
@@ -42,16 +41,15 @@ func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context
 	}
 
 	// fetch cluster requests, if any exist
-	namespace := libutils.StableRequestNamespace(mcp.Namespace)
 	resources := map[string]*clustersv1alpha1.ClusterRequest{}
 	errs := errutils.NewReasonableErrorList()
 	for crName := range crNames {
 		cr := &clustersv1alpha1.ClusterRequest{}
 		cr.SetName(crName)
-		cr.SetNamespace(namespace)
+		cr.SetNamespace(platformNamespace)
 		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(cr), cr); err != nil {
 			if !apierrors.IsNotFound(err) {
-				errs.Append(errutils.WithReason(fmt.Errorf("error getting ClusterRequest '%s/%s': %w", namespace, crName, err), cconst.ReasonPlatformClusterInteractionProblem))
+				errs.Append(errutils.WithReason(fmt.Errorf("error getting ClusterRequest '%s/%s': %w", platformNamespace, crName, err), cconst.ReasonPlatformClusterInteractionProblem))
 			}
 			continue
 		}
@@ -78,7 +76,7 @@ func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context
 		log.Info("Deleting ClusterRequest", "crName", crName, "namespace", cr.GetNamespace())
 		if err := r.PlatformCluster.Client().Delete(ctx, cr); err != nil {
 			if !apierrors.IsNotFound(err) {
-				errs.Append(errutils.WithReason(fmt.Errorf("error deleting ClusterRequest '%s/%s': %w", namespace, crName, err), cconst.ReasonPlatformClusterInteractionProblem))
+				errs.Append(errutils.WithReason(fmt.Errorf("error deleting ClusterRequest '%s/%s': %w", platformNamespace, crName, err), cconst.ReasonPlatformClusterInteractionProblem))
 			} else {
 				log.Debug("ClusterRequest not found during deletion", "crName", crName, "namespace", cr.GetNamespace())
 				delete(resources, crName) // remove from resources if not found

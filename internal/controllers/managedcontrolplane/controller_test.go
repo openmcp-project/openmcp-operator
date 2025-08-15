@@ -26,6 +26,7 @@ import (
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
+	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
@@ -96,11 +97,13 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		// expected outcome:
 		// - mcp has an mcp finalizer
 		// - mcp has a cluster request finalizer
+		// - a namespace was created for the MCP on the platform cluster
 		// - a cluster request was created on the platform cluster
 		// - the mcp has conditions that reflect that it is waiting for the cluster request
 		// - the mcp should be requeued with a short requeueAfter duration
 		By("first MCP reconciliation")
-		platformNamespace := libutils.StableRequestNamespace(mcp.Namespace)
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
 		res := env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
 		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
@@ -109,6 +112,12 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			corev2alpha1.MCPFinalizer,
 			corev2alpha1.ClusterRequestFinalizerPrefix+mcp.Name,
 		))
+		ns := &corev1.Namespace{}
+		ns.SetName(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ns), ns)).To(Succeed())
+		Expect(ns.Labels).To(HaveKeyWithValue(corev2alpha1.MCPNameLabel, mcp.Name))
+		Expect(ns.Labels).To(HaveKeyWithValue(corev2alpha1.MCPNamespaceLabel, mcp.Namespace))
+		Expect(ns.Labels).To(HaveKeyWithValue(apiconst.ManagedByLabel, managedcontrolplane.ControllerName))
 		cr := &clustersv1alpha1.ClusterRequest{}
 		cr.SetName(mcp.Name)
 		cr.SetNamespace(platformNamespace)
@@ -161,7 +170,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 					WithReason(cconst.ReasonWaitingForAccessRequest)),
 			))
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			Expect(ar.Spec.RequestRef.Name).To(Equal(cr.Name))
@@ -174,7 +183,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("fake: AccessRequest readiness for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
@@ -240,7 +249,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("fake: adding finalizer to AccessRequest for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			controllerutil.AddFinalizer(ar, "dummy")
@@ -297,7 +306,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		sec.SetNamespace(mcp.Namespace)
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(sec), sec)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 		ar := &clustersv1alpha1.AccessRequest{}
-		ar.SetName(ctrlutils.K8sNameHash(mcp.Name, removedOIDCProviderName))
+		ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, removedOIDCProviderName))
 		ar.SetNamespace(platformNamespace)
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 		Expect(ar.GetDeletionTimestamp().IsZero()).To(BeFalse())
@@ -395,7 +404,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("verifying AccessRequest does not have a deletion timestamp for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			Expect(ar.DeletionTimestamp.IsZero()).To(BeTrue())
@@ -447,7 +456,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("verifying AccessRequest and access secret deletion status for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			Expect(ar.DeletionTimestamp.IsZero()).To(BeFalse())
@@ -474,7 +483,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("fake: removing finalizer from AccessRequest for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			controllerutil.RemoveFinalizer(ar, "dummy")
@@ -503,7 +512,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("verifying AccessRequest deletion for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameHash(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 		}
@@ -547,12 +556,42 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		controllerutil.RemoveFinalizer(cr, "dummy")
 		Expect(env.Client(platform).Update(env.Ctx, cr)).To(Succeed())
 
+		// add finalizer to MCP namespace
+		By("fake: adding finalizer to MCP namespace")
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ns), ns)).To(Succeed())
+		controllerutil.AddFinalizer(ns, "dummy")
+		Expect(env.Client(platform).Update(env.Ctx, ns)).To(Succeed())
+
+		// reconcile the MCP again
+		// expected outcome:
+		// - the MCP namespace has a deletion timestamp
+		// - the MCP has a condition stating that it is waiting for the MCP namespace to be deleted
+		// - the MCP should be requeued with a short requeueAfter duration
+		By("fifth MCP reconciliation after delete")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute))
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ns), ns)).To(Succeed())
+		Expect(ns.GetDeletionTimestamp().IsZero()).To(BeFalse(), "MCP namespace should be marked for deletion")
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionMeta).
+				WithStatus(metav1.ConditionFalse).
+				WithReason(cconst.ReasonWaitingForNamespaceDeletion)),
+		))
+
+		// remove finalizer from MCP namespace
+		By("fake: removing finalizer from MCP namespace")
+		controllerutil.RemoveFinalizer(ns, "dummy")
+		Expect(env.Client(platform).Update(env.Ctx, ns)).To(Succeed())
+
 		// reconcile the MCP again
 		// expected outcome:
 		// - cr has been deleted
 		// - mcp has been deleted
 		// - the MCP should not be requeued
-		By("fifth MCP reconciliation after delete")
+		By("sixth MCP reconciliation after delete")
 		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 		Expect(res.IsZero()).To(BeTrue())
