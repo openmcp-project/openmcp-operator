@@ -53,4 +53,20 @@ var _ = Describe("Utils", func() {
 			Expect(utils.StableRequestNameWorkload(onboardingName, controllerName)).To(Equal(expectedName))
 		})
 	})
+
+	Context("StableMCPNamespace", func() {
+		It("should compute the MCP namespace on the platform cluster", func() {
+			expectedNamespace, err := utils.StableMCPNamespace(onboardingName, onboardingNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(expectedNamespace).To(Equal("mcp--ed00e8ed-8a09-8c62-a9b8-e6fc20255174"))
+		})
+	})
+
+	Context("StableMCPIdentifier", func() {
+		It("should compute a stable MCP identifier", func() {
+			expectedIdentifier, err := utils.StableMCPIdentifier(onboardingName, onboardingNamespace)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(expectedIdentifier).To(Equal("ed00e8ed-8a09-8c62-a9b8-e6fc20255174"))
+		})
+	})
 })
