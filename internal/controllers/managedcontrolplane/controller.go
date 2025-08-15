@@ -65,7 +65,7 @@ type ManagedControlPlaneReconciler struct {
 
 var _ reconcile.Reconciler = &ManagedControlPlaneReconciler{}
 
-type ReconcileResult = ctrlutils.ReconcileResult[*corev2alpha1.ManagedControlPlane]
+type ReconcileResult = ctrlutils.ReconcileResult[*corev2alpha1.ManagedControlPlaneV2]
 
 func (r *ManagedControlPlaneReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(ControllerName)
@@ -74,9 +74,9 @@ func (r *ManagedControlPlaneReconciler) Reconcile(ctx context.Context, req recon
 	rr := r.reconcile(ctx, req)
 
 	// status update
-	return ctrlutils.NewOpenMCPStatusUpdaterBuilder[*corev2alpha1.ManagedControlPlane]().
+	return ctrlutils.NewOpenMCPStatusUpdaterBuilder[*corev2alpha1.ManagedControlPlaneV2]().
 		WithNestedStruct("Status").
-		WithPhaseUpdateFunc(func(obj *corev2alpha1.ManagedControlPlane, rr ctrlutils.ReconcileResult[*corev2alpha1.ManagedControlPlane]) (string, error) {
+		WithPhaseUpdateFunc(func(obj *corev2alpha1.ManagedControlPlaneV2, rr ctrlutils.ReconcileResult[*corev2alpha1.ManagedControlPlaneV2]) (string, error) {
 			if rr.Object != nil {
 				if !rr.Object.DeletionTimestamp.IsZero() {
 					return commonapi.StatusPhaseTerminating, nil
@@ -97,7 +97,7 @@ func (r *ManagedControlPlaneReconciler) Reconcile(ctx context.Context, req recon
 func (r *ManagedControlPlaneReconciler) reconcile(ctx context.Context, req reconcile.Request) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	// get ManagedControlPlane resource
-	mcp := &corev2alpha1.ManagedControlPlane{}
+	mcp := &corev2alpha1.ManagedControlPlaneV2{}
 	if err := r.OnboardingCluster.Client().Get(ctx, req.NamespacedName, mcp); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Resource not found")
@@ -138,12 +138,12 @@ func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(strings.ToLower(ControllerName)).
 		// watch ManagedControlPlane resources on the Onboarding cluster
-		WatchesRawSource(source.Kind(r.OnboardingCluster.Cluster().GetCache(), &corev2alpha1.ManagedControlPlane{}, handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *corev2alpha1.ManagedControlPlane) []ctrl.Request {
+		WatchesRawSource(source.Kind(r.OnboardingCluster.Cluster().GetCache(), &corev2alpha1.ManagedControlPlaneV2{}, handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *corev2alpha1.ManagedControlPlaneV2) []ctrl.Request {
 			if obj == nil {
 				return nil
 			}
 			return []ctrl.Request{testutils.RequestFromObject(obj)}
-		}), ctrlutils.ToTypedPredicate[*corev2alpha1.ManagedControlPlane](predicate.And(
+		}), ctrlutils.ToTypedPredicate[*corev2alpha1.ManagedControlPlaneV2](predicate.And(
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.DeletionTimestampChangedPredicate{},
@@ -157,7 +157,7 @@ func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error
 		Complete(r)
 }
 
-func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane) ReconcileResult {
+func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	log.Info("Handling creation or update of ManagedControlPlane resource")
 
@@ -238,7 +238,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	return rr
 }
 
-func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane) ReconcileResult {
+func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	log.Info("Handling deletion of ManagedControlPlane resource")
 

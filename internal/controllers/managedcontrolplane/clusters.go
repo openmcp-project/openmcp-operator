@@ -18,7 +18,7 @@ import (
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
-func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane) (sets.Set[string], errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) (sets.Set[string], errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// delete depending cluster requests, if any

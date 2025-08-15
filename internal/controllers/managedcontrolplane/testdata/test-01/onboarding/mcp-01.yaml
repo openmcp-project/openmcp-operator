@@ -1,5 +1,5 @@
 apiVersion: core.openmcp.cloud/v2alpha1
-kind: ManagedControlPlane
+kind: ManagedControlPlaneV2
 metadata:
   name: mcp-01
   namespace: test

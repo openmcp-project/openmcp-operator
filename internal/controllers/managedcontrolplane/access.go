@@ -27,7 +27,7 @@ import (
 // manageAccessRequests aligns the existing AccessRequests for the MCP with the currently configured OIDC providers.
 // It uses the given createCon function to create conditions for AccessRequests and returns a set of conditions that should be removed from the MCP status.
 // The bool return value specifies whether everything related to MCP access is in the desired state or not. If 'false', it is recommended to requeue the MCP.
-func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (bool, sets.Set[string], errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (bool, sets.Set[string], errutils.ReasonableError) {
 	updatedAccessRequests, rerr := r.createOrUpdateDesiredAccessRequests(ctx, mcp, cr, createCon)
 	if rerr != nil {
 		return false, nil, rerr
@@ -82,7 +82,7 @@ func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context
 // createOrUpdateDesiredAccessRequests creates/updates all AccessRequests that are desired according to the ManagedControlPlane's configured OIDC providers.
 // It returns a mapping from OIDC provider names to the corresponding AccessRequests.
 // If the ManagedControlPlane has a non-zero DeletionTimestamp, no AccessRequests will be created or updated and the returned map will be empty.
-func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (map[string]*clustersv1alpha1.AccessRequest, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (map[string]*clustersv1alpha1.AccessRequest, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	namespace := libutils.StableRequestNamespace(mcp.Namespace)
@@ -139,7 +139,7 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 // deleteUndesiredAccessRequests deletes all AccessRequests that belong to the given ManagedControlPlane, but are not in the updatedAccessRequests map.
 // These are AccessRequests that have been created for a previous version of the ManagedControlPlane and are not needed anymore.
 // It returns a set of OIDC provider names for which the AccessRequests are still in deletion. If the set is empty, all undesired AccessRequests have been deleted.
-func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (sets.Set[string], errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (sets.Set[string], errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	namespace := libutils.StableRequestNamespace(mcp.Namespace)
@@ -189,7 +189,7 @@ func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessRequests(ctx contex
 // deleteUndesiredAccessSecrets deletes all access secrets belonging to the ManagedControlPlane that are not copied from an up-to-date AccessRequest.
 // It also deletes all mappings for which no secret exists from the ManagedControlPlane status.
 // It returns a set of OIDC provider names for which the AccessRequest secrets are still in deletion.
-func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessSecrets(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (sets.Set[string], errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessSecrets(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (sets.Set[string], errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	accessSecretsInDeletion := sets.New[string]()
@@ -244,7 +244,7 @@ func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessSecrets(ctx context
 
 // syncAccessSecrets checks if all AccessRequests belonging to the ManagedControlPlane are ready and copies their secrets to the Onboarding cluster and references them in the ManagedControlPlane status.
 // It returns a boolean indicating whether all AccessRequests are ready and their secrets have been copied successfully (true) or not (false).
-func (r *ManagedControlPlaneReconciler) syncAccessSecrets(ctx context.Context, mcp *corev2alpha1.ManagedControlPlane, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (bool, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) syncAccessSecrets(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (bool, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	allAccessReady := true
