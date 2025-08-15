@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/openmcp-project/controller-utils/pkg/clusteraccess"
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/controller-utils/pkg/collections"
 	"github.com/openmcp-project/controller-utils/pkg/collections/filters"
@@ -182,14 +184,32 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 			return rr
 		}
 	}
+
+	// ensure that the MCP namespace on the platform cluster exists
+	mcpLabels := map[string]string{
+		corev2alpha1.MCPNameLabel:      mcp.Name,
+		corev2alpha1.MCPNamespaceLabel: mcp.Namespace,
+		apiconst.ManagedByLabel:        ControllerName,
+	}
+	platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+	if err != nil {
+		rr.ReconcileError = errutils.WithReason(err, cconst.ReasonInternalError)
+		createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+		return rr
+	}
+	_, err = clusteraccess.EnsureNamespace(ctx, r.PlatformCluster.Client(), platformNamespace, pairs.MapToPairs(mcpLabels)...)
+	if err != nil {
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error ensuring namespace '%s' on platform cluster: %w", platformNamespace, err), cconst.ReasonPlatformClusterInteractionProblem)
+		createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+		return rr
+	}
 	createCon(corev2alpha1.ConditionMeta, metav1.ConditionTrue, "", "")
 
 	// ensure that the ClusterRequest exists
 	// since ClusterRequests are basically immutable, updating them is not required
-	namespace := libutils.StableRequestNamespace(mcp.Namespace)
 	cr := &clustersv1alpha1.ClusterRequest{}
 	cr.Name = mcp.Name
-	cr.Namespace = namespace
+	cr.Namespace = platformNamespace
 	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(cr), cr); err != nil {
 		if !apierrors.IsNotFound(err) {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to get ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
@@ -198,6 +218,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 		}
 
 		log.Info("ClusterRequest not found, creating it", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "purpose", r.Config.MCPClusterPurpose)
+		cr.Labels = mcpLabels
 		cr.Spec = clustersv1alpha1.ClusterRequestSpec{
 			Purpose:                r.Config.MCPClusterPurpose,
 			WaitForClusterDeletion: ptr.To(true),
@@ -222,7 +243,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	createCon(corev2alpha1.ConditionClusterRequestReady, metav1.ConditionTrue, "", "ClusterRequest is ready")
 
 	// manage AccessRequests
-	allAccessReady, removeConditions, rerr := r.manageAccessRequests(ctx, mcp, cr, createCon)
+	allAccessReady, removeConditions, rerr := r.manageAccessRequests(ctx, mcp, platformNamespace, cr, createCon)
 	rr.ConditionsToRemove = removeConditions.UnsortedList()
 	if rerr != nil {
 		rr.ReconcileError = rerr
@@ -281,7 +302,13 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	log.Debug("All service resources deleted")
 
 	// delete AccessRequests and related secrets
-	accessReady, removeConditions, rerr := r.manageAccessRequests(ctx, mcp, nil, createCon)
+	platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+	if err != nil {
+		rr.ReconcileError = errutils.WithReason(err, cconst.ReasonInternalError)
+		createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+		return rr
+	}
+	accessReady, removeConditions, rerr := r.manageAccessRequests(ctx, mcp, platformNamespace, nil, createCon)
 	rr.ConditionsToRemove = removeConditions.UnsortedList()
 	if rerr != nil {
 		rr.ReconcileError = rerr
@@ -298,7 +325,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	log.Debug("All AccessRequests deleted")
 
 	// delete cluster requests related to this MCP
-	remainingCRs, rerr := r.deleteRelatedClusterRequests(ctx, mcp)
+	remainingCRs, rerr := r.deleteRelatedClusterRequests(ctx, mcp, platformNamespace)
 	if rerr != nil {
 		rr.ReconcileError = rerr
 		createCon(corev2alpha1.ConditionAllClusterRequestsDeleted, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
@@ -338,6 +365,40 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	}
 	createCon(corev2alpha1.ConditionAllClusterRequestsDeleted, metav1.ConditionTrue, "", "All ClusterRequests have been deleted")
 	log.Debug("All ClusterRequests deleted")
+
+	// delete MCP namespace on the platform cluster
+	ns := &corev1.Namespace{}
+	ns.Name = platformNamespace
+	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(ns), ns); err != nil {
+		if !apierrors.IsNotFound(err) {
+			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error getting namespace '%s' on platform cluster: %w", platformNamespace, err), cconst.ReasonPlatformClusterInteractionProblem)
+			createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+			return rr
+		}
+		log.Debug("Namespace already deleted", "namespace", platformNamespace)
+		ns = nil
+	} else {
+		if ns.Labels[corev2alpha1.MCPNameLabel] != mcp.Name || ns.Labels[corev2alpha1.MCPNamespaceLabel] != mcp.Namespace || ns.Labels[apiconst.ManagedByLabel] != ControllerName {
+			log.Debug("Labels on MCP namespace on platform cluster do not match expected labels, skipping deletion", "platformNamespace", ns.Name)
+		} else {
+			if !ns.DeletionTimestamp.IsZero() {
+				log.Debug("MCP namespace already marked for deletion", "platformNamespace", ns.Name)
+			} else {
+				log.Debug("Deleting MCP namespace on platform cluster", "platformNamespace", ns.Name)
+				if err := r.PlatformCluster.Client().Delete(ctx, ns); err != nil {
+					rr.ReconcileError = errutils.WithReason(fmt.Errorf("error deleting namespace '%s' on platform cluster: %w", platformNamespace, err), cconst.ReasonPlatformClusterInteractionProblem)
+					createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+					return rr
+				}
+			}
+		}
+	}
+	if ns != nil {
+		log.Info("Waiting for MCP namespace to be deleted", "platformNamespace", ns.Name)
+		createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, cconst.ReasonWaitingForNamespaceDeletion, fmt.Sprintf("Waiting for namespace '%s' to be deleted", platformNamespace))
+		rr.SmartRequeue = ctrlutils.SR_BACKOFF
+		return rr
+	}
 
 	// remove MCP finalizer
 	if controllerutil.RemoveFinalizer(mcp, corev2alpha1.MCPFinalizer) {
