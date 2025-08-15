@@ -6,10 +6,11 @@ const (
 )
 
 const (
-	MCPLabel          = GroupName + "/mcp"
+	MCPNameLabel      = GroupName + "/mcp-name"
+	MCPNamespaceLabel = GroupName + "/mcp-namespace"
 	OIDCProviderLabel = GroupName + "/oidc-provider"
 
-	MCPFinalizer = MCPLabel
+	MCPFinalizer = GroupName + "/mcp"
 
 	// ServiceDependencyFinalizerPrefix is the prefix for the dependency finalizers that are added to MCP resources by associated services.
 	ServiceDependencyFinalizerPrefix = "services.openmcp.cloud/"

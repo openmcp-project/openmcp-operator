@@ -11,6 +11,8 @@ const (
 	ReasonConfigurationProblem = "ConfigurationProblem"
 	// ReasonInternalError indicates that something went wrong internally.
 	ReasonInternalError = "InternalError"
+	// ReasonWaitingForNamespaceDeletion indicates that something is waiting for a namespace to be deleted.
+	ReasonWaitingForNamespaceDeletion = "WaitingForNamespaceDeletion"
 	// ReasonWaitingForClusterRequest indicates that something is waiting for a ClusterRequest to become ready.
 	ReasonWaitingForClusterRequest = "WaitingForClusterRequest"
 	// ReasonWaitingForClusterRequestDeletion indicates that something is waiting for a ClusterRequest to be deleted.

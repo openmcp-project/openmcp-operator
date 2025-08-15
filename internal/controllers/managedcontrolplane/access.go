@@ -21,19 +21,18 @@ import (
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
-	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
 // manageAccessRequests aligns the existing AccessRequests for the MCP with the currently configured OIDC providers.
 // It uses the given createCon function to create conditions for AccessRequests and returns a set of conditions that should be removed from the MCP status.
 // The bool return value specifies whether everything related to MCP access is in the desired state or not. If 'false', it is recommended to requeue the MCP.
-func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (bool, sets.Set[string], errutils.ReasonableError) {
-	updatedAccessRequests, rerr := r.createOrUpdateDesiredAccessRequests(ctx, mcp, cr, createCon)
+func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, platformNamespace string, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (bool, sets.Set[string], errutils.ReasonableError) {
+	updatedAccessRequests, rerr := r.createOrUpdateDesiredAccessRequests(ctx, mcp, platformNamespace, cr, createCon)
 	if rerr != nil {
 		return false, nil, rerr
 	}
 
-	accessRequestsInDeletion, rerr := r.deleteUndesiredAccessRequests(ctx, mcp, updatedAccessRequests, createCon)
+	accessRequestsInDeletion, rerr := r.deleteUndesiredAccessRequests(ctx, mcp, platformNamespace, updatedAccessRequests, createCon)
 	if rerr != nil {
 		return false, nil, rerr
 	}
@@ -82,10 +81,9 @@ func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context
 // createOrUpdateDesiredAccessRequests creates/updates all AccessRequests that are desired according to the ManagedControlPlane's configured OIDC providers.
 // It returns a mapping from OIDC provider names to the corresponding AccessRequests.
 // If the ManagedControlPlane has a non-zero DeletionTimestamp, no AccessRequests will be created or updated and the returned map will be empty.
-func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (map[string]*clustersv1alpha1.AccessRequest, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, platformNamespace string, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (map[string]*clustersv1alpha1.AccessRequest, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
-	namespace := libutils.StableRequestNamespace(mcp.Namespace)
 	updatedAccessRequests := map[string]*clustersv1alpha1.AccessRequest{}
 	var oidcProviders []*commonapi.OIDCProviderConfig
 
@@ -104,10 +102,10 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 
 	for _, oidc := range oidcProviders {
 		log.Debug("Creating/updating AccessRequest for OIDC provider", "oidcProviderName", oidc.Name)
-		arName := ctrlutils.K8sNameHash(mcp.Name, oidc.Name)
+		arName := ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name)
 		ar := &clustersv1alpha1.AccessRequest{}
 		ar.Name = arName
-		ar.Namespace = namespace
+		ar.Namespace = platformNamespace
 		if _, err := controllerutil.CreateOrUpdate(ctx, r.PlatformCluster.Client(), ar, func() error {
 			ar.Spec.RequestRef = &commonapi.ObjectReference{
 				Name:      cr.Name,
@@ -119,7 +117,8 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 			if ar.Labels == nil {
 				ar.Labels = map[string]string{}
 			}
-			ar.Labels[corev2alpha1.MCPLabel] = mcp.Name
+			ar.Labels[corev2alpha1.MCPNameLabel] = mcp.Name
+			ar.Labels[corev2alpha1.MCPNamespaceLabel] = mcp.Namespace
 			ar.Labels[apiconst.ManagedByLabel] = ControllerName
 			ar.Labels[corev2alpha1.OIDCProviderLabel] = oidc.Name
 
@@ -139,17 +138,17 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 // deleteUndesiredAccessRequests deletes all AccessRequests that belong to the given ManagedControlPlane, but are not in the updatedAccessRequests map.
 // These are AccessRequests that have been created for a previous version of the ManagedControlPlane and are not needed anymore.
 // It returns a set of OIDC provider names for which the AccessRequests are still in deletion. If the set is empty, all undesired AccessRequests have been deleted.
-func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (sets.Set[string], errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, platformNamespace string, updatedAccessRequests map[string]*clustersv1alpha1.AccessRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (sets.Set[string], errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
-	namespace := libutils.StableRequestNamespace(mcp.Namespace)
 	accessRequestsInDeletion := sets.New[string]()
 
 	// delete all AccessRequests that have previously been created for this ManagedControlPlane but are not needed anymore
 	oidcARs := &clustersv1alpha1.AccessRequestList{}
-	if err := r.PlatformCluster.Client().List(ctx, oidcARs, client.InNamespace(namespace), client.HasLabels{corev2alpha1.OIDCProviderLabel}, client.MatchingLabels{
-		corev2alpha1.MCPLabel:   mcp.Name,
-		apiconst.ManagedByLabel: ControllerName,
+	if err := r.PlatformCluster.Client().List(ctx, oidcARs, client.InNamespace(platformNamespace), client.HasLabels{corev2alpha1.OIDCProviderLabel}, client.MatchingLabels{
+		corev2alpha1.MCPNameLabel:      mcp.Name,
+		corev2alpha1.MCPNamespaceLabel: mcp.Namespace,
+		apiconst.ManagedByLabel:        ControllerName,
 	}); err != nil {
 		rerr := errutils.WithReason(fmt.Errorf("error listing AccessRequests for ManagedControlPlane '%s/%s': %w", mcp.Namespace, mcp.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
 		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
@@ -197,8 +196,9 @@ func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessSecrets(ctx context
 	// delete all AccessRequest secrets that have been copied to the Onboarding cluster and belong to AccessRequests that are no longer needed
 	mcpSecrets := &corev1.SecretList{}
 	if err := r.OnboardingCluster.Client().List(ctx, mcpSecrets, client.InNamespace(mcp.Namespace), client.HasLabels{corev2alpha1.OIDCProviderLabel}, client.MatchingLabels{
-		corev2alpha1.MCPLabel:   mcp.Name,
-		apiconst.ManagedByLabel: ControllerName,
+		corev2alpha1.MCPNameLabel:      mcp.Name,
+		corev2alpha1.MCPNamespaceLabel: mcp.Namespace,
+		apiconst.ManagedByLabel:        ControllerName,
 	}); err != nil {
 		rerr := errutils.WithReason(fmt.Errorf("error listing secrets for ManagedControlPlane '%s/%s': %w", mcp.Namespace, mcp.Name, err), cconst.ReasonOnboardingClusterInteractionProblem)
 		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
@@ -268,14 +268,15 @@ func (r *ManagedControlPlaneReconciler) syncAccessSecrets(ctx context.Context, m
 				return false, rerr
 			}
 			mcpSecret := &corev1.Secret{}
-			mcpSecret.Name = ctrlutils.K8sNameHash(mcp.Name, providerName)
+			mcpSecret.Name = ctrlutils.K8sNameUUIDUnsafe(mcp.Name, providerName)
 			mcpSecret.Namespace = mcp.Namespace
 			if _, err := controllerutil.CreateOrUpdate(ctx, r.OnboardingCluster.Client(), mcpSecret, func() error {
 				mcpSecret.Data = arSecret.Data
 				if mcpSecret.Labels == nil {
 					mcpSecret.Labels = map[string]string{}
 				}
-				mcpSecret.Labels[corev2alpha1.MCPLabel] = mcp.Name
+				mcpSecret.Labels[corev2alpha1.MCPNameLabel] = mcp.Name
+				mcpSecret.Labels[corev2alpha1.MCPNamespaceLabel] = mcp.Namespace
 				mcpSecret.Labels[corev2alpha1.OIDCProviderLabel] = providerName
 				mcpSecret.Labels[apiconst.ManagedByLabel] = ControllerName
 
