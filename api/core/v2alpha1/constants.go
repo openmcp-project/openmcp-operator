@@ -3,6 +3,8 @@ package v2alpha1
 const (
 	// DefaultOIDCProviderName is the identifier for the default OIDC provider.
 	DefaultOIDCProviderName = "default"
+	// DefaultMCPClusterPurpose is the default purpose for ManagedControlPlane clusters.
+	DefaultMCPClusterPurpose = "mcp"
 )
 
 const (

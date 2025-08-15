@@ -16,9 +16,9 @@ type ManagedControlPlaneConfig struct {
 	// MCPClusterPurpose is the purpose that is used for ClusterRequests created for ManagedControlPlane resources.
 	MCPClusterPurpose string `json:"mcpClusterPurpose"`
 
-	// StandardOIDCProvider is the standard OIDC provider that is enabled for all ManagedControlPlane resources, unless explicitly disabled.
+	// DefaultOIDCProvider is the standard OIDC provider that is enabled for all ManagedControlPlane resources, unless explicitly disabled.
 	// If nil, no standard OIDC provider will be used.
-	StandardOIDCProvider *commonapi.OIDCProviderConfig `json:"standardOIDCProvider,omitempty"`
+	DefaultOIDCProvider *commonapi.OIDCProviderConfig `json:"defaultOIDCProvider,omitempty"`
 
 	// ReconcileMCPEveryXDays specifies after how many days an MCP should be reconciled.
 	// This is useful if the AccessRequests created by the MCP use an expiring authentication method and the MCP needs to refresh the access regularly.
@@ -28,9 +28,12 @@ type ManagedControlPlaneConfig struct {
 }
 
 func (c *ManagedControlPlaneConfig) Default(_ *field.Path) error {
-	c.StandardOIDCProvider.Default()
-	if c.StandardOIDCProvider.Name == "" {
-		c.StandardOIDCProvider.Name = corev2alpha1.DefaultOIDCProviderName
+	c.DefaultOIDCProvider.Default()
+	if c.DefaultOIDCProvider.Name == "" {
+		c.DefaultOIDCProvider.Name = corev2alpha1.DefaultOIDCProviderName
+	}
+	if c.MCPClusterPurpose == "" {
+		c.MCPClusterPurpose = corev2alpha1.DefaultMCPClusterPurpose
 	}
 	return nil
 }
@@ -44,13 +47,13 @@ func (c *ManagedControlPlaneConfig) Validate(fldPath *field.Path) error {
 	if c.ReconcileMCPEveryXDays < 0 {
 		errs = append(errs, field.Invalid(fldPath.Child("reconcileMCPEveryXDays"), c.ReconcileMCPEveryXDays, "reconcile interval must be 0 or greater"))
 	}
-	if c.StandardOIDCProvider == nil {
-		oidcFldPath := fldPath.Child("standardOIDCProvider")
-		if len(c.StandardOIDCProvider.RoleBindings) > 0 {
+	if c.DefaultOIDCProvider == nil {
+		oidcFldPath := fldPath.Child("defaultOIDCProvider")
+		if len(c.DefaultOIDCProvider.RoleBindings) > 0 {
 			errs = append(errs, field.Forbidden(oidcFldPath.Child("roleBindings"), "role bindings are specified in the MCP spec and may not be set in the config"))
 		}
-		if c.StandardOIDCProvider.Name != "" && c.StandardOIDCProvider.Name != corev2alpha1.DefaultOIDCProviderName {
-			errs = append(errs, field.Invalid(oidcFldPath.Child("name"), c.StandardOIDCProvider.Name, fmt.Sprintf("standard OIDC provider name must be '%s' or left empty (in which case it will be defaulted)", corev2alpha1.DefaultOIDCProviderName)))
+		if c.DefaultOIDCProvider.Name != "" && c.DefaultOIDCProvider.Name != corev2alpha1.DefaultOIDCProviderName {
+			errs = append(errs, field.Invalid(oidcFldPath.Child("name"), c.DefaultOIDCProvider.Name, fmt.Sprintf("standard OIDC provider name must be '%s' or left empty (in which case it will be defaulted)", corev2alpha1.DefaultOIDCProviderName)))
 		}
 	}
 
