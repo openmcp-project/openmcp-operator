@@ -116,6 +116,8 @@ spec:
                             RoleRefs is a list of (cluster) role references that the subjects should be bound to.
                             Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
                           items:
+                            description: RoleRef defines a reference to a (cluster)
+                              role that should be bound to the subjects.
                             properties:
                               kind:
                                 description: |-
@@ -139,13 +141,6 @@ spec:
                             - kind
                             - name
                             type: object
-                            x-kubernetes-validations:
-                            - message: namespace must be set if kind is 'Role'
-                              rule: self.kind == 'Role' && has(self.namespace) &&
-                                self.namespace != ”
-                            - message: namespace must not be set if kind is 'ClusterRole'
-                              rule: self.kind == 'ClusterRole' && (!has(self.namespace)
-                                || self.namespace == ”)
                           type: array
                         subjects:
                           description: |-
