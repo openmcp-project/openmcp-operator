@@ -10,7 +10,7 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.38.0
-	github.com/openmcp-project/controller-utils v0.17.0
+	github.com/openmcp-project/controller-utils v0.17.1-0.20250815092130-15c510e7eb87
 	github.com/openmcp-project/openmcp-operator/api v0.10.0
 	github.com/openmcp-project/openmcp-operator/lib v0.10.0
 	github.com/spf13/cobra v1.9.1
