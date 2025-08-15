@@ -18,7 +18,8 @@ type ManagedControlPlaneV2Status struct {
 	// Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ManagedControlPlaneV2.
 	// The default OIDC provider, if configured, uses the name "default" in this mapping.
 	// The "default" key is also used if the ClusterProvider does not support OIDC-based access and created a serviceaccount with a token instead.
-	Access map[string]commonapi.LocalObjectReference `json:"access"`
+	// +optional
+	Access map[string]commonapi.LocalObjectReference `json:"access,omitempty"`
 }
 
 type IAMConfig struct {
