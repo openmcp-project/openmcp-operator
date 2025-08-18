@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -45,6 +46,24 @@ type DeploymentSpec struct {
 	// +kubebuilder:validation:Enum=DEBUG;INFO;ERROR
 	// +kubebuilder:default=INFO
 	Verbosity string `json:"verbosity,omitempty"`
+
+	// List of additional volumes that are mounted in the main container.
+	// More info: https://kubernetes.io/docs/concepts/storage/volumes
+	// +optional
+	// +patchMergeKey=name
+	// +patchStrategy=merge,retainKeys
+	// +listType=map
+	// +listMapKey=name
+	ExtraVolumes []corev1.Volume `json:"extraVolumes,omitempty" patchStrategy:"merge,retainKeys" patchMergeKey:"name"`
+
+	// List of additional volume mounts that are mounted in the main container.
+	// Cannot be updated.
+	// +optional
+	// +patchMergeKey=mountPath
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=mountPath
+	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty" patchStrategy:"merge" patchMergeKey:"mountPath"`
 }
 
 // DeploymentStatus defines the observed state of a provider.

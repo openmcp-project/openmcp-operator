@@ -123,14 +123,6 @@ spec:
                                   - kind
                                   - name
                                   type: object
-                                  x-kubernetes-validations:
-                                  - message: namespace must be set if kind is 'Role'
-                                    rule: self.kind == 'Role' && has(self.namespace)
-                                      && self.namespace != ”
-                                  - message: namespace must not be set if kind is
-                                      'ClusterRole'
-                                    rule: self.kind == 'ClusterRole' && (!has(self.namespace)
-                                      || self.namespace == ”)
                                 type: array
                               subjects:
                                 description: |-
@@ -232,13 +224,6 @@ spec:
                             - kind
                             - name
                             type: object
-                            x-kubernetes-validations:
-                            - message: namespace must be set if kind is 'Role'
-                              rule: self.kind == 'Role' && has(self.namespace) &&
-                                self.namespace != ”
-                            - message: namespace must not be set if kind is 'ClusterRole'
-                              rule: self.kind == 'ClusterRole' && (!has(self.namespace)
-                                || self.namespace == ”)
                           type: array
                         subjects:
                           description: |-
