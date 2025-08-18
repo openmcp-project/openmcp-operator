@@ -100,6 +100,8 @@ spec:
                                   RoleRefs is a list of (cluster) role references that the subjects should be bound to.
                                   Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
                                 items:
+                                  description: RoleRef defines a reference to a (cluster)
+                                    role that should be bound to the subjects.
                                   properties:
                                     kind:
                                       description: |-
@@ -201,6 +203,8 @@ spec:
                             RoleRefs is a list of (cluster) role references that the subjects should be bound to.
                             Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
                           items:
+                            description: RoleRef defines a reference to a (cluster)
+                              role that should be bound to the subjects.
                             properties:
                               kind:
                                 description: |-

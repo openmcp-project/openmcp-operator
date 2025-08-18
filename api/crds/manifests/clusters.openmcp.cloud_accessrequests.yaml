@@ -116,6 +116,8 @@ spec:
                             RoleRefs is a list of (cluster) role references that the subjects should be bound to.
                             Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
                           items:
+                            description: RoleRef defines a reference to a (cluster)
+                              role that should be bound to the subjects.
                             properties:
                               kind:
                                 description: |-
@@ -207,6 +209,12 @@ spec:
                   For token-based access, the serviceaccount will be bound to the created Roles and ClusterRoles.
                 items:
                   properties:
+                    name:
+                      description: |-
+                        Name is an optional name for the (Cluster)Role that will be created for the requested permissions.
+                        If not set, a randomized name that is unique in the cluster will be generated.
+                        Note that the AccessRequest will not be granted if the to-be-created (Cluster)Role already exists, but is not managed by the AccessRequest, so choose this name carefully.
+                      type: string
                     namespace:
                       description: |-
                         Namespace is the namespace for which the permissions are requested.

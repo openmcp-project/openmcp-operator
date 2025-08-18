@@ -63,6 +63,8 @@ type RoleBindings struct {
 	RoleRefs []RoleRef `json:"roleRefs"`
 }
 
+// RoleRef defines a reference to a (cluster) role that should be bound to the subjects.
+// TODO: Validate that Namespace is set if Kind is 'Role' and not set if Kind is 'ClusterRole'.
 type RoleRef struct {
 	// Name is the name of the role or cluster role to bind to the subjects.
 	// +kubebuilder:validation:MinLength=1
