@@ -13,7 +13,7 @@ require (
 	github.com/openmcp-project/controller-utils v0.17.0
 	github.com/openmcp-project/openmcp-operator/api v0.10.0
 	github.com/spf13/cobra v1.9.1
-	k8s.io/api v0.33.3
+	k8s.io/api v0.33.4
 	k8s.io/apimachinery v0.33.4
 	k8s.io/client-go v0.33.3
 	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
