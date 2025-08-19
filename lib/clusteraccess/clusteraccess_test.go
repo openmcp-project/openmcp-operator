@@ -19,7 +19,6 @@ import (
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
-	"github.com/openmcp-project/openmcp-operator/lib/utils"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -118,7 +117,7 @@ var _ = Describe("ClusterAccessReconciler", func() {
 		It("should create MCP-/Workload ClusterRequests/AccessRequests", func() {
 			var reconcileResult reconcile.Result
 
-			expectedRequestNamespace := "ob-test"
+			expectedRequestNamespace := "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
 
 			request := reconcile.Request{
 				NamespacedName: client.ObjectKey{
@@ -129,21 +128,21 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 			accessRequestMCP := &clustersv1alpha1.AccessRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      utils.StableRequestNameMCP(request.Name, controllerName),
+					Name:      clusteraccess.StableRequestName(controllerName, request) + "--mcp",
 					Namespace: expectedRequestNamespace,
 				},
 			}
 
 			clusterRequestWorkload := &clustersv1alpha1.ClusterRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      utils.StableRequestNameWorkload(request.Name, controllerName),
+					Name:      clusteraccess.StableRequestName(controllerName, request) + "--wl",
 					Namespace: expectedRequestNamespace,
 				},
 			}
 
 			accessRequestWorkload := &clustersv1alpha1.AccessRequest{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      utils.StableRequestNameWorkload(request.Name, controllerName),
+					Name:      clusteraccess.StableRequestName(controllerName, request) + "--wl",
 					Namespace: expectedRequestNamespace,
 				},
 			}
@@ -239,7 +238,7 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			It("should delete MCP-/Workload ClusterRequests/AccessRequests", func() {
 				var reconcileResult reconcile.Result
 
-				expectedRequestNamespace := "ob-test"
+				expectedRequestNamespace := "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
 
 				request := reconcile.Request{
 					NamespacedName: client.ObjectKey{
@@ -250,21 +249,21 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 				accessRequestMCP := &clustersv1alpha1.AccessRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      utils.StableRequestNameMCP(request.Name, controllerName),
+						Name:      clusteraccess.StableRequestName(controllerName, request) + "--mcp",
 						Namespace: expectedRequestNamespace,
 					},
 				}
 
 				clusterRequestWorkload := &clustersv1alpha1.ClusterRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      utils.StableRequestNameWorkload(request.Name, controllerName),
+						Name:      clusteraccess.StableRequestName(controllerName, request) + "--wl",
 						Namespace: expectedRequestNamespace,
 					},
 				}
 
 				accessRequestWorkload := &clustersv1alpha1.AccessRequest{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      utils.StableRequestNameWorkload(request.Name, controllerName),
+						Name:      clusteraccess.StableRequestName(controllerName, request) + "--wl",
 						Namespace: expectedRequestNamespace,
 					},
 				}
