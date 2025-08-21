@@ -8,7 +8,7 @@ replace github.com/openmcp-project/openmcp-operator/api => ./api
 
 require (
 	dario.cat/mergo v1.0.2
-	github.com/onsi/ginkgo/v2 v2.23.4
+	github.com/onsi/ginkgo/v2 v2.24.0
 	github.com/onsi/gomega v1.38.0
 	github.com/openmcp-project/controller-utils v0.17.0
 	github.com/openmcp-project/openmcp-operator/api v0.11.0
@@ -23,6 +23,7 @@ require (
 
 require (
 	cel.dev/expr v0.19.1 // indirect
+	github.com/Masterminds/semver/v3 v3.3.1 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
