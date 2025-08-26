@@ -7,7 +7,7 @@ replace github.com/openmcp-project/openmcp-operator/api => ../api
 require (
 	github.com/onsi/ginkgo/v2 v2.25.1
 	github.com/onsi/gomega v1.38.1
-	github.com/openmcp-project/controller-utils v0.17.0
+	github.com/openmcp-project/controller-utils v0.18.0
 	github.com/openmcp-project/openmcp-operator/api v0.11.0
 	k8s.io/api v0.33.4
 	k8s.io/apimachinery v0.33.4
@@ -70,7 +70,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.33.4 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
-	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
+	k8s.io/utils v0.0.0-20250820121507-0af2bda4dd1d // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.7.0 // indirect
