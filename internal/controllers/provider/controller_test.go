@@ -21,8 +21,9 @@ var _ = Describe("Deployment Controller", func() {
 	Context("Reconcile", func() {
 
 		var (
-			scheme      = apiinstall.InstallOperatorAPIs(runtime.NewScheme())
-			environment = "test-environment"
+			scheme          = apiinstall.InstallOperatorAPIs(runtime.NewScheme())
+			environment     = "test-environment"
+			systemNamespace = "openmcp-system"
 		)
 
 		buildTestEnvironment := func(testdataDir string, gvk schema.GroupVersionKind) *testutils.Environment {
@@ -30,7 +31,7 @@ var _ = Describe("Deployment Controller", func() {
 				WithFakeClient(scheme).
 				WithInitObjectPath("testdata", testdataDir).
 				WithReconcilerConstructor(func(c client.Client) reconcile.Reconciler {
-					return NewProviderReconciler(gvk, c, environment)
+					return NewProviderReconciler(gvk, c, environment, systemNamespace)
 				}).
 				Build()
 		}
@@ -57,7 +58,7 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(deploymentStatus.Phase).To(Equal(phaseProgressing), "Phase should be progressing")
 			Expect(isInitialized(deploymentStatus)).To(BeFalse(), "Provider should not yet be initialized")
 			Expect(isProviderInstalledAndReady(deploymentStatus)).To(BeFalse(), "Provider should not yet be ready")
-			values := install.NewValues(provider, deploymentSpec, environment)
+			values := install.NewValues(provider, deploymentSpec, environment, systemNamespace)
 			job := install.NewJobMutator(values, deploymentSpec, nil).Empty()
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(job), job)).To(Succeed())
 			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal("test-image:v0.1.0"), "Job container image should match the provider spec")

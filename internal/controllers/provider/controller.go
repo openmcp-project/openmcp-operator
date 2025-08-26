@@ -25,18 +25,20 @@ const (
 	openmcpFinalizer = constants.OpenMCPGroupName + "/finalizer"
 )
 
-func NewProviderReconciler(gvk schema.GroupVersionKind, client client.Client, environment string) *ProviderReconciler {
+func NewProviderReconciler(gvk schema.GroupVersionKind, client client.Client, environment, systemNamespace string) *ProviderReconciler {
 	return &ProviderReconciler{
 		GroupVersionKind: gvk,
 		PlatformClient:   client,
 		Environment:      environment,
+		SystemNamespace:  systemNamespace,
 	}
 }
 
 type ProviderReconciler struct {
 	schema.GroupVersionKind
-	PlatformClient client.Client
-	Environment    string
+	PlatformClient  client.Client
+	Environment     string
+	SystemNamespace string
 }
 
 func (r *ProviderReconciler) ControllerName() string {
@@ -119,10 +121,11 @@ func (r *ProviderReconciler) install(
 
 	log := logging.FromContextOrPanic(ctx)
 	installer := install.Installer{
-		PlatformClient: r.PlatformClient,
-		Provider:       provider,
-		DeploymentSpec: deploymentSpec,
-		Environment:    r.Environment,
+		PlatformClient:  r.PlatformClient,
+		Provider:        provider,
+		DeploymentSpec:  deploymentSpec,
+		Environment:     r.Environment,
+		SystemNamespace: r.SystemNamespace,
 	}
 
 	// init job
@@ -171,10 +174,11 @@ func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider
 	status := newUninstallStatus(provider.GetGeneration())
 
 	installer := install.Installer{
-		PlatformClient: r.PlatformClient,
-		Provider:       provider,
-		DeploymentSpec: nil,
-		Environment:    r.Environment,
+		PlatformClient:  r.PlatformClient,
+		Provider:        provider,
+		DeploymentSpec:  nil,
+		Environment:     r.Environment,
+		SystemNamespace: r.SystemNamespace,
 	}
 
 	deleted, err = installer.UninstallProvider(ctx)
