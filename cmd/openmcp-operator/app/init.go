@@ -65,10 +65,7 @@ func (o *InitOptions) Complete(ctx context.Context) error {
 }
 
 func (o *InitOptions) Run(ctx context.Context) error {
-	if err := o.Clusters.Onboarding.InitializeClient(install.InstallCRDAPIs(runtime.NewScheme())); err != nil {
-		return err
-	}
-	if err := o.Clusters.Platform.InitializeClient(install.InstallCRDAPIs(runtime.NewScheme())); err != nil {
+	if err := o.PlatformCluster.InitializeClient(install.InstallCRDAPIs(runtime.NewScheme())); err != nil {
 		return err
 	}
 
@@ -77,9 +74,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 
 	// apply CRDs
 	crdManager := crdutil.NewCRDManager(apiconst.ClusterLabel, crds.CRDs)
-
-	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_ONBOARDING, o.Clusters.Onboarding)
-	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_PLATFORM, o.Clusters.Platform)
+	crdManager.AddCRDLabelToClusterMapping(clustersv1alpha1.PURPOSE_PLATFORM, o.PlatformCluster)
 
 	if err := crdManager.CreateOrUpdateCRDs(ctx, &log); err != nil {
 		return fmt.Errorf("error creating/updating CRDs: %w", err)
