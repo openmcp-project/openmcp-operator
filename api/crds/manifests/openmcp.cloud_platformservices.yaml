@@ -1942,6 +1942,22 @@ spec:
                   - name
                   type: object
                 type: array
+              initCommand:
+                description: |-
+                  InitCommand is the command that is executed to run the init job of the provider.
+                  Defaults to ["init"], if not specified.
+                  The '--environment', '--verbosity', and '--provider-name' flags will be appended to the command automatically.
+                items:
+                  type: string
+                type: array
+              runCommand:
+                description: |-
+                  RunCommand is the command that is executed to run the provider controllers.
+                  Defaults to ["run"], if not specified.
+                  The '--environment', '--verbosity', and '--provider-name' flags will be appended to the command automatically.
+                items:
+                  type: string
+                type: array
               verbosity:
                 default: INFO
                 description: Verbosity is the verbosity level of the provider.

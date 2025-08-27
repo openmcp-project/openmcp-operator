@@ -2,6 +2,7 @@ package install
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/openmcp-project/controller-utils/pkg/resources"
 	v1 "k8s.io/api/batch/v1"
@@ -60,6 +61,15 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 		return err
 	}
 
+	initCmd := slices.Clone(m.values.deploymentSpec.InitCommand)
+	if len(initCmd) == 0 {
+		initCmd = []string{"init"}
+	}
+	initCmd = append(initCmd,
+		"--environment="+m.values.Environment(),
+		"--verbosity="+m.values.Verbosity(),
+		"--provider-name="+m.values.provider.GetName(),
+	)
 	j.Spec = v1.JobSpec{
 		BackoffLimit: ptr.To[int32](4),
 		Template: corev1.PodTemplateSpec{
@@ -72,13 +82,8 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 						Name:            "init",
 						Image:           m.values.Image(),
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						Args: []string{
-							"init",
-							"--environment=" + m.values.Environment(),
-							"--verbosity=" + m.values.Verbosity(),
-							"--provider-name=" + m.values.provider.GetName(),
-						},
-						Env: env,
+						Args:            initCmd,
+						Env:             env,
 					},
 				},
 				ServiceAccountName: m.values.NamespacedResourceName(initPrefix),
