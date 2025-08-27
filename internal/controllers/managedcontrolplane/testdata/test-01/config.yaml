@@ -1,7 +1,7 @@
 managedControlPlane:
   mcpClusterPurpose: mcp
   reconcileMCPEveryXDays: 7
-  standardOIDCProvider:
+  defaultOIDCProvider:
     issuer: https://example.com/oidc
     groupsPrefix: 'mygroups:'
     usernamePrefix: 'myuser:'
