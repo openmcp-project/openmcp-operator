@@ -28,9 +28,11 @@ type ManagedControlPlaneConfig struct {
 }
 
 func (c *ManagedControlPlaneConfig) Default(_ *field.Path) error {
-	c.DefaultOIDCProvider.Default()
-	if c.DefaultOIDCProvider.Name == "" {
-		c.DefaultOIDCProvider.Name = corev2alpha1.DefaultOIDCProviderName
+	if c.DefaultOIDCProvider != nil {
+		c.DefaultOIDCProvider.Default()
+		if c.DefaultOIDCProvider.Name == "" {
+			c.DefaultOIDCProvider.Name = corev2alpha1.DefaultOIDCProviderName
+		}
 	}
 	if c.MCPClusterPurpose == "" {
 		c.MCPClusterPurpose = corev2alpha1.DefaultMCPClusterPurpose
@@ -47,7 +49,7 @@ func (c *ManagedControlPlaneConfig) Validate(fldPath *field.Path) error {
 	if c.ReconcileMCPEveryXDays < 0 {
 		errs = append(errs, field.Invalid(fldPath.Child("reconcileMCPEveryXDays"), c.ReconcileMCPEveryXDays, "reconcile interval must be 0 or greater"))
 	}
-	if c.DefaultOIDCProvider == nil {
+	if c.DefaultOIDCProvider != nil {
 		oidcFldPath := fldPath.Child("defaultOIDCProvider")
 		if len(c.DefaultOIDCProvider.RoleBindings) > 0 {
 			errs = append(errs, field.Forbidden(oidcFldPath.Child("roleBindings"), "role bindings are specified in the MCP spec and may not be set in the config"))
