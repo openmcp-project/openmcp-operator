@@ -90,6 +90,11 @@ func (in *AccessRequestSpec) DeepCopyInto(out *AccessRequestSpec) {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.RoleRefs != nil {
+		in, out := &in.RoleRefs, &out.RoleRefs
+		*out = make([]common.RoleRef, len(*in))
+		copy(*out, *in)
+	}
 	if in.OIDCProvider != nil {
 		in, out := &in.OIDCProvider, &out.OIDCProvider
 		*out = new(common.OIDCProviderConfig)

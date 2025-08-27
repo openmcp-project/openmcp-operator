@@ -37,6 +37,10 @@ type AccessRequestSpec struct {
 	// +optional
 	Permissions []PermissionsRequest `json:"permissions,omitempty"`
 
+	// RoleRefs are references to existing (Cluster)Roles that should be bound to the created serviceaccount or OIDC user.
+	// +optional
+	RoleRefs []commonapi.RoleRef `json:"roleRefs,omitempty"`
+
 	// OIDCProvider is a configuration for an OIDC provider that should be used for authentication and associated role bindings.
 	// If set, the handling ClusterProvider will create an OIDC-based access for the AccessRequest, if supported.
 	// Otherwise, a serviceaccount with a token will be created and bound to the requested permissions.
