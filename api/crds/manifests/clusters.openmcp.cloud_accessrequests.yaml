@@ -295,6 +295,36 @@ spec:
                 x-kubernetes-validations:
                 - message: requestRef is immutable
                   rule: self == oldSelf
+              roleRefs:
+                description: RoleRefs are references to existing (Cluster)Roles that
+                  should be bound to the created serviceaccount or OIDC user.
+                items:
+                  description: RoleRef defines a reference to a (cluster) role that
+                    should be bound to the subjects.
+                  properties:
+                    kind:
+                      description: |-
+                        Kind is the kind of the role to bind to the subjects.
+                        It must be 'Role' or 'ClusterRole'.
+                      enum:
+                      - Role
+                      - ClusterRole
+                      type: string
+                    name:
+                      description: Name is the name of the role or cluster role to
+                        bind to the subjects.
+                      minLength: 1
+                      type: string
+                    namespace:
+                      description: |-
+                        Namespace is the namespace of the role to bind to the subjects.
+                        It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
+                      type: string
+                  required:
+                  - kind
+                  - name
+                  type: object
+                type: array
             type: object
             x-kubernetes-validations:
             - message: clusterRef may not be removed once set
