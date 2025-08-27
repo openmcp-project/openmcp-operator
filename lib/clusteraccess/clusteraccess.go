@@ -3,6 +3,7 @@ package clusteraccess
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
@@ -26,7 +27,9 @@ import (
 )
 
 const (
-	controllerName = "ClusterAccess"
+	controllerName        = "ClusterAccess"
+	requestSuffixMCP      = "--mcp"
+	requestSuffixWorkload = "--wl"
 )
 
 // Reconciler is an interface for reconciling access to openMCP clusters.
@@ -123,10 +126,14 @@ func (r *reconcilerImpl) WithWorkloadScheme(scheme *runtime.Scheme) Reconciler {
 }
 
 func (r *reconcilerImpl) MCPCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
+	platformNamespace, err := libutils.StableMCPNamespace(request.Name, request.Namespace)
+	if err != nil {
+		return nil, err
+	}
 	mcpAccessRequest := &clustersv1alpha1.AccessRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      libutils.StableRequestNameMCP(request.Name, r.controllerName),
-			Namespace: libutils.StableRequestNamespace(request.Namespace),
+			Name:      StableRequestName(r.controllerName, request) + requestSuffixMCP,
+			Namespace: platformNamespace,
 		},
 	}
 
@@ -143,10 +150,14 @@ func (r *reconcilerImpl) MCPCluster(ctx context.Context, request reconcile.Reque
 }
 
 func (r *reconcilerImpl) WorkloadCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
+	platformNamespace, err := libutils.StableMCPNamespace(request.Name, request.Namespace)
+	if err != nil {
+		return nil, err
+	}
 	workloadAccessRequest := &clustersv1alpha1.AccessRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      libutils.StableRequestNameWorkload(request.Name, r.controllerName),
-			Namespace: libutils.StableRequestNamespace(request.Namespace),
+			Name:      StableRequestName(r.controllerName, request) + requestSuffixWorkload,
+			Namespace: platformNamespace,
 		},
 	}
 
@@ -165,9 +176,13 @@ func (r *reconcilerImpl) WorkloadCluster(ctx context.Context, request reconcile.
 func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(controllerName)
 
-	requestNamespace := libutils.StableRequestNamespace(request.Namespace)
-	requestNameMCP := libutils.StableRequestNameMCP(request.Name, r.controllerName)
-	requestNameWorkload := libutils.StableRequestNameWorkload(request.Name, r.controllerName)
+	platformNamespace, err := libutils.StableMCPNamespace(request.Name, request.Namespace)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	requestNamespace := platformNamespace
+	requestNameMCP := StableRequestName(r.controllerName, request) + requestSuffixMCP
+	requestNameWorkload := StableRequestName(r.controllerName, request) + requestSuffixWorkload
 
 	metadata := requestMetadata(r.controllerName, request)
 
@@ -258,9 +273,13 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 }
 
 func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	requestNamespace := libutils.StableRequestNamespace(request.Namespace)
-	requestNameMCP := libutils.StableRequestNameMCP(request.Name, r.controllerName)
-	requestNameWorkload := libutils.StableRequestNameWorkload(request.Name, r.controllerName)
+	platformNamespace, err := libutils.StableMCPNamespace(request.Name, request.Namespace)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	requestNamespace := platformNamespace
+	requestNameMCP := StableRequestName(r.controllerName, request) + requestSuffixMCP
+	requestNameWorkload := StableRequestName(r.controllerName, request) + requestSuffixWorkload
 
 	// Delete the Workload AccessRequest if it exists
 	workloadAccessDeleted, err := deleteAccessRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace)
@@ -718,4 +737,11 @@ func (m *accessRequestMutator) Mutate(accessRequest *clustersv1alpha1.AccessRequ
 	} else {
 		return nil
 	}
+}
+
+// StableRequestName generates a stable name for a Cluster- or AccessRequest related to an MCP.
+// This basically results in '<lowercase_controller_name>--<request_name>'.
+func StableRequestName(controllerName string, request reconcile.Request) string {
+	controllerName = strings.ToLower(controllerName)
+	return fmt.Sprintf("%s--%s", controllerName, request.Name)
 }
