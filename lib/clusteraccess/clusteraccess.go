@@ -41,8 +41,12 @@ type Reconciler interface {
 	WithRetryInterval(interval time.Duration) Reconciler
 	// WithMCPPermissions sets the permissions for the MCP AccessRequest.
 	WithMCPPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler
+	// WithMCPRoleRefs sets the RoleRefs for the MCP AccessRequest.
+	WithMCPRoleRefs(roleRefs []commonapi.RoleRef) Reconciler
 	// WithWorkloadPermissions sets the permissions for the Workload AccessRequest.
 	WithWorkloadPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler
+	// WithWorkloadRoleRefs sets the RoleRefs for the Workload AccessRequest.
+	WithWorkloadRoleRefs(roleRefs []commonapi.RoleRef) Reconciler
 	// WithMCPScheme sets the scheme for the MCP Kubernetes client.
 	WithMCPScheme(scheme *runtime.Scheme) Reconciler
 	// WithWorkloadScheme sets the scheme for the Workload Kubernetes client.
@@ -80,7 +84,9 @@ type reconcilerImpl struct {
 	controllerName        string
 	retryInterval         time.Duration
 	mcpPermissions        []clustersv1alpha1.PermissionsRequest
+	mcpRoleRefs           []commonapi.RoleRef
 	workloadPermissions   []clustersv1alpha1.PermissionsRequest
+	workloadRoleRefs      []commonapi.RoleRef
 	mcpScheme             *runtime.Scheme
 	workloadScheme        *runtime.Scheme
 }
@@ -94,7 +100,9 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 		controllerName:        controllerName,
 		retryInterval:         5 * time.Second,
 		mcpPermissions:        []clustersv1alpha1.PermissionsRequest{},
+		mcpRoleRefs:           []commonapi.RoleRef{},
 		workloadPermissions:   []clustersv1alpha1.PermissionsRequest{},
+		workloadRoleRefs:      []commonapi.RoleRef{},
 		mcpScheme:             runtime.NewScheme(),
 		workloadScheme:        runtime.NewScheme(),
 	}
@@ -110,8 +118,18 @@ func (r *reconcilerImpl) WithMCPPermissions(permissions []clustersv1alpha1.Permi
 	return r
 }
 
+func (r *reconcilerImpl) WithMCPRoleRefs(roleRefs []commonapi.RoleRef) Reconciler {
+	r.mcpRoleRefs = roleRefs
+	return r
+}
+
 func (r *reconcilerImpl) WithWorkloadPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler {
 	r.workloadPermissions = permissions
+	return r
+}
+
+func (r *reconcilerImpl) WithWorkloadRoleRefs(roleRefs []commonapi.RoleRef) Reconciler {
+	r.workloadRoleRefs = roleRefs
 	return r
 }
 
@@ -210,7 +228,7 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		requestNameMCP, requestNamespace, &commonapi.ObjectReference{
 			Name:      request.Name,
 			Namespace: requestNamespace,
-		}, nil, r.mcpPermissions, metadata)
+		}, nil, r.mcpPermissions, r.mcpRoleRefs, metadata)
 
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to create or update MCP AccessRequest: %w", err)
@@ -253,7 +271,7 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		requestNameWorkload, requestNamespace, &commonapi.ObjectReference{
 			Name:      requestNameWorkload,
 			Namespace: requestNamespace,
-		}, nil, r.workloadPermissions, metadata)
+		}, nil, r.workloadPermissions, r.workloadRoleRefs, metadata)
 
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to create or update Workload AccessRequest: %w", err)
@@ -486,10 +504,11 @@ func ensureClusterRequest(ctx context.Context, platformClusterClient client.Clie
 
 func ensureAccessRequest(ctx context.Context, platformClusterClient client.Client, requestName, requestNamespace string,
 	requestRef *commonapi.ObjectReference, clusterRef *commonapi.ObjectReference,
-	permissions []clustersv1alpha1.PermissionsRequest, metadata resources.MetadataMutator) (*clustersv1alpha1.AccessRequest, error) {
+	permissions []clustersv1alpha1.PermissionsRequest, roleRefs []commonapi.RoleRef, metadata resources.MetadataMutator) (*clustersv1alpha1.AccessRequest, error) {
 
 	mutator := newAccessRequestMutator(requestName, requestNamespace).
 		WithPermissions(permissions).
+		WithRoleRefs(roleRefs).
 		WithMetadata(metadata)
 
 	if requestRef != nil {
@@ -659,6 +678,7 @@ type accessRequestMutator struct {
 	requestRef  *commonapi.ObjectReference
 	clusterRef  *commonapi.ObjectReference
 	permissions []clustersv1alpha1.PermissionsRequest
+	roleRefs    []commonapi.RoleRef
 	metadata    resources.MetadataMutator
 }
 
@@ -681,6 +701,11 @@ func (m *accessRequestMutator) WithClusterRef(clusterRef *commonapi.ObjectRefere
 
 func (m *accessRequestMutator) WithPermissions(permissions []clustersv1alpha1.PermissionsRequest) *accessRequestMutator {
 	m.permissions = permissions
+	return m
+}
+
+func (m *accessRequestMutator) WithRoleRefs(roleRefs []commonapi.RoleRef) *accessRequestMutator {
+	m.roleRefs = roleRefs
 	return m
 }
 
@@ -723,6 +748,8 @@ func (m *accessRequestMutator) MetadataMutator() resources.MetadataMutator {
 
 func (m *accessRequestMutator) Mutate(accessRequest *clustersv1alpha1.AccessRequest) error {
 	accessRequest.Spec.Permissions = m.permissions
+
+	accessRequest.Spec.RoleRefs = m.roleRefs
 
 	if m.requestRef != nil {
 		accessRequest.Spec.RequestRef = m.requestRef
