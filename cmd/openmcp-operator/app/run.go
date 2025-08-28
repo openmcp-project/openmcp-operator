@@ -249,10 +249,7 @@ func (o *RunOptions) PrintCompletedOptions(cmd *cobra.Command) {
 }
 
 func (o *RunOptions) Run(ctx context.Context) error {
-	if err := o.Clusters.Onboarding.InitializeClient(install.InstallOperatorAPIs(runtime.NewScheme())); err != nil {
-		return err
-	}
-	if err := o.Clusters.Platform.InitializeClient(install.InstallOperatorAPIs(runtime.NewScheme())); err != nil {
+	if err := o.PlatformCluster.InitializeClient(install.InstallOperatorAPIs(runtime.NewScheme())); err != nil {
 		return err
 	}
 
@@ -263,7 +260,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		TLSOpts: o.WebhookTLSOpts,
 	})
 
-	mgr, err := ctrl.NewManager(o.Clusters.Platform.RESTConfig(), ctrl.Options{
+	mgr, err := ctrl.NewManager(o.PlatformCluster.RESTConfig(), ctrl.Options{
 		Scheme:                 install.InstallOperatorAPIs(runtime.NewScheme()),
 		Metrics:                o.MetricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -286,14 +283,10 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to create manager: %w", err)
 	}
-	// add onboarding cluster to manager
-	if err := mgr.Add(o.Clusters.Onboarding.Cluster()); err != nil {
-		return fmt.Errorf("unable to add onboarding cluster to manager: %w", err)
-	}
 
 	// setup cluster scheduler
 	if slices.Contains(o.Controllers, strings.ToLower(scheduler.ControllerName)) {
-		sc, err := scheduler.NewClusterScheduler(&setupLog, o.Clusters.Platform, o.Config.Scheduler)
+		sc, err := scheduler.NewClusterScheduler(&setupLog, o.PlatformCluster, o.Config.Scheduler)
 		if err != nil {
 			return fmt.Errorf("unable to initialize cluster scheduler: %w", err)
 		}
@@ -308,7 +301,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		if o.Config != nil {
 			arConfig = o.Config.AccessRequest
 		}
-		if err := accessrequest.NewAccessRequestReconciler(o.Clusters.Platform, arConfig).SetupWithManager(mgr); err != nil {
+		if err := accessrequest.NewAccessRequestReconciler(o.PlatformCluster, arConfig).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to setup accessrequest controller: %w", err)
 		}
 	}
