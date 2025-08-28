@@ -21,9 +21,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // DeploymentSpec defines the desired state of a provider.
 type DeploymentSpec struct {
 	// Image is the name of the image of a provider.
@@ -33,6 +30,18 @@ type DeploymentSpec struct {
 	// ImagePullSecrets are secrets in the same namespace.
 	// They can be used to fetch provider images from private registries.
 	ImagePullSecrets []ObjectReference `json:"imagePullSecrets,omitempty"`
+
+	// InitCommand is the command that is executed to run the init job of the provider.
+	// Defaults to ["init"], if not specified.
+	// The '--environment', '--verbosity', and '--provider-name' flags will be appended to the command automatically.
+	// +optional
+	InitCommand []string `json:"initCommand,omitempty"`
+
+	// RunCommand is the command that is executed to run the provider controllers.
+	// Defaults to ["run"], if not specified.
+	// The '--environment', '--verbosity', and '--provider-name' flags will be appended to the command automatically.
+	// +optional
+	RunCommand []string `json:"runCommand,omitempty"`
 
 	// Env is a list of environment variables to set in the containers of the init job and deployment of the provider.
 	// +optional

@@ -1,0 +1,18 @@
+apiVersion: openmcp.cloud/v1alpha1
+kind: PlatformService
+metadata:
+  name: platform-service-test-04
+  generation: 1
+spec:
+  image: "test-image:v0.1.0"
+  imagePullSecrets: []
+  initCommand:
+  - test-init
+  - init-subcommand
+  runCommand:
+  - test-run
+  - run-subcommand
+  env:
+    - name: NAME
+      value: "test-name"
+  verbosity: DEBUG

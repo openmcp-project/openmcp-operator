@@ -44,7 +44,7 @@ var _ = Describe("Deployment Controller", func() {
 			return deploymentSpec, deploymentStatus
 		}
 
-		reconcileProvider := func(env *testutils.Environment, req reconcile.Request, gvk schema.GroupVersionKind) {
+		reconcileProvider := func(env *testutils.Environment, req reconcile.Request, gvk schema.GroupVersionKind) *v1alpha1.DeploymentSpec {
 			provider := &unstructured.Unstructured{}
 			provider.SetGroupVersionKind(gvk)
 			provider.SetName(req.Name)
@@ -61,7 +61,11 @@ var _ = Describe("Deployment Controller", func() {
 			job := install.NewJobMutator(values, deploymentSpec, nil).Empty()
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(job), job)).To(Succeed())
 			Expect(job.Spec.Template.Spec.Containers[0].Image).To(Equal("test-image:v0.1.0"), "Job container image should match the provider spec")
-			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("init"), "Job container args should contain the init command")
+			if len(deploymentSpec.InitCommand) > 0 {
+				Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElements(deploymentSpec.InitCommand), "Job container args should contain the overwritten init command")
+			} else {
+				Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("init"), "Job container args should contain the init command")
+			}
 			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--environment=test-environment"), "Job container args should contain the environment")
 			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--verbosity=DEBUG"), "Job container args should contain the verbosity")
 			Expect(job.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--provider-name="+req.Name), "Job container args should contain the provider name")
@@ -80,7 +84,11 @@ var _ = Describe("Deployment Controller", func() {
 			deploy := install.NewDeploymentMutator(values).Empty()
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(deploy), deploy)).To(Succeed())
 			Expect(deploy.Spec.Template.Spec.Containers[0].Image).To(Equal("test-image:v0.1.0"), "Deployment container image should match the provider spec")
-			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("run"), "Deployment container args should contain the run command")
+			if len(deploymentSpec.RunCommand) > 0 {
+				Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElements(deploymentSpec.RunCommand), "Deployment container args should contain the overwritten run command")
+			} else {
+				Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("run"), "Deployment container args should contain the run command")
+			}
 			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--environment=test-environment"), "Deployment container args should contain the environment")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--verbosity=DEBUG"), "Deployment container args should contain the verbosity")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--provider-name="+req.Name), "Deployment container args should contain the provider name")
@@ -102,6 +110,7 @@ var _ = Describe("Deployment Controller", func() {
 			// delete the provider
 			Expect(env.Client().Delete(env.Ctx, provider)).To(Succeed(), "Provider deletion should succeed")
 			env.ShouldReconcile(req, "Reconcile after provider deletion should not return an error")
+			return deploymentSpec
 		}
 
 		It("should reconcile a cluster provider", func() {
@@ -120,6 +129,14 @@ var _ = Describe("Deployment Controller", func() {
 			env := buildTestEnvironment("test-03", v1alpha1.PlatformServiceGKV())
 			req := testutils.RequestFromStrings("platform-service-test-03")
 			reconcileProvider(env, req, v1alpha1.PlatformServiceGKV())
+		})
+
+		It("should reconcile a platform service with overwritten init and run commands", func() {
+			env := buildTestEnvironment("test-04", v1alpha1.PlatformServiceGKV())
+			req := testutils.RequestFromStrings("platform-service-test-04")
+			deploymentSpec := reconcileProvider(env, req, v1alpha1.PlatformServiceGKV())
+			Expect(deploymentSpec.InitCommand).To(HaveLen(2))
+			Expect(deploymentSpec.RunCommand).To(HaveLen(2))
 		})
 
 	})

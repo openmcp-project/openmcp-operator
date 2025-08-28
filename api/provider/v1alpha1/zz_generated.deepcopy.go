@@ -109,6 +109,16 @@ func (in *DeploymentSpec) DeepCopyInto(out *DeploymentSpec) {
 		*out = make([]ObjectReference, len(*in))
 		copy(*out, *in)
 	}
+	if in.InitCommand != nil {
+		in, out := &in.InitCommand, &out.InitCommand
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.RunCommand != nil {
+		in, out := &in.RunCommand, &out.RunCommand
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Env != nil {
 		in, out := &in.Env, &out.Env
 		*out = make([]EnvVar, len(*in))

@@ -2,6 +2,7 @@ package install
 
 import (
 	"fmt"
+	"slices"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -54,6 +55,15 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 		return err
 	}
 
+	runCmd := slices.Clone(m.values.deploymentSpec.RunCommand)
+	if len(runCmd) == 0 {
+		runCmd = []string{"run"}
+	}
+	runCmd = append(runCmd,
+		"--environment="+m.values.Environment(),
+		"--verbosity="+m.values.Verbosity(),
+		"--provider-name="+m.values.provider.GetName(),
+	)
 	d.Spec = appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Selector: &metav1.LabelSelector{
@@ -69,14 +79,9 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 						Name:            m.values.NamespacedDefaultResourceName(),
 						Image:           m.values.Image(),
 						ImagePullPolicy: corev1.PullIfNotPresent,
-						Args: []string{
-							"run",
-							"--environment=" + m.values.Environment(),
-							"--verbosity=" + m.values.Verbosity(),
-							"--provider-name=" + m.values.provider.GetName(),
-						},
-						Env:          env,
-						VolumeMounts: m.values.deploymentSpec.ExtraVolumeMounts,
+						Args:            runCmd,
+						Env:             env,
+						VolumeMounts:    m.values.deploymentSpec.ExtraVolumeMounts,
 					},
 				},
 				ImagePullSecrets:   m.values.ImagePullSecrets(),
