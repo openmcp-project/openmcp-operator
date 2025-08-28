@@ -362,12 +362,16 @@ func (m *managerImpl) WithLogger(log *logging.Logger) Manager {
 	return m
 }
 
-func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, clusterName, purpose string,
+// CreateAndWaitForCluster creates a new ClusterRequest and AccessRequest, waits for it to be ready, and returns the created Cluster.
+// The name of the ClusterRequest and AccessRequest is derived from the controller name and the given localName.
+// For example, if a provider needs access to the onboarding cluster, it could use the localName "onboarding" (or "onboarding-init").
+// The resulting ClusterRequest and AccessRequest would then be named "<controllerName>--onboarding" (or "<controllerName>--onboarding-init").
+func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, localName, purpose string,
 	scheme *runtime.Scheme, permissions []clustersv1alpha1.PermissionsRequest) (*clusters.Cluster, error) {
 
 	cr := &clustersv1alpha1.ClusterRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      clusterName,
+			Name:      StableRequestNameFromLocalName(m.controllerName, localName),
 			Namespace: m.controllerNamespace,
 		},
 	}
@@ -742,6 +746,10 @@ func (m *accessRequestMutator) Mutate(accessRequest *clustersv1alpha1.AccessRequ
 // StableRequestName generates a stable name for a Cluster- or AccessRequest related to an MCP.
 // This basically results in '<lowercase_controller_name>--<request_name>'.
 func StableRequestName(controllerName string, request reconcile.Request) string {
+	return StableRequestNameFromLocalName(controllerName, request.Name)
+}
+
+func StableRequestNameFromLocalName(controllerName, localName string) string {
 	controllerName = strings.ToLower(controllerName)
-	return fmt.Sprintf("%s--%s", controllerName, request.Name)
+	return fmt.Sprintf("%s--%s", controllerName, localName)
 }

@@ -293,16 +293,18 @@ var _ = Describe("ClusterAccessManager", func() {
 			interval            = 20 * time.Millisecond
 		)
 
+		requestName := clusteraccess.StableRequestNameFromLocalName(controllerName, clusterName)
+
 		clusterRequest := &clustersv1alpha1.ClusterRequest{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterName,
+				Name:      requestName,
 				Namespace: controllerNamespace,
 			},
 		}
 
 		accessRequest := &clustersv1alpha1.AccessRequest{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      clusterName,
+				Name:      requestName,
 				Namespace: controllerNamespace,
 			},
 		}
