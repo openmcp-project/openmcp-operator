@@ -25,10 +25,11 @@ const (
 )
 
 type Installer struct {
-	PlatformClient client.Client
-	Provider       *unstructured.Unstructured
-	DeploymentSpec *v1alpha1.DeploymentSpec
-	Environment    string
+	PlatformClient  client.Client
+	Provider        *unstructured.Unstructured
+	DeploymentSpec  *v1alpha1.DeploymentSpec
+	Environment     string
+	SystemNamespace string
 }
 
 // InstallInitJob installs the init job of a provider.
@@ -37,7 +38,7 @@ type Installer struct {
 // Adds provider generation as annotation to the job.
 func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err error) {
 
-	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
+	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment, a.SystemNamespace)
 
 	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, resources.NewNamespaceMutator(values.Namespace())); err != nil {
 		return false, err
@@ -105,7 +106,7 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 
 func (a *Installer) InstallProvider(ctx context.Context) error {
 
-	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
+	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment, a.SystemNamespace)
 
 	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, newProviderServiceAccountMutator(values)); err != nil {
 		return err
@@ -123,7 +124,7 @@ func (a *Installer) InstallProvider(ctx context.Context) error {
 }
 
 func (a *Installer) CheckProviderReadiness(ctx context.Context) readiness.CheckResult {
-	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
+	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment, a.SystemNamespace)
 
 	depl, err := resources.GetResource(ctx, a.PlatformClient, NewDeploymentMutator(values))
 	if err != nil {
@@ -135,7 +136,7 @@ func (a *Installer) CheckProviderReadiness(ctx context.Context) readiness.CheckR
 
 func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err error) {
 
-	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment)
+	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment, a.SystemNamespace)
 
 	if err := resources.DeleteResource(ctx, a.PlatformClient, NewDeploymentMutator(values)); err != nil {
 		return false, err

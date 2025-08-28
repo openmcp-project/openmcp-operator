@@ -11,41 +11,44 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
-const initPrefix = "init"
+const (
+	initPrefix                  = "init"
+	clusterScopedResourcePrefix = "openmcp.cloud"
+)
 
-func NewValues(provider *unstructured.Unstructured, deploymentSpec *v1alpha1.DeploymentSpec, environment string) *Values {
+func NewValues(provider *unstructured.Unstructured, deploymentSpec *v1alpha1.DeploymentSpec, environment, namespace string) *Values {
 	return &Values{
 		provider:       provider,
 		deploymentSpec: deploymentSpec,
-		namespace:      determineNamespace(provider),
 		environment:    environment,
+		namespace:      namespace,
+		providerPrefix: getProviderPrefix(provider),
 	}
 }
 
 type Values struct {
 	provider       *unstructured.Unstructured
 	deploymentSpec *v1alpha1.DeploymentSpec
-	namespace      string
 	environment    string
+	namespace      string
+	providerPrefix string
 }
 
 func (v *Values) Environment() string {
 	return v.environment
 }
 
-func determineNamespace(provider *unstructured.Unstructured) string {
-	var namespacePrefix string
+func getProviderPrefix(provider *unstructured.Unstructured) string {
 	switch provider.GroupVersionKind().Kind {
 	case v1alpha1.ServiceProviderGKV().Kind:
-		namespacePrefix = "sp"
+		return "sp"
 	case v1alpha1.ClusterProviderGKV().Kind:
-		namespacePrefix = "cp"
+		return "cp"
 	case v1alpha1.PlatformServiceGKV().Kind:
-		namespacePrefix = "ps"
+		return "ps"
 	default:
-		namespacePrefix = provider.GroupVersionKind().Kind
+		return provider.GroupVersionKind().Kind
 	}
-	return strings.ToLower(fmt.Sprintf("%s-%s", namespacePrefix, provider.GetName()))
 }
 
 func (v *Values) Namespace() string {
@@ -53,19 +56,19 @@ func (v *Values) Namespace() string {
 }
 
 func (v *Values) NamespacedDefaultResourceName() string {
-	return v.provider.GetName()
+	return strings.ToLower(fmt.Sprintf("%s-%s", v.providerPrefix, v.provider.GetName()))
 }
 
 func (v *Values) NamespacedResourceName(suffix string) string {
-	return fmt.Sprintf("%s-%s", v.provider.GetName(), suffix)
+	return strings.ToLower(fmt.Sprintf("%s-%s-%s", v.providerPrefix, v.provider.GetName(), suffix))
 }
 
 func (v *Values) ClusterScopedDefaultResourceName() string {
-	return fmt.Sprintf("%s:%s", v.Namespace(), v.NamespacedDefaultResourceName())
+	return strings.ToLower(fmt.Sprintf("%s:%s-%s", clusterScopedResourcePrefix, v.providerPrefix, v.provider.GetName()))
 }
 
 func (v *Values) ClusterScopedResourceName(suffix string) string {
-	return fmt.Sprintf("%s:%s", v.Namespace(), v.NamespacedResourceName(suffix))
+	return fmt.Sprintf("%s:%s-%s-%s", clusterScopedResourcePrefix, v.providerPrefix, v.provider.GetName(), suffix)
 }
 
 func (v *Values) Image() string {

@@ -15,9 +15,10 @@ var _ = Describe("Installer", func() {
 	Context("Env Variables", func() {
 
 		const (
-			providerName = "test-provider"
-			envName1     = "NAME_1"
-			envValue1    = "VALUE_1"
+			providerName    = "test-provider"
+			systemNamespace = "openmcp-system"
+			envName1        = "NAME_1"
+			envValue1       = "VALUE_1"
 		)
 
 		It("should contain provider variables and predefined openmcp variables", func() {
@@ -29,7 +30,7 @@ var _ = Describe("Installer", func() {
 					{Name: envName1, Value: envValue1},
 				},
 			}
-			v := NewValues(provider, spec, "test")
+			v := NewValues(provider, spec, "test", systemNamespace)
 			env, err := v.EnvironmentVariables()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(env).To(ContainElement(corev1.EnvVar{Name: envName1, Value: envValue1}))
@@ -44,7 +45,7 @@ var _ = Describe("Installer", func() {
 					{Name: constants.EnvVariablePodNamespace, Value: envValue1},
 				},
 			}
-			v := NewValues(provider, spec, "test")
+			v := NewValues(provider, spec, "test", systemNamespace)
 			_, err := v.EnvironmentVariables()
 			Expect(err).To(HaveOccurred())
 		})

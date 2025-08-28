@@ -18,6 +18,7 @@ package provider
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
 	apps "k8s.io/api/apps/v1"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
@@ -47,12 +49,17 @@ func (r *DeploymentController) SetupWithManager(setupLog *logging.Logger, mgr ct
 	log := setupLog.WithName(ControllerName)
 	allErrs := field.ErrorList{}
 
+	systemNamespace := os.Getenv(constants.EnvVariablePodNamespace)
+	if systemNamespace == "" {
+		return fmt.Errorf("environment variable %s not set", constants.EnvVariablePodNamespace)
+	}
+
 	r.Reconcilers = make([]*ProviderReconciler, len(providerGKVList))
 
 	for i, gvk := range providerGKVList {
 		log.Info("Registering deployment controller", "groupVersionKind", gvk.String())
 
-		r.Reconcilers[i] = NewProviderReconciler(gvk, mgr.GetClient(), environment)
+		r.Reconcilers[i] = NewProviderReconciler(gvk, mgr.GetClient(), environment, systemNamespace)
 
 		obj := &unstructured.Unstructured{}
 		obj.SetGroupVersionKind(gvk)
