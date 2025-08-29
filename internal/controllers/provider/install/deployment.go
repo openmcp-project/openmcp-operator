@@ -92,7 +92,7 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 	}
 
 	// Set the provider as owner of the deployment, so that the provider controller gets an event if the deployment changes.
-	if err := controllerutil.SetControllerReference(m.values.provider, d, install.InstallOperatorAPIs(runtime.NewScheme())); err != nil {
+	if err := controllerutil.SetControllerReference(m.values.provider, d, install.InstallOperatorAPIsPlatform(runtime.NewScheme())); err != nil {
 		return fmt.Errorf("failed to set deployment controller as owner of deployment: %w", err)
 	}
 

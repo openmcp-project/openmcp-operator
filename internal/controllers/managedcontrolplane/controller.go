@@ -16,10 +16,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusteraccess"
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
@@ -31,7 +29,6 @@ import (
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
 	"github.com/openmcp-project/controller-utils/pkg/pairs"
-	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
@@ -138,14 +135,8 @@ func (r *ManagedControlPlaneReconciler) reconcile(ctx context.Context, req recon
 // SetupWithManager sets up the controller with the Manager.
 func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		Named(strings.ToLower(ControllerName)).
-		// watch ManagedControlPlane resources on the Onboarding cluster
-		WatchesRawSource(source.Kind(r.OnboardingCluster.Cluster().GetCache(), &corev2alpha1.ManagedControlPlaneV2{}, handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *corev2alpha1.ManagedControlPlaneV2) []ctrl.Request {
-			if obj == nil {
-				return nil
-			}
-			return []ctrl.Request{testutils.RequestFromObject(obj)}
-		}), ctrlutils.ToTypedPredicate[*corev2alpha1.ManagedControlPlaneV2](predicate.And(
+		For(&corev2alpha1.ManagedControlPlaneV2{}).
+		WithEventFilter(predicate.And(
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.DeletionTimestampChangedPredicate{},
@@ -155,7 +146,7 @@ func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error
 			predicate.Not(
 				ctrlutils.HasAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore),
 			),
-		)))).
+		)).
 		Complete(r)
 }
 

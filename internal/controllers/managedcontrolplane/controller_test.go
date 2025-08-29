@@ -34,8 +34,6 @@ import (
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
-var scheme = install.InstallOperatorAPIs(runtime.NewScheme())
-
 const (
 	platform   = "platform"
 	onboarding = "onboarding"
@@ -63,9 +61,9 @@ func defaultTestSetup(testDirPathSegments ...string) (*managedcontrolplane.Manag
 		onboardingDirExists = false
 	}
 	envB := testutils.NewComplexEnvironmentBuilder().
-		WithFakeClient(platform, scheme).
+		WithFakeClient(platform, install.InstallOperatorAPIsPlatform(runtime.NewScheme())).
 		WithDynamicObjectsWithStatus(platform, &clustersv1alpha1.ClusterRequest{}, &clustersv1alpha1.AccessRequest{}).
-		WithFakeClient(onboarding, scheme).
+		WithFakeClient(onboarding, install.InstallOperatorAPIsOnboarding(runtime.NewScheme())).
 		WithReconcilerConstructor(mcpRec, func(clients ...client.Client) reconcile.Reconciler {
 			return managedcontrolplane.NewManagedControlPlaneReconciler(clusters.NewTestClusterFromClient(platform, clients[0]), clusters.NewTestClusterFromClient(onboarding, clients[1]), nil, cfg.ManagedControlPlane)
 		}, platform, onboarding)
