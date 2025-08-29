@@ -76,6 +76,7 @@ func (o *InitOptions) Complete(ctx context.Context) error {
 	return nil
 }
 
+//nolint:gocyclo
 func (o *InitOptions) Run(ctx context.Context) error {
 	if err := o.PlatformCluster.InitializeClient(install.InstallOperatorAPIsPlatform(install.InstallCRDAPIs(runtime.NewScheme()))); err != nil {
 		return err
@@ -168,6 +169,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 			}
 		}
 
+		// create/update PlatformService
 		mcpPSName := o.ProviderName
 		if mcpPSName == "" {
 			mcpPSName = strings.ToLower(managedcontrolplane.ControllerName)
