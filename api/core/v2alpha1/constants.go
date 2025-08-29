@@ -24,7 +24,7 @@ const (
 	ConditionMeta = "Meta"
 
 	ConditionClusterRequestReady       = "ClusterRequestReady"
-	ConditionPrefixOIDCAccessReady     = "OIDCAccessReady:"
+	ConditionPrefixOIDCAccessReady     = "OIDCAccessReady_" // TODO: replace '_' with '.' once https://github.com/openmcp-project/controller-utils/pull/127 is merged and released
 	ConditionAllAccessReady            = "AllAccessReady"
 	ConditionAllServicesDeleted        = "AllServicesDeleted"
 	ConditionAllClusterRequestsDeleted = "AllClusterRequestsDeleted"
