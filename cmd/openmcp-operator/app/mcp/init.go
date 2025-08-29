@@ -65,6 +65,10 @@ func (o *InitOptions) Complete(ctx context.Context) error {
 }
 
 func (o *InitOptions) Run(ctx context.Context) error {
+	if err := o.PlatformCluster.InitializeClient(install.InstallOperatorAPIsPlatform(runtime.NewScheme())); err != nil {
+		return err
+	}
+
 	log := o.Log.WithName("main")
 
 	onboardingScheme := runtime.NewScheme()
