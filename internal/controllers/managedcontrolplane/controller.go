@@ -41,9 +41,12 @@ import (
 
 const ControllerName = "ManagedControlPlane"
 
-func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboardingCluster *clusters.Cluster, eventRecorder record.EventRecorder, cfg *config.ManagedControlPlaneConfig) *ManagedControlPlaneReconciler {
+func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboardingCluster *clusters.Cluster, eventRecorder record.EventRecorder, cfg *config.ManagedControlPlaneConfig) (*ManagedControlPlaneReconciler, error) {
 	if cfg == nil {
 		cfg = &config.ManagedControlPlaneConfig{}
+		if err := cfg.Default(nil); err != nil {
+			return nil, err
+		}
 	}
 	return &ManagedControlPlaneReconciler{
 		PlatformCluster:   platformCluster,
@@ -51,7 +54,7 @@ func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboard
 		Config:            cfg,
 		eventRecorder:     eventRecorder,
 		sr:                smartrequeue.NewStore(5*time.Second, 24*time.Hour, 1.5),
-	}
+	}, nil
 }
 
 type ManagedControlPlaneReconciler struct {
