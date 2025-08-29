@@ -65,7 +65,9 @@ func defaultTestSetup(testDirPathSegments ...string) (*managedcontrolplane.Manag
 		WithDynamicObjectsWithStatus(platform, &clustersv1alpha1.ClusterRequest{}, &clustersv1alpha1.AccessRequest{}).
 		WithFakeClient(onboarding, install.InstallOperatorAPIsOnboarding(runtime.NewScheme())).
 		WithReconcilerConstructor(mcpRec, func(clients ...client.Client) reconcile.Reconciler {
-			return managedcontrolplane.NewManagedControlPlaneReconciler(clusters.NewTestClusterFromClient(platform, clients[0]), clusters.NewTestClusterFromClient(onboarding, clients[1]), nil, cfg.ManagedControlPlane)
+			mcpr, err := managedcontrolplane.NewManagedControlPlaneReconciler(clusters.NewTestClusterFromClient(platform, clients[0]), clusters.NewTestClusterFromClient(onboarding, clients[1]), nil, cfg.ManagedControlPlane)
+			Expect(err).ToNot(HaveOccurred())
+			return mcpr
 		}, platform, onboarding)
 	if platformDirExists {
 		envB.WithInitObjectPath(platform, append(testDirPathSegments, platform)...)

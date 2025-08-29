@@ -294,7 +294,11 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	}
 
 	// setup MCP controller
-	if err := managedcontrolplane.NewManagedControlPlaneReconciler(o.PlatformCluster, onboardingCluster, mgr.GetEventRecorderFor(managedcontrolplane.ControllerName), o.Config.ManagedControlPlane).SetupWithManager(mgr); err != nil {
+	mcpRec, err := managedcontrolplane.NewManagedControlPlaneReconciler(o.PlatformCluster, onboardingCluster, mgr.GetEventRecorderFor(managedcontrolplane.ControllerName), o.Config.ManagedControlPlane)
+	if err != nil {
+		return fmt.Errorf("unable to create managedcontrolplane controller: %w", err)
+	}
+	if err := mcpRec.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to setup managedcontrolplane controller: %w", err)
 	}
 
