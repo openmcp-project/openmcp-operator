@@ -227,7 +227,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	}
 
 	// check if the ClusterRequest is ready
-	if cr.Status.Phase != commonapi.StatusPhaseReady {
+	if !cr.Status.IsGranted() {
 		log.Info("Waiting for ClusterRequest to become ready", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "phase", cr.Status.Phase)
 		createCon(corev2alpha1.ConditionClusterRequestReady, metav1.ConditionFalse, cconst.ReasonWaitingForClusterRequest, "ClusterRequest is not ready yet")
 		rr.SmartRequeue = ctrlutils.SR_BACKOFF

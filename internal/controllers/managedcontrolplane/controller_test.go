@@ -133,7 +133,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 
 		// fake ClusterRequest ready status
 		By("fake: ClusterRequest readiness")
-		cr.Status.Phase = commonapi.StatusPhaseReady
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
 		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
 
 		// reconcile the MCP again
