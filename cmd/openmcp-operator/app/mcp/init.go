@@ -90,7 +90,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 			{
 				Rules: []rbacv1.PolicyRule{
 					{
-						APIGroups: []string{"apiextensions.k8s.io/v1"},
+						APIGroups: []string{"apiextensions.k8s.io"},
 						Resources: []string{"customresourcedefinitions"},
 						Verbs:     []string{"*"},
 					},
