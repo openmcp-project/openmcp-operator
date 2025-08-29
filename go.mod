@@ -4,14 +4,18 @@ go 1.25.0
 
 //godebug default=go1.23
 
-replace github.com/openmcp-project/openmcp-operator/api => ./api
+replace (
+	github.com/openmcp-project/openmcp-operator/api => ./api
+	github.com/openmcp-project/openmcp-operator/lib => ./lib
+)
 
 require (
 	dario.cat/mergo v1.0.2
 	github.com/onsi/ginkgo/v2 v2.25.1
-	github.com/onsi/gomega v1.38.1
-	github.com/openmcp-project/controller-utils v0.18.0
+	github.com/onsi/gomega v1.38.2
+	github.com/openmcp-project/controller-utils v0.18.1-0.20250828112426-c2ac0b3fe191
 	github.com/openmcp-project/openmcp-operator/api v0.11.1
+	github.com/openmcp-project/openmcp-operator/lib v0.11.0
 	github.com/spf13/cobra v1.9.1
 	k8s.io/api v0.33.4
 	k8s.io/apimachinery v0.33.4
