@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	apiinstall "github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider/install"
@@ -21,7 +22,7 @@ var _ = Describe("Deployment Controller", func() {
 	Context("Reconcile", func() {
 
 		var (
-			scheme          = apiinstall.InstallOperatorAPIs(runtime.NewScheme())
+			scheme          = apiinstall.InstallOperatorAPIsPlatform(runtime.NewScheme())
 			environment     = "test-environment"
 			systemNamespace = "openmcp-system"
 		)
@@ -147,7 +148,7 @@ var _ = Describe("Deployment Controller", func() {
 		It("should convert a deploymentSpec into an unstructured and back", func() {
 			spec := &v1alpha1.DeploymentSpec{
 				Image: "test-image:v0.1.0",
-				ImagePullSecrets: []v1alpha1.ObjectReference{
+				ImagePullSecrets: []commonapi.LocalObjectReference{
 					{Name: "test-secret-1"},
 					{Name: "test-secret-2"},
 				},

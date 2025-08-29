@@ -1,20 +1,17 @@
-package app
+package mcp
 
 import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"os"
 	"path/filepath"
-	"slices"
-	"strings"
+	"time"
 
-	"github.com/openmcp-project/controller-utils/pkg/logging"
 	"github.com/spf13/cobra"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/clientcmd/api"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -23,21 +20,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/yaml"
 
+	"github.com/openmcp-project/controller-utils/pkg/logging"
+
+	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
+	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/install"
-	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
-	"github.com/openmcp-project/openmcp-operator/internal/config"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
+	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 )
 
 var setupLog logging.Logger
-var allControllers = []string{
-	strings.ToLower(scheduler.ControllerName),
-	strings.ToLower(provider.ControllerName),
-	strings.ToLower(accessrequest.ControllerName),
-}
 
 func NewRunCommand(po *options.PersistentOptions) *cobra.Command {
 	opts := &RunOptions{
@@ -80,8 +73,6 @@ func (o *RunOptions) AddFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&o.MetricsCertName, "metrics-cert-name", "tls.crt", "The name of the metrics server certificate file.")
 	cmd.Flags().StringVar(&o.MetricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	cmd.Flags().BoolVar(&o.EnableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers")
-
-	cmd.Flags().StringSliceVar(&o.Controllers, "controllers", allControllers, "List of active controllers. Separate with comma or specify flag multiple times to activate multiple controllers.")
 }
 
 type RawRunOptions struct {
@@ -98,9 +89,6 @@ type RawRunOptions struct {
 	PprofAddr            string `json:"pprof-bind-address"`
 	SecureMetrics        bool   `json:"metrics-secure"`
 	EnableHTTP2          bool   `json:"enable-http2"`
-
-	// custom raw options
-	Controllers []string `json:"controllers"`
 }
 
 type RunOptions struct {
@@ -135,6 +123,9 @@ func (o *RunOptions) PrintRawOptions(cmd *cobra.Command) {
 func (o *RunOptions) Complete(ctx context.Context) error {
 	if err := o.PersistentOptions.Complete(); err != nil {
 		return err
+	}
+	if o.ProviderName == "" {
+		return fmt.Errorf("provider-name must not be empty")
 	}
 	setupLog = o.Log.WithName("setup")
 	ctrl.SetLogger(o.Log.Logr())
@@ -218,29 +209,10 @@ func (o *RunOptions) Complete(ctx context.Context) error {
 		})
 	}
 
-	o.ProviderGVKList = []schema.GroupVersionKind{
-		v1alpha1.ClusterProviderGKV(),
-		v1alpha1.PlatformServiceGKV(),
-		v1alpha1.ServiceProviderGKV(),
-	}
-
 	return nil
 }
 
-func (o *RunOptions) PrintCompleted(cmd *cobra.Command) {
-	rawData := map[string]any{}
-	providerGVKs := make([]string, 0, len(o.ProviderGVKList))
-	for _, gvk := range o.ProviderGVKList {
-		providerGVKs = append(providerGVKs, gvk.String())
-	}
-	rawData["providerGVKs"] = providerGVKs
-	data, err := yaml.Marshal(rawData)
-	if err != nil {
-		cmd.Println(fmt.Errorf("error marshalling completed options: %w", err).Error())
-		return
-	}
-	cmd.Print(string(data))
-}
+func (o *RunOptions) PrintCompleted(cmd *cobra.Command) {}
 
 func (o *RunOptions) PrintCompletedOptions(cmd *cobra.Command) {
 	cmd.Println("########## COMPLETED OPTIONS START ##########")
@@ -256,19 +228,54 @@ func (o *RunOptions) Run(ctx context.Context) error {
 
 	setupLog = o.Log.WithName("setup")
 	setupLog.Info("Environment", "value", o.Environment)
+	setupLog.Info("Provider name", "value", o.ProviderName)
+
+	// get access to the onboarding cluster
+	onboardingScheme := runtime.NewScheme()
+	install.InstallOperatorAPIsOnboarding(onboardingScheme)
+
+	providerSystemNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
+	if providerSystemNamespace == "" {
+		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
+	}
+
+	clusterAccessManager := clusteraccess.NewClusterAccessManager(o.PlatformCluster.Client(), managedcontrolplane.ControllerName, providerSystemNamespace)
+	clusterAccessManager.WithLogger(&setupLog).
+		WithInterval(10 * time.Second).
+		WithTimeout(30 * time.Minute)
+
+	onboardingCluster, err := clusterAccessManager.CreateAndWaitForCluster(ctx, clustersv1alpha1.PURPOSE_ONBOARDING, clustersv1alpha1.PURPOSE_ONBOARDING,
+		onboardingScheme, []clustersv1alpha1.PermissionsRequest{
+			{
+				Rules: []rbacv1.PolicyRule{
+					// It is hard to limit the permissions here, because the mcp controller needs to be able to fetch and delete all ServiceProvider-related resources.
+					// These could be discovered through the ServiceProvider resources, but then we would need a mechanism to restart the MCP controller every time a new ServiceProvider is created.
+					// For now, let's just go with full permissions to keep it simple.
+					{
+						APIGroups: []string{"*"},
+						Resources: []string{"*"},
+						Verbs:     []string{"*"},
+					},
+				},
+			},
+		})
+
+	if err != nil {
+		return fmt.Errorf("error creating/updating onboarding cluster: %w", err)
+	}
 
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts: o.WebhookTLSOpts,
 	})
 
-	mgr, err := ctrl.NewManager(o.PlatformCluster.RESTConfig(), ctrl.Options{
-		Scheme:                 install.InstallOperatorAPIsPlatform(runtime.NewScheme()),
+	mgr, err := ctrl.NewManager(onboardingCluster.RESTConfig(), ctrl.Options{
+		Scheme:                 onboardingCluster.Scheme(),
 		Metrics:                o.MetricsServerOptions,
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: o.ProbeAddr,
 		PprofBindAddress:       o.PprofAddr,
 		LeaderElection:         o.EnableLeaderElection,
-		LeaderElectionID:       "github.com/openmcp-project/openmcp-operator",
+		LeaderElectionID:       "github.com/openmcp-project/openmcp-operator--mcp-controller",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -285,35 +292,9 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("unable to create manager: %w", err)
 	}
 
-	// setup cluster scheduler
-	if slices.Contains(o.Controllers, strings.ToLower(scheduler.ControllerName)) {
-		sc, err := scheduler.NewClusterScheduler(&setupLog, o.PlatformCluster, o.Config.Scheduler)
-		if err != nil {
-			return fmt.Errorf("unable to initialize cluster scheduler: %w", err)
-		}
-		if err := sc.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to setup cluster scheduler with manager: %w", err)
-		}
-	}
-
-	// setup accessrequest controller
-	if slices.Contains(o.Controllers, strings.ToLower(accessrequest.ControllerName)) {
-		var arConfig *config.AccessRequestConfig
-		if o.Config != nil {
-			arConfig = o.Config.AccessRequest
-		}
-		if err := accessrequest.NewAccessRequestReconciler(o.PlatformCluster, arConfig).SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to setup accessrequest controller: %w", err)
-		}
-	}
-
-	// setup deployment controller
-	if slices.Contains(o.Controllers, strings.ToLower(provider.ControllerName)) {
-		utilruntime.Must(clientgoscheme.AddToScheme(mgr.GetScheme()))
-		utilruntime.Must(api.AddToScheme(mgr.GetScheme()))
-		if err = provider.NewDeploymentController().SetupWithManager(&setupLog, mgr, o.ProviderGVKList, o.Environment); err != nil {
-			return fmt.Errorf("unable to setup deployment controllers: %w", err)
-		}
+	// setup MCP controller
+	if err := managedcontrolplane.NewManagedControlPlaneReconciler(o.PlatformCluster, onboardingCluster, mgr.GetEventRecorderFor(managedcontrolplane.ControllerName), o.Config.ManagedControlPlane).SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to setup managedcontrolplane controller: %w", err)
 	}
 
 	if o.MetricsCertWatcher != nil {

@@ -94,7 +94,7 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 	}
 
 	// Set the provider as owner of the job, so that the provider controller gets an event if the job changes.
-	if err := controllerutil.SetControllerReference(m.values.provider, j, install.InstallOperatorAPIs(runtime.NewScheme())); err != nil {
+	if err := controllerutil.SetControllerReference(m.values.provider, j, install.InstallOperatorAPIsPlatform(runtime.NewScheme())); err != nil {
 		return fmt.Errorf("failed to set deployment controller as owner of init job: %w", err)
 	}
 

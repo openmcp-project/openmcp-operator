@@ -19,6 +19,8 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 // DeploymentSpec defines the desired state of a provider.
@@ -29,7 +31,7 @@ type DeploymentSpec struct {
 
 	// ImagePullSecrets are secrets in the same namespace.
 	// They can be used to fetch provider images from private registries.
-	ImagePullSecrets []ObjectReference `json:"imagePullSecrets,omitempty"`
+	ImagePullSecrets []common.LocalObjectReference `json:"imagePullSecrets,omitempty"`
 
 	// InitCommand is the command that is executed to run the init job of the provider.
 	// Defaults to ["init"], if not specified.
@@ -84,12 +86,6 @@ type DeploymentStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration"`
 
 	Phase string `json:"phase,omitempty"`
-}
-
-type ObjectReference struct {
-	// Name is the name of the referenced resource.
-	// +kubebuilder:validation:MinLength=1
-	Name string `json:"name"`
 }
 
 // EnvVar represents an environment variable present in a Container.
