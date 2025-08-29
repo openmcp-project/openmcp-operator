@@ -114,25 +114,59 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		if err := o.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
 			return fmt.Errorf("error fetching own pod %s/%s: %w", podNamespace, podName, err)
 		}
-		image := ""
+		var container *corev1.Container
 		if len(pod.Spec.Containers) == 1 {
-			image = pod.Spec.Containers[0].Image
+			container = &pod.Spec.Containers[0]
 		} else {
 			for _, c := range pod.Spec.Containers {
 				if c.Name == OpenMCPOperatorName {
-					image = c.Image
+					container = &c
 					break
 				}
 			}
 		}
-		if image == "" {
-			return fmt.Errorf("unable to determine own image from pod %s/%s", podNamespace, podName)
+		if container == nil {
+			return fmt.Errorf("unable to determine main container from pod %s/%s", podNamespace, podName)
 		}
 		verbosity := "INFO"
 		if log.Enabled(logging.DEBUG) {
 			verbosity = "DEBUG"
 		}
 		pullSecrets := pod.Spec.ImagePullSecrets
+
+		// identify volumes that need to be mounted in order to have the config available
+		configPaths := []string{}
+		volumeMounts := []corev1.VolumeMount{}
+		volumes := []corev1.Volume{}
+		next := false
+		for _, arg := range container.Args {
+			if next {
+				configPaths = append(configPaths, arg)
+				next = false
+			} else if arg == "--config" {
+				next = true
+			} else if suffix, ok := strings.CutPrefix(arg, "--config="); ok {
+				configPaths = append(configPaths, suffix)
+			}
+		}
+		if len(configPaths) > 0 {
+			for _, vm := range container.VolumeMounts {
+				for _, cp := range configPaths {
+					if strings.HasPrefix(cp, vm.MountPath) {
+						volumeMounts = append(volumeMounts, vm)
+						break
+					}
+				}
+			}
+			for _, v := range pod.Spec.Volumes {
+				for _, vm := range volumeMounts {
+					if v.Name == vm.Name {
+						volumes = append(volumes, v)
+						break
+					}
+				}
+			}
+		}
 
 		mcpPSName := o.ProviderName
 		if mcpPSName == "" {
@@ -167,14 +201,20 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		}
 		if _, err := controllerutil.CreateOrUpdate(ctx, o.PlatformCluster.Client(), ps, func() error {
 			ps.Labels = expectedLabels
-			ps.Spec.Image = image
+			ps.Spec.Image = container.Image
 			ps.Spec.ImagePullSecrets = collections.ProjectSliceToSlice(pullSecrets, func(ref corev1.LocalObjectReference) commonapi.LocalObjectReference {
 				return commonapi.LocalObjectReference{
 					Name: ref.Name,
 				}
 			})
+			ps.Spec.ExtraVolumes = volumes
+			ps.Spec.ExtraVolumeMounts = volumeMounts
 			ps.Spec.InitCommand = []string{"mcp", "init"}
 			ps.Spec.RunCommand = []string{"mcp", "run"}
+			for _, cp := range configPaths {
+				ps.Spec.InitCommand = append(ps.Spec.InitCommand, "--config="+cp)
+				ps.Spec.RunCommand = append(ps.Spec.RunCommand, "--config="+cp)
+			}
 			ps.Spec.Verbosity = verbosity
 			return nil
 		}); err != nil {
