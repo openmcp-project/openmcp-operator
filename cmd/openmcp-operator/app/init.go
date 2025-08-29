@@ -77,16 +77,8 @@ func (o *InitOptions) Complete(ctx context.Context) error {
 }
 
 func (o *InitOptions) Run(ctx context.Context) error {
-	if err := o.PlatformCluster.InitializeClient(install.InstallCRDAPIs(runtime.NewScheme())); err != nil {
+	if err := o.PlatformCluster.InitializeClient(install.InstallOperatorAPIsPlatform(install.InstallCRDAPIs(runtime.NewScheme()))); err != nil {
 		return err
-	}
-	podName := os.Getenv(apiconst.EnvVariablePodName)
-	if podName == "" {
-		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
-	}
-	podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
-	if podNamespace == "" {
-		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
 	}
 
 	log := o.Log.WithName("main")
@@ -106,6 +98,14 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		log.Info("Skipping creation/update of PlatformService for ManagedControlPlane controller")
 	} else {
 		log.Info("Creating/updating PlatformService for ManagedControlPlane controller")
+		podName := os.Getenv(apiconst.EnvVariablePodName)
+		if podName == "" {
+			return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodName)
+		}
+		podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
+		if podNamespace == "" {
+			return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
+		}
 
 		log.Info("Fetching own pod to determine image", "name", podName, "namespace", podNamespace)
 		pod := &corev1.Pod{}
