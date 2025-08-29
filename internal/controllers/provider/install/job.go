@@ -84,11 +84,13 @@ func (m *jobMutator) Mutate(j *v1.Job) error {
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Args:            initCmd,
 						Env:             env,
+						VolumeMounts:    m.values.deploymentSpec.ExtraVolumeMounts,
 					},
 				},
 				ServiceAccountName: m.values.NamespacedResourceName(initPrefix),
 				ImagePullSecrets:   m.values.ImagePullSecrets(),
 				RestartPolicy:      corev1.RestartPolicyNever,
+				Volumes:            m.values.deploymentSpec.ExtraVolumes,
 			},
 		},
 	}
