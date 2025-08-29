@@ -231,6 +231,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	setupLog.Info("Provider name", "value", o.ProviderName)
 
 	// get access to the onboarding cluster
+	setupLog.Info("Getting access to the onboarding cluster")
 	onboardingScheme := runtime.NewScheme()
 	install.InstallOperatorAPIsOnboarding(onboardingScheme)
 

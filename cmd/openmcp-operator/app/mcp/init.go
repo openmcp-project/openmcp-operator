@@ -71,6 +71,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 
 	log := o.Log.WithName("main")
 
+	log.Info("Getting access to the onboarding cluster")
 	onboardingScheme := runtime.NewScheme()
 	install.InstallCRDAPIs(onboardingScheme)
 
