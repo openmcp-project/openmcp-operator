@@ -58,11 +58,21 @@ func buildTestEnvironmentReconcile(testdataDir string, objectsWitStatus ...clien
 				},
 			}
 
+			roleRefs := []commonapi.RoleRef{
+				{
+					Kind:      "ClusterRole",
+					Name:      "cluster-admin",
+					Namespace: "",
+				},
+			}
+
 			r := clusteraccess.NewClusterAccessReconciler(c, controllerName)
 			r.WithMCPScheme(scheme).
 				WithWorkloadScheme(scheme).
 				WithMCPPermissions(permissions).
+				WithMCPRoleRefs(roleRefs).
 				WithWorkloadPermissions(permissions).
+				WithWorkloadRoleRefs(roleRefs).
 				WithRetryInterval(1 * time.Second)
 			return r
 		}).
