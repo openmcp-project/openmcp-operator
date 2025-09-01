@@ -9,10 +9,10 @@ import (
 // ClusterProfileSpec defines the desired state of Provider.
 type ClusterProfileSpec struct {
 	// ProviderRef is a reference to the ClusterProvider
-	ProviderRef commonapi.ObjectReference `json:"providerRef"`
+	ProviderRef commonapi.LocalObjectReference `json:"providerRef"`
 
 	// ProviderConfigRef is a reference to the provider-specific configuration.
-	ProviderConfigRef commonapi.ObjectReference `json:"providerConfigRef"`
+	ProviderConfigRef commonapi.LocalObjectReference `json:"providerConfigRef"`
 
 	// SupportedVersions are the supported Kubernetes versions.
 	SupportedVersions []SupportedK8sVersion `json:"supportedVersions"`
