@@ -74,10 +74,10 @@ const (
 // +kubebuilder:selectablefield:JSONPath=".spec.profile"
 // +kubebuilder:printcolumn:JSONPath=".spec.purposes",name="Purposes",type=string
 // +kubebuilder:printcolumn:JSONPath=`.status.phase`,name="Phase",type=string
-// +kubebuilder:printcolumn:JSONPath=`.metadata.labels["clusters.openmcp.cloud/k8sversion"]`,name="Version",type=string
-// +kubebuilder:printcolumn:JSONPath=`.metadata.labels["clusters.openmcp.cloud/provider"]`,name="Provider",type=string
+// +kubebuilder:printcolumn:JSONPath=`.metadata.labels.clusters\.openmcp\.cloud/k8sversion`,name="Version",type=string
+// +kubebuilder:printcolumn:JSONPath=`.metadata.labels.clusters\.openmcp\.cloud/provider`,name="Provider",type=string
 // +kubebuilder:printcolumn:JSONPath=".spec.profile",name="Profile",type=string,priority=10
-// +kubebuilder:printcolumn:JSONPath=`.metadata.annotations["clusters.openmcp.cloud/providerinfo"]`,name="Info",type=string,priority=10
+// +kubebuilder:printcolumn:JSONPath=`.metadata.annotations.clusters\.openmcp\.cloud/providerinfo`,name="Info",type=string,priority=10
 // +kubebuilder:printcolumn:JSONPath=".status.apiServer",name="APIServer",type=string,priority=10
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
