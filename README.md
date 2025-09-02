@@ -124,25 +124,33 @@ spec:
     name: my-cluster
     namespace: default
 
-  permissions:
-    # Role
-    - namespace: default
-      rules:
-        - apiGroups:
-            - ""
-          resources:
-            - "secrets"
-          verbs:
-            - "*"
-    # ClusterRole
-    - rules:
-        - apiGroups:
-            - ""
-          resources:
-            - "configmaps"
-          verbs:
-            - "*"
-      
+  token:
+    permissions:
+      # Role + RoleBinding
+      - namespace: default
+        rules:
+          - apiGroups:
+              - ""
+            resources:
+              - "secrets"
+            verbs:
+              - "*"
+      # ClusterRole + ClusterRoleBinding
+      - rules:
+          - apiGroups:
+              - ""
+            resources:
+              - "configmaps"
+            verbs:
+              - "*"
+    roleRefs:
+      # bind to existing Role
+      - kind: Role
+        name: my-role
+        namespace: my-namespace
+      # bind to existing ClusterRole
+      - kind: ClusterRole
+        name: cluster-admin
 ```
 
 This will result in a `ServiceAccount` on the referenced `Cluster` with the specified permissions applied.
