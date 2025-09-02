@@ -431,7 +431,7 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, localName, pu
 		Name:      cr.Name,
 		Namespace: cr.Namespace,
 	})
-	accessRequestMutator.WithPermissions(permissions)
+	accessRequestMutator.WithTokenPermissions(permissions)
 	accessRequestMutator.WithMetadata(resources.NewMetadataMutator().WithLabels(map[string]string{
 		constv1alpha1.ManagedByLabel: m.controllerName,
 	}))
@@ -511,8 +511,8 @@ func ensureAccessRequest(ctx context.Context, platformClusterClient client.Clien
 	permissions []clustersv1alpha1.PermissionsRequest, roleRefs []commonapi.RoleRef, metadata resources.MetadataMutator) (*clustersv1alpha1.AccessRequest, error) {
 
 	mutator := newAccessRequestMutator(requestName, requestNamespace).
-		WithPermissions(permissions).
-		WithRoleRefs(roleRefs).
+		WithTokenPermissions(permissions).
+		WithTokenRoleRefs(roleRefs).
 		WithMetadata(metadata)
 
 	if requestRef != nil {
@@ -677,13 +677,15 @@ func (m *clusterRequestMutator) Mutate(clusterRequest *clustersv1alpha1.ClusterR
 }
 
 type accessRequestMutator struct {
-	name        string
-	namespace   string
-	requestRef  *commonapi.ObjectReference
-	clusterRef  *commonapi.ObjectReference
-	permissions []clustersv1alpha1.PermissionsRequest
-	roleRefs    []commonapi.RoleRef
-	metadata    resources.MetadataMutator
+	name                string
+	namespace           string
+	requestRef          *commonapi.ObjectReference
+	clusterRef          *commonapi.ObjectReference
+	tokenPermissions    []clustersv1alpha1.PermissionsRequest
+	tokenRoleRefs       []commonapi.RoleRef
+	oidcProvider        *commonapi.OIDCProviderConfig
+	oidcAdditionalRoles []clustersv1alpha1.PermissionsRequest
+	metadata            resources.MetadataMutator
 }
 
 func newAccessRequestMutator(name, namespace string) *accessRequestMutator {
@@ -703,13 +705,23 @@ func (m *accessRequestMutator) WithClusterRef(clusterRef *commonapi.ObjectRefere
 	return m
 }
 
-func (m *accessRequestMutator) WithPermissions(permissions []clustersv1alpha1.PermissionsRequest) *accessRequestMutator {
-	m.permissions = permissions
+func (m *accessRequestMutator) WithTokenPermissions(permissions []clustersv1alpha1.PermissionsRequest) *accessRequestMutator {
+	m.tokenPermissions = permissions
 	return m
 }
 
-func (m *accessRequestMutator) WithRoleRefs(roleRefs []commonapi.RoleRef) *accessRequestMutator {
-	m.roleRefs = roleRefs
+func (m *accessRequestMutator) WithTokenRoleRefs(roleRefs []commonapi.RoleRef) *accessRequestMutator {
+	m.tokenRoleRefs = roleRefs
+	return m
+}
+
+func (m *accessRequestMutator) WithOIDCProvider(oidcProvider *commonapi.OIDCProviderConfig) *accessRequestMutator {
+	m.oidcProvider = oidcProvider
+	return m
+}
+
+func (m *accessRequestMutator) WithOIDCAdditionalRoles(permissions []clustersv1alpha1.PermissionsRequest) *accessRequestMutator {
+	m.oidcAdditionalRoles = permissions
 	return m
 }
 
@@ -751,16 +763,41 @@ func (m *accessRequestMutator) MetadataMutator() resources.MetadataMutator {
 }
 
 func (m *accessRequestMutator) Mutate(accessRequest *clustersv1alpha1.AccessRequest) error {
-	accessRequest.Spec.Permissions = m.permissions
+	if m.tokenPermissions != nil {
+		if accessRequest.Spec.Token == nil {
+			accessRequest.Spec.Token = &clustersv1alpha1.TokenConfig{}
+		}
+		accessRequest.Spec.Token.Permissions = make([]clustersv1alpha1.PermissionsRequest, len(m.tokenPermissions))
+		copy(accessRequest.Spec.Token.Permissions, m.tokenPermissions)
+	}
+	if m.tokenRoleRefs != nil {
+		if accessRequest.Spec.Token == nil {
+			accessRequest.Spec.Token = &clustersv1alpha1.TokenConfig{}
+		}
+		accessRequest.Spec.Token.RoleRefs = make([]commonapi.RoleRef, len(m.tokenRoleRefs))
+		copy(accessRequest.Spec.Token.RoleRefs, m.tokenRoleRefs)
+	}
 
-	accessRequest.Spec.RoleRefs = m.roleRefs
+	if m.oidcProvider != nil {
+		if accessRequest.Spec.OIDC == nil {
+			accessRequest.Spec.OIDC = &clustersv1alpha1.OIDCConfig{}
+		}
+		accessRequest.Spec.OIDC.OIDCProviderConfig = *m.oidcProvider.DeepCopy()
+	}
+	if m.oidcAdditionalRoles != nil {
+		if accessRequest.Spec.OIDC == nil {
+			accessRequest.Spec.OIDC = &clustersv1alpha1.OIDCConfig{}
+		}
+		accessRequest.Spec.OIDC.Roles = make([]clustersv1alpha1.PermissionsRequest, len(m.oidcAdditionalRoles))
+		copy(accessRequest.Spec.OIDC.Roles, m.oidcAdditionalRoles)
+	}
 
 	if m.requestRef != nil {
-		accessRequest.Spec.RequestRef = m.requestRef
+		accessRequest.Spec.RequestRef = m.requestRef.DeepCopy()
 	}
 
 	if m.clusterRef != nil {
-		accessRequest.Spec.ClusterRef = m.clusterRef
+		accessRequest.Spec.ClusterRef = m.clusterRef.DeepCopy()
 	}
 
 	if m.metadata != nil {
