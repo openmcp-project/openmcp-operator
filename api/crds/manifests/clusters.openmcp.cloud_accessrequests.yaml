@@ -66,12 +66,85 @@ spec:
                 x-kubernetes-validations:
                 - message: clusterRef is immutable
                   rule: self == oldSelf
-              oidcProvider:
+              oidc:
                 description: |-
-                  OIDCProvider is a configuration for an OIDC provider that should be used for authentication and associated role bindings.
-                  If set, the handling ClusterProvider will create an OIDC-based access for the AccessRequest, if supported.
-                  Otherwise, a serviceaccount with a token will be created and bound to the requested permissions.
+                  OIDC is the configuration for OIDC-based access.
+                  Exactly one of Token or OIDC must be set.
                 properties:
+                  additionalRoles:
+                    description: |-
+                      AdditionalRoles are additional (Cluster)Roles that should be created.
+                      Note that they are not automatically bound to any user.
+                      It is strongly recommended to set the name field so that the created (Cluster)Roles can be referenced in the RoleBindings field.
+                    items:
+                      properties:
+                        name:
+                          description: |-
+                            Name is an optional name for the (Cluster)Role that will be created for the requested permissions.
+                            If not set, a randomized name that is unique in the cluster will be generated.
+                            Note that the AccessRequest will not be granted if the to-be-created (Cluster)Role already exists, but is not managed by the AccessRequest, so choose this name carefully.
+                          type: string
+                        namespace:
+                          description: |-
+                            Namespace is the namespace for which the permissions are requested.
+                            If empty, this will result in a ClusterRole, otherwise in a Role in the respective namespace.
+                            Note that for a Role, the namespace needs to either exist or a permission to create it must be included in the requested permissions (it will be created automatically then), otherwise the request will be rejected.
+                          type: string
+                        rules:
+                          description: Rules are the requested RBAC rules.
+                          items:
+                            description: |-
+                              PolicyRule holds information that describes a policy rule, but does not contain information
+                              about who the rule applies to or which namespace the rule applies to.
+                            properties:
+                              apiGroups:
+                                description: |-
+                                  APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
+                                  the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              nonResourceURLs:
+                                description: |-
+                                  NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
+                                  Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
+                                  Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              resourceNames:
+                                description: ResourceNames is an optional white list
+                                  of names that the rule applies to.  An empty set
+                                  means that everything is allowed.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              resources:
+                                description: Resources is a list of resources this
+                                  rule applies to. '*' represents all resources.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              verbs:
+                                description: Verbs is a list of Verbs that apply to
+                                  ALL the ResourceKinds contained in this rule. '*'
+                                  represents all verbs.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - verbs
+                            type: object
+                          type: array
+                      required:
+                      - rules
+                      type: object
+                    type: array
                   clientID:
                     description: ClientID is the client ID to use for the OIDC provider.
                     type: string
@@ -202,80 +275,6 @@ spec:
                 - roleBindings
                 - usernamePrefix
                 type: object
-              permissions:
-                description: |-
-                  Permissions are the requested permissions.
-                  If not empty, corresponding Roles and ClusterRoles will be created in the target cluster, potentially also creating namespaces for Roles.
-                  For token-based access, the serviceaccount will be bound to the created Roles and ClusterRoles.
-                items:
-                  properties:
-                    name:
-                      description: |-
-                        Name is an optional name for the (Cluster)Role that will be created for the requested permissions.
-                        If not set, a randomized name that is unique in the cluster will be generated.
-                        Note that the AccessRequest will not be granted if the to-be-created (Cluster)Role already exists, but is not managed by the AccessRequest, so choose this name carefully.
-                      type: string
-                    namespace:
-                      description: |-
-                        Namespace is the namespace for which the permissions are requested.
-                        If empty, this will result in a ClusterRole, otherwise in a Role in the respective namespace.
-                        Note that for a Role, the namespace needs to either exist or a permission to create it must be included in the requested permissions (it will be created automatically then), otherwise the request will be rejected.
-                      type: string
-                    rules:
-                      description: Rules are the requested RBAC rules.
-                      items:
-                        description: |-
-                          PolicyRule holds information that describes a policy rule, but does not contain information
-                          about who the rule applies to or which namespace the rule applies to.
-                        properties:
-                          apiGroups:
-                            description: |-
-                              APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
-                              the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
-                            items:
-                              type: string
-                            type: array
-                            x-kubernetes-list-type: atomic
-                          nonResourceURLs:
-                            description: |-
-                              NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
-                              Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
-                              Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
-                            items:
-                              type: string
-                            type: array
-                            x-kubernetes-list-type: atomic
-                          resourceNames:
-                            description: ResourceNames is an optional white list of
-                              names that the rule applies to.  An empty set means
-                              that everything is allowed.
-                            items:
-                              type: string
-                            type: array
-                            x-kubernetes-list-type: atomic
-                          resources:
-                            description: Resources is a list of resources this rule
-                              applies to. '*' represents all resources.
-                            items:
-                              type: string
-                            type: array
-                            x-kubernetes-list-type: atomic
-                          verbs:
-                            description: Verbs is a list of Verbs that apply to ALL
-                              the ResourceKinds contained in this rule. '*' represents
-                              all verbs.
-                            items:
-                              type: string
-                            type: array
-                            x-kubernetes-list-type: atomic
-                        required:
-                        - verbs
-                        type: object
-                      type: array
-                  required:
-                  - rules
-                  type: object
-                type: array
               requestRef:
                 description: |-
                   RequestRef is the reference to the ClusterRequest for whose Cluster access is requested.
@@ -295,42 +294,124 @@ spec:
                 x-kubernetes-validations:
                 - message: requestRef is immutable
                   rule: self == oldSelf
-              roleRefs:
-                description: RoleRefs are references to existing (Cluster)Roles that
-                  should be bound to the created serviceaccount or OIDC user.
-                items:
-                  description: RoleRef defines a reference to a (cluster) role that
-                    should be bound to the subjects.
-                  properties:
-                    kind:
-                      description: |-
-                        Kind is the kind of the role to bind to the subjects.
-                        It must be 'Role' or 'ClusterRole'.
-                      enum:
-                      - Role
-                      - ClusterRole
-                      type: string
-                    name:
-                      description: Name is the name of the role or cluster role to
-                        bind to the subjects.
-                      minLength: 1
-                      type: string
-                    namespace:
-                      description: |-
-                        Namespace is the namespace of the role to bind to the subjects.
-                        It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
-                      type: string
-                  required:
-                  - kind
-                  - name
-                  type: object
-                type: array
+              token:
+                description: |-
+                  Token is the configuration for token-based access.
+                  Exactly one of Token or OIDC must be set.
+                properties:
+                  permissions:
+                    description: |-
+                      Permissions are the requested permissions.
+                      If not empty, corresponding Roles and ClusterRoles will be created in the target cluster.
+                      The created serviceaccount will be bound to the created Roles and ClusterRoles.
+                    items:
+                      properties:
+                        name:
+                          description: |-
+                            Name is an optional name for the (Cluster)Role that will be created for the requested permissions.
+                            If not set, a randomized name that is unique in the cluster will be generated.
+                            Note that the AccessRequest will not be granted if the to-be-created (Cluster)Role already exists, but is not managed by the AccessRequest, so choose this name carefully.
+                          type: string
+                        namespace:
+                          description: |-
+                            Namespace is the namespace for which the permissions are requested.
+                            If empty, this will result in a ClusterRole, otherwise in a Role in the respective namespace.
+                            Note that for a Role, the namespace needs to either exist or a permission to create it must be included in the requested permissions (it will be created automatically then), otherwise the request will be rejected.
+                          type: string
+                        rules:
+                          description: Rules are the requested RBAC rules.
+                          items:
+                            description: |-
+                              PolicyRule holds information that describes a policy rule, but does not contain information
+                              about who the rule applies to or which namespace the rule applies to.
+                            properties:
+                              apiGroups:
+                                description: |-
+                                  APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
+                                  the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              nonResourceURLs:
+                                description: |-
+                                  NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
+                                  Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
+                                  Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              resourceNames:
+                                description: ResourceNames is an optional white list
+                                  of names that the rule applies to.  An empty set
+                                  means that everything is allowed.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              resources:
+                                description: Resources is a list of resources this
+                                  rule applies to. '*' represents all resources.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              verbs:
+                                description: Verbs is a list of Verbs that apply to
+                                  ALL the ResourceKinds contained in this rule. '*'
+                                  represents all verbs.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - verbs
+                            type: object
+                          type: array
+                      required:
+                      - rules
+                      type: object
+                    type: array
+                  roleRefs:
+                    description: RoleRefs are references to existing (Cluster)Roles
+                      that should be bound to the created serviceaccount.
+                    items:
+                      description: RoleRef defines a reference to a (cluster) role
+                        that should be bound to the subjects.
+                      properties:
+                        kind:
+                          description: |-
+                            Kind is the kind of the role to bind to the subjects.
+                            It must be 'Role' or 'ClusterRole'.
+                          enum:
+                          - Role
+                          - ClusterRole
+                          type: string
+                        name:
+                          description: Name is the name of the role or cluster role
+                            to bind to the subjects.
+                          minLength: 1
+                          type: string
+                        namespace:
+                          description: |-
+                            Namespace is the namespace of the role to bind to the subjects.
+                            It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      type: object
+                    type: array
+                type: object
             type: object
             x-kubernetes-validations:
             - message: clusterRef may not be removed once set
               rule: '!has(oldSelf.clusterRef) || has(self.clusterRef)'
             - message: requestRef may not be removed once set
               rule: '!has(oldSelf.requestRef) || has(self.requestRef)'
+            - message: exactly one of spec.token or spec.oidc must be set
+              rule: (has(self.token) && !has(self.oidc)) || (!has(self.token) && has(self.oidc))
           status:
             description: AccessRequestStatus defines the observed state of AccessRequest
             properties:

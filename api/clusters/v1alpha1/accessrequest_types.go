@@ -16,6 +16,7 @@ const (
 
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterRef) || has(self.clusterRef)", message="clusterRef may not be removed once set"
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.requestRef) || has(self.requestRef)", message="requestRef may not be removed once set"
+// +kubebuilder:validation:XValidation:rule="(has(self.token) && !has(self.oidc)) || (!has(self.token) && has(self.oidc))",message="exactly one of spec.token or spec.oidc must be set"
 type AccessRequestSpec struct {
 	// ClusterRef is the reference to the Cluster for which access is requested.
 	// If set, requestRef will be ignored.
@@ -31,21 +32,37 @@ type AccessRequestSpec struct {
 	// +optional
 	RequestRef *commonapi.ObjectReference `json:"requestRef,omitempty"`
 
+	// Token is the configuration for token-based access.
+	// Exactly one of Token or OIDC must be set.
+	// +optional
+	Token *TokenConfig `json:"token,omitempty"`
+
+	// OIDC is the configuration for OIDC-based access.
+	// Exactly one of Token or OIDC must be set.
+	// +optional
+	OIDC *OIDCConfig `json:"oidc,omitempty"`
+}
+
+type TokenConfig struct {
 	// Permissions are the requested permissions.
-	// If not empty, corresponding Roles and ClusterRoles will be created in the target cluster, potentially also creating namespaces for Roles.
-	// For token-based access, the serviceaccount will be bound to the created Roles and ClusterRoles.
+	// If not empty, corresponding Roles and ClusterRoles will be created in the target cluster.
+	// The created serviceaccount will be bound to the created Roles and ClusterRoles.
 	// +optional
 	Permissions []PermissionsRequest `json:"permissions,omitempty"`
 
-	// RoleRefs are references to existing (Cluster)Roles that should be bound to the created serviceaccount or OIDC user.
+	// RoleRefs are references to existing (Cluster)Roles that should be bound to the created serviceaccount.
 	// +optional
 	RoleRefs []commonapi.RoleRef `json:"roleRefs,omitempty"`
+}
 
-	// OIDCProvider is a configuration for an OIDC provider that should be used for authentication and associated role bindings.
-	// If set, the handling ClusterProvider will create an OIDC-based access for the AccessRequest, if supported.
-	// Otherwise, a serviceaccount with a token will be created and bound to the requested permissions.
+type OIDCConfig struct {
+	commonapi.OIDCProviderConfig `json:",inline"`
+
+	// AdditionalRoles are additional (Cluster)Roles that should be created.
+	// Note that they are not automatically bound to any user.
+	// It is strongly recommended to set the name field so that the created (Cluster)Roles can be referenced in the RoleBindings field.
 	// +optional
-	OIDCProvider *commonapi.OIDCProviderConfig `json:"oidcProvider,omitempty"`
+	AdditionalRoles []PermissionsRequest `json:"additionalRoles,omitempty"`
 }
 
 type PermissionsRequest struct {
