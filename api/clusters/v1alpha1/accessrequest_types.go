@@ -58,11 +58,11 @@ type TokenConfig struct {
 type OIDCConfig struct {
 	commonapi.OIDCProviderConfig `json:",inline"`
 
-	// AdditionalRoles are additional (Cluster)Roles that should be created.
+	// Roles are additional (Cluster)Roles that should be created.
 	// Note that they are not automatically bound to any user.
 	// It is strongly recommended to set the name field so that the created (Cluster)Roles can be referenced in the RoleBindings field.
 	// +optional
-	AdditionalRoles []PermissionsRequest `json:"additionalRoles,omitempty"`
+	Roles []PermissionsRequest `json:"roles,omitempty"`
 }
 
 type PermissionsRequest struct {

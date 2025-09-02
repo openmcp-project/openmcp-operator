@@ -431,8 +431,8 @@ func (in *K8sConfiguration) DeepCopy() *K8sConfiguration {
 func (in *OIDCConfig) DeepCopyInto(out *OIDCConfig) {
 	*out = *in
 	in.OIDCProviderConfig.DeepCopyInto(&out.OIDCProviderConfig)
-	if in.AdditionalRoles != nil {
-		in, out := &in.AdditionalRoles, &out.AdditionalRoles
+	if in.Roles != nil {
+		in, out := &in.Roles, &out.Roles
 		*out = make([]PermissionsRequest, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])

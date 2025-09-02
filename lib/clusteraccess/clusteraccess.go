@@ -788,8 +788,8 @@ func (m *accessRequestMutator) Mutate(accessRequest *clustersv1alpha1.AccessRequ
 		if accessRequest.Spec.OIDC == nil {
 			accessRequest.Spec.OIDC = &clustersv1alpha1.OIDCConfig{}
 		}
-		accessRequest.Spec.OIDC.AdditionalRoles = make([]clustersv1alpha1.PermissionsRequest, len(m.oidcAdditionalRoles))
-		copy(accessRequest.Spec.OIDC.AdditionalRoles, m.oidcAdditionalRoles)
+		accessRequest.Spec.OIDC.Roles = make([]clustersv1alpha1.PermissionsRequest, len(m.oidcAdditionalRoles))
+		copy(accessRequest.Spec.OIDC.Roles, m.oidcAdditionalRoles)
 	}
 
 	if m.requestRef != nil {
