@@ -175,7 +175,8 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			Expect(ar.Spec.RequestRef.Name).To(Equal(cr.Name))
 			Expect(ar.Spec.RequestRef.Namespace).To(Equal(cr.Namespace))
-			Expect(ar.Spec.OIDCProvider).To(PointTo(Equal(oidc)))
+			Expect(ar.Spec.OIDC).ToNot(BeNil())
+			Expect(ar.Spec.OIDC.OIDCProviderConfig).To(Equal(oidc))
 		}
 
 		// fake AccessRequest ready status

@@ -111,7 +111,9 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 				Name:      cr.Name,
 				Namespace: cr.Namespace,
 			}
-			ar.Spec.OIDCProvider = oidc
+			ar.Spec.OIDC = &clustersv1alpha1.OIDCConfig{
+				OIDCProviderConfig: *oidc,
+			}
 
 			// set labels
 			if ar.Labels == nil {
@@ -156,12 +158,12 @@ func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessRequests(ctx contex
 	}
 	errs := errutils.NewReasonableErrorList()
 	for _, ar := range oidcARs.Items {
-		if _, ok := updatedAccessRequests[ar.Spec.OIDCProvider.Name]; ok {
+		if _, ok := updatedAccessRequests[ar.Spec.OIDC.Name]; ok {
 			continue
 		}
 		providerName := "<unknown>"
-		if ar.Spec.OIDCProvider != nil {
-			providerName = ar.Spec.OIDCProvider.Name
+		if ar.Spec.OIDC != nil {
+			providerName = ar.Spec.OIDC.Name
 		}
 		accessRequestsInDeletion.Insert(providerName)
 		if !ar.DeletionTimestamp.IsZero() {
