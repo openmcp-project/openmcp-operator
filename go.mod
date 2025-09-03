@@ -5,8 +5,8 @@ go 1.25.0
 //godebug default=go1.23
 
 replace (
-	github.com/openmcp-project/openmcp-operator/api v0.13.0
-	github.com/openmcp-project/openmcp-operator/lib v0.13.0
+	github.com/openmcp-project/openmcp-operator/api => ./api
+	github.com/openmcp-project/openmcp-operator/lib => ./lib
 )
 
 require (
