@@ -20,10 +20,16 @@ func InstallCRDAPIs(scheme *runtime.Scheme) *runtime.Scheme {
 	return scheme
 }
 
-func InstallOperatorAPIs(scheme *runtime.Scheme) *runtime.Scheme {
+func InstallOperatorAPIsPlatform(scheme *runtime.Scheme) *runtime.Scheme {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(providerv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
+
+	return scheme
+}
+
+func InstallOperatorAPIsOnboarding(scheme *runtime.Scheme) *runtime.Scheme {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(corev2alpha1.AddToScheme(scheme))
 
 	return scheme

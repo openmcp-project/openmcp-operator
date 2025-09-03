@@ -6,6 +6,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
+var _ Validatable = &AccessRequestConfig{}
+var _ Completable = &AccessRequestConfig{}
+
 type AccessRequestConfig struct {
 	// If set, only AccessRequests that match the selector will be reconciled.
 	Selector *Selector `json:"selector,omitempty"`

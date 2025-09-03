@@ -1,0 +1,10 @@
+apiVersion: openmcp.cloud/v1alpha1
+kind: ServiceProvider
+metadata:
+  name: sp-02
+spec: {}
+status:
+  resources:
+  - group: ""
+    version: v1
+    kind: Secret

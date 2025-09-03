@@ -2033,14 +2033,20 @@ spec:
                   ImagePullSecrets are secrets in the same namespace.
                   They can be used to fetch provider images from private registries.
                 items:
+                  description: LocalObjectReference is a reference to an object in
+                    the same namespace as the resource referencing it.
                   properties:
                     name:
-                      description: Name is the name of the referenced resource.
-                      minLength: 1
+                      default: ""
+                      description: |-
+                        Name of the referent.
+                        This field is effectively required, but due to backwards compatibility is
+                        allowed to be empty. Instances of this type with an empty value here are
+                        almost certainly wrong.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
                       type: string
-                  required:
-                  - name
                   type: object
+                  x-kubernetes-map-type: atomic
                 type: array
               initCommand:
                 description: |-

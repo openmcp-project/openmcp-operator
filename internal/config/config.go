@@ -29,6 +29,9 @@ type Config struct {
 
 	// AccessRequest is the configuration for the access request controller.
 	AccessRequest *AccessRequestConfig `json:"accessRequest,omitempty"`
+
+	// ManagedControlPlane is the configuration for the MCP controller.
+	ManagedControlPlane *ManagedControlPlaneConfig `json:"managedControlPlane,omitempty"`
 }
 
 // Dump is used for logging and debugging purposes.

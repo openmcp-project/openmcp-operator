@@ -18,7 +18,7 @@ import (
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
 )
 
-var scheme = install.InstallOperatorAPIs(runtime.NewScheme())
+var scheme = install.InstallOperatorAPIsPlatform(runtime.NewScheme())
 
 func arReconciler(c client.Client) reconcile.Reconciler {
 	return accessrequest.NewAccessRequestReconciler(clusters.NewTestClusterFromClient("platform", c), nil)

@@ -84,13 +84,16 @@ const (
 	// SecretKeyCreationTimestamp is the name of the key in the AccessRequest secret that contains the creation timestamp.
 	// This value is optional and must not be set for non-expiring authentication methods.
 	SecretKeyCreationTimestamp = "creationTimestamp"
-	// SecretKeyCAData is the name of the key in the AccessRequest secret that contains the CA data.
-	// This value is optional and must not be set.
-	SecretKeyCAData = "caData"
-	// SecretKeyHost is the name of the key in the AccessRequest secret that contains the host.
-	// This value is optional and must not be set.
-	SecretKeyHost = "host"
 	// SecretKeyClientID is the name of the key in the AccessRequest secret that contains the client ID.
 	// This value is optional and must not be set for non-OIDC-based authentication methods.
 	SecretKeyClientID = "clientID"
+	// SecretKeyHost is the name of the key in the AccessRequest secret that contains the host of the cluster.
+	// This value is optional.
+	SecretKeyHost = "host"
+	// SecretKeyCA is the name of the key in the AccessRequest secret that contains the CA certificate of the cluster.
+	// This value is optional.
+	SecretKeyCA = "ca.crt"
+	// SecretKeyToken is the name of the key in the AccessRequest secret that contains the token.
+	// This value is optional.
+	SecretKeyToken = "token"
 )

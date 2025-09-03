@@ -1,0 +1,9 @@
+# this is a fake service resource
+# we use standard k8s resources for testing purposes, so we don't have to add a custom resource definition or schema
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mcp-01
+  namespace: test
+  finalizers:
+  - dummy

@@ -130,8 +130,8 @@ func (c *Cluster) GetTenancyCount() int {
 func (c *Cluster) GetRequestUIDs() sets.Set[string] {
 	res := sets.New[string]()
 	for _, fin := range c.Finalizers {
-		if strings.HasPrefix(fin, RequestFinalizerOnClusterPrefix) {
-			res.Insert(strings.TrimPrefix(fin, RequestFinalizerOnClusterPrefix))
+		if uid, ok := strings.CutPrefix(fin, RequestFinalizerOnClusterPrefix); ok {
+			res.Insert(uid)
 		}
 	}
 	return res
