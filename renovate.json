@@ -3,7 +3,7 @@
   "git-submodules": {
     "enabled": true
   },
-  "minimumReleaseAge": "3 days",
+  "minimumReleaseAge": "0 days",
   "extends": [
     "config:recommended",
     "config:best-practices",
@@ -28,12 +28,18 @@
       "rangeStrategy": "bump"
     },
     {
+      "description": "Automerge submodule update",
+      "automerge": true,
+      "matchPackageNames": ["hack/common"]
+    },
+    {
+      "description": "Update and automerge all components from openmcp-project immediately",
       "matchPackageNames": [
         "github.com/openmcp-project/*"
       ],
-      "description": "Update all components from openmcp-project immediately",
       "rebaseWhen": "auto",
       "minimumReleaseAge": "0 days",
+      "automerge": true,
       "enabled": true
     }
   ]
