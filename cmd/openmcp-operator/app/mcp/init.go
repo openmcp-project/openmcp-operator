@@ -136,7 +136,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	}
 	for _, evapb := range evapbs.Items {
 		if evapb.Name != MCPPurposeOverrideValidationPolicyName {
-			setupLog.Info("Deleting existing ValidatingAdmissionPolicyBinding with architecture immutability purpose", "name", evapb.Name)
+			log.Info("Deleting existing ValidatingAdmissionPolicyBinding with architecture immutability purpose", "name", evapb.Name)
 			if err := onboardingCluster.Client().Delete(ctx, &evapb); client.IgnoreNotFound(err) != nil {
 				return fmt.Errorf("error deleting ValidatingAdmissionPolicyBinding '%s': %w", evapb.Name, err)
 			}
@@ -148,13 +148,13 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	}
 	for _, evap := range evaps.Items {
 		if evap.Name != MCPPurposeOverrideValidationPolicyName {
-			setupLog.Info("Deleting existing ValidatingAdmissionPolicy with architecture immutability purpose", "name", evap.Name)
+			log.Info("Deleting existing ValidatingAdmissionPolicy with architecture immutability purpose", "name", evap.Name)
 			if err := onboardingCluster.Client().Delete(ctx, &evap); client.IgnoreNotFound(err) != nil {
 				return fmt.Errorf("error deleting ValidatingAdmissionPolicy '%s': %w", evap.Name, err)
 			}
 		}
 	}
-	setupLog.Info("creating/updating ValidatingAdmissionPolicies to prevent undesired changes to the MCP purpose override label ...")
+	log.Info("creating/updating ValidatingAdmissionPolicies to prevent undesired changes to the MCP purpose override label ...")
 	vapm := resources.NewValidatingAdmissionPolicyMutator(MCPPurposeOverrideValidationPolicyName, admissionv1.ValidatingAdmissionPolicySpec{
 		FailurePolicy: ptr.To(admissionv1.Fail),
 		MatchConstraints: &admissionv1.MatchResources{
@@ -188,6 +188,10 @@ func (o *InitOptions) Run(ctx context.Context) error {
 			{
 				Expression: `request.operation == "CREATE" || (variables.oldPurposeOverrideLabel == variables.purposeOverrideLabel)`,
 				Message:    fmt.Sprintf(`The label "%s" is immutable, it cannot be added after creation and is not allowed to be changed or removed once set.`, corev2alpha1.MCPPurposeOverrideLabel),
+			},
+			{
+				Expression: `variables.purposeOverrideLabel.contains("mcp")`,
+				Message:    fmt.Sprintf(`The value of the label "%s" must contain "mcp".`, corev2alpha1.MCPPurposeOverrideLabel),
 			},
 		},
 	})
@@ -231,7 +235,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapbm); err != nil {
 		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicyBinding for mcp purpose override validation: %w", err)
 	}
-	setupLog.Info("ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding for mcp purpose override validation created/updated")
+	log.Info("ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding for mcp purpose override validation created/updated")
 
 	log.Info("Finished init command")
 	return nil
