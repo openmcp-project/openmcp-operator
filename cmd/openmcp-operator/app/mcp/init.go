@@ -190,7 +190,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 				Message:    fmt.Sprintf(`The label "%s" is immutable, it cannot be added after creation and is not allowed to be changed or removed once set.`, corev2alpha1.MCPPurposeOverrideLabel),
 			},
 			{
-				Expression: `variables.purposeOverrideLabel.contains("mcp")`,
+				Expression: `(variables.purposeOverrideLabel == "") || variables.purposeOverrideLabel.contains("mcp")`,
 				Message:    fmt.Sprintf(`The value of the label "%s" must contain "mcp".`, corev2alpha1.MCPPurposeOverrideLabel),
 			},
 		},
