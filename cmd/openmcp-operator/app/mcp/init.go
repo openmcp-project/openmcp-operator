@@ -7,19 +7,27 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	crdutil "github.com/openmcp-project/controller-utils/pkg/crds"
+	"github.com/openmcp-project/controller-utils/pkg/resources"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
+	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
 	"github.com/openmcp-project/openmcp-operator/api/crds"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 )
+
+// currently hard-coded, can be made configurable in the future if needed
+const MCPPurposeOverrideValidationPolicyName = "mcp-purpose-override-validation"
 
 func NewInitCommand(po *options.PersistentOptions) *cobra.Command {
 	opts := &InitOptions{
@@ -94,6 +102,11 @@ func (o *InitOptions) Run(ctx context.Context) error {
 						Resources: []string{"customresourcedefinitions"},
 						Verbs:     []string{"*"},
 					},
+					{
+						APIGroups: []string{"admissionregistration.k8s.io"},
+						Resources: []string{"validatingadmissionpolicies", "validatingadmissionpolicybindings"},
+						Verbs:     []string{"*"},
+					},
 				},
 			},
 		})
@@ -111,6 +124,115 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	if err := crdManager.CreateOrUpdateCRDs(ctx, &o.Log); err != nil {
 		return fmt.Errorf("error creating/updating CRDs: %w", err)
 	}
+
+	// ensure ValidatingAdmissionPolicy to prevent removal or changes to the MCP purpose override label
+	labelSelector := client.MatchingLabels{
+		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
+	}
+	evapbs := &admissionv1.ValidatingAdmissionPolicyBindingList{}
+	if err := onboardingCluster.Client().List(ctx, evapbs, labelSelector); err != nil {
+		return fmt.Errorf("error listing ValidatingAdmissionPolicyBindings: %w", err)
+	}
+	for _, evapb := range evapbs.Items {
+		if evapb.Name != MCPPurposeOverrideValidationPolicyName {
+			setupLog.Info("Deleting existing ValidatingAdmissionPolicyBinding with architecture immutability purpose", "name", evapb.Name)
+			if err := onboardingCluster.Client().Delete(ctx, &evapb); client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("error deleting ValidatingAdmissionPolicyBinding '%s': %w", evapb.Name, err)
+			}
+		}
+	}
+	evaps := &admissionv1.ValidatingAdmissionPolicyList{}
+	if err := onboardingCluster.Client().List(ctx, evaps, labelSelector); err != nil {
+		return fmt.Errorf("error listing ValidatingAdmissionPolicies: %w", err)
+	}
+	for _, evap := range evaps.Items {
+		if evap.Name != MCPPurposeOverrideValidationPolicyName {
+			setupLog.Info("Deleting existing ValidatingAdmissionPolicy with architecture immutability purpose", "name", evap.Name)
+			if err := onboardingCluster.Client().Delete(ctx, &evap); client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("error deleting ValidatingAdmissionPolicy '%s': %w", evap.Name, err)
+			}
+		}
+	}
+	setupLog.Info("creating/updating ValidatingAdmissionPolicies to prevent undesired changes to the MCP purpose override label ...")
+	vapm := resources.NewValidatingAdmissionPolicyMutator(MCPPurposeOverrideValidationPolicyName, admissionv1.ValidatingAdmissionPolicySpec{
+		FailurePolicy: ptr.To(admissionv1.Fail),
+		MatchConstraints: &admissionv1.MatchResources{
+			ResourceRules: []admissionv1.NamedRuleWithOperations{
+				{
+					RuleWithOperations: admissionv1.RuleWithOperations{
+						Operations: []admissionv1.OperationType{
+							admissionv1.Create,
+							admissionv1.Update,
+						},
+						Rule: admissionv1.Rule{ // match all resources, actual restriction happens in the binding
+							APIGroups:   []string{"*"},
+							APIVersions: []string{"*"},
+							Resources:   []string{"*"},
+						},
+					},
+				},
+			},
+		},
+		Variables: []admissionv1.Variable{
+			{
+				Name:       "purposeOverrideLabel",
+				Expression: fmt.Sprintf(`(has(object.metadata.labels) && "%s" in object.metadata.labels) ? object.metadata.labels["%s"] : ""`, corev2alpha1.MCPPurposeOverrideLabel, corev2alpha1.MCPPurposeOverrideLabel),
+			},
+			{
+				Name:       "oldPurposeOverrideLabel",
+				Expression: fmt.Sprintf(`(oldObject != null && has(oldObject.metadata.labels) && "%s" in oldObject.metadata.labels) ? oldObject.metadata.labels["%s"] : ""`, corev2alpha1.MCPPurposeOverrideLabel, corev2alpha1.MCPPurposeOverrideLabel),
+			},
+		},
+		Validations: []admissionv1.Validation{
+			{
+				Expression: `request.operation == "CREATE" || (variables.oldPurposeOverrideLabel == variables.purposeOverrideLabel)`,
+				Message:    fmt.Sprintf(`The label "%s" is immutable, it cannot be added after creation and is not allowed to be changed or removed once set.`, corev2alpha1.MCPPurposeOverrideLabel),
+			},
+		},
+	})
+	vapm.MetadataMutator().WithLabels(map[string]string{
+		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
+	})
+	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapm); err != nil {
+		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicy for mcp purpose override validation: %w", err)
+	}
+
+	vapbm := resources.NewValidatingAdmissionPolicyBindingMutator(MCPPurposeOverrideValidationPolicyName, admissionv1.ValidatingAdmissionPolicyBindingSpec{
+		PolicyName: MCPPurposeOverrideValidationPolicyName,
+		ValidationActions: []admissionv1.ValidationAction{
+			admissionv1.Deny,
+		},
+		MatchResources: &admissionv1.MatchResources{
+			ResourceRules: []admissionv1.NamedRuleWithOperations{
+				{
+					RuleWithOperations: admissionv1.RuleWithOperations{
+						Operations: []admissionv1.OperationType{
+							admissionv1.Create,
+							admissionv1.Update,
+						},
+						Rule: admissionv1.Rule{
+							APIGroups:   []string{corev2alpha1.GroupVersion.Group},
+							APIVersions: []string{corev2alpha1.GroupVersion.Version},
+							Resources: []string{
+								"managedcontrolplanev2s",
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+	vapbm.MetadataMutator().WithLabels(map[string]string{
+		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
+	})
+	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapbm); err != nil {
+		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicyBinding for mcp purpose override validation: %w", err)
+	}
+	setupLog.Info("ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding for mcp purpose override validation created/updated")
+
 	log.Info("Finished init command")
 	return nil
 }
