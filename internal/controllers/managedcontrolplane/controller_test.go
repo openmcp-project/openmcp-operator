@@ -599,4 +599,24 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 	})
 
+	It("should correctly set the purpose if the MCP has the override label", func() {
+		rec, env := defaultTestSetup("testdata", "test-01")
+
+		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp.SetName("mcp-02")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+		Expect(cr.Spec.Purpose).ToNot(Equal(rec.Config.MCPClusterPurpose))
+		Expect(cr.Spec.Purpose).To(Equal("my-mcp-purpose"))
+		Expect(cr.Spec.WaitForClusterDeletion).To(PointTo(BeTrue()))
+	})
+
 })

@@ -16,6 +16,8 @@ const (
 
 	// ManagedByLabel is used to indicate which controller manages the resource.
 	ManagedByLabel = OpenMCPGroupName + "/managed-by"
+	// ManagedPurposeLabel is used to indicate the purpose of the resource.
+	ManagedPurposeLabel = OpenMCPGroupName + "/managed-purpose"
 
 	// OnboardingNameLabel is used to store the name on the onboarding cluster of a resource.
 	OnboardingNameLabel = OpenMCPGroupName + "/onboarding-name"

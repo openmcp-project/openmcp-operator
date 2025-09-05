@@ -1,0 +1,8 @@
+apiVersion: core.openmcp.cloud/v2alpha1
+kind: ManagedControlPlaneV2
+metadata:
+  name: mcp-02
+  namespace: test
+  labels:
+    core.openmcp.cloud/purpose: my-mcp-purpose
+spec: {}

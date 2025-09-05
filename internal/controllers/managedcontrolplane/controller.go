@@ -204,6 +204,12 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	cr := &clustersv1alpha1.ClusterRequest{}
 	cr.Name = mcp.Name
 	cr.Namespace = platformNamespace
+	// determine cluster request purpose
+	purpose := r.Config.MCPClusterPurpose
+	if override, ok := mcp.Labels[corev2alpha1.MCPPurposeOverrideLabel]; ok && override != "" {
+		log.Info("Using purpose override from MCP label", "purposeOverride", override)
+		purpose = override
+	}
 	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(cr), cr); err != nil {
 		if !apierrors.IsNotFound(err) {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to get ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
@@ -211,10 +217,10 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 			return rr
 		}
 
-		log.Info("ClusterRequest not found, creating it", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "purpose", r.Config.MCPClusterPurpose)
+		log.Info("ClusterRequest not found, creating it", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "purpose", purpose)
 		cr.Labels = mcpLabels
 		cr.Spec = clustersv1alpha1.ClusterRequestSpec{
-			Purpose:                r.Config.MCPClusterPurpose,
+			Purpose:                purpose,
 			WaitForClusterDeletion: ptr.To(true),
 		}
 		if err := r.PlatformCluster.Client().Create(ctx, cr); err != nil {
@@ -223,7 +229,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 			return rr
 		}
 	} else {
-		log.Debug("ClusterRequest found", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "purposeInConfig", r.Config.MCPClusterPurpose, "purposeInClusterRequest", cr.Spec.Purpose)
+		log.Debug("ClusterRequest found", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "configuredPurpose", purpose, "purposeInClusterRequest", cr.Spec.Purpose)
 	}
 
 	// check if the ClusterRequest is ready
