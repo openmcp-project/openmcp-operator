@@ -54,7 +54,7 @@ type DeploymentSpec struct {
 	Env []EnvVar `json:"env,omitempty" patchStrategy:"merge" patchMergeKey:"name"`
 
 	// Verbosity is the verbosity level of the provider.
-	// +kubebuilder:validation:Enum=DEBUG;INFO;ERROR
+	// +kubebuilder:validation:Enum=DEBUG;INFO;ERROR;debug;info;error
 	// +kubebuilder:default=INFO
 	Verbosity string `json:"verbosity,omitempty"`
 
