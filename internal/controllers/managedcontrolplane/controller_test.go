@@ -62,7 +62,7 @@ func defaultTestSetup(testDirPathSegments ...string) (*managedcontrolplane.Manag
 	}
 	envB := testutils.NewComplexEnvironmentBuilder().
 		WithFakeClient(platform, install.InstallOperatorAPIsPlatform(runtime.NewScheme())).
-		WithDynamicObjectsWithStatus(platform, &clustersv1alpha1.ClusterRequest{}, &clustersv1alpha1.AccessRequest{}).
+		WithDynamicObjectsWithStatus(platform, &clustersv1alpha1.ClusterRequest{}, &clustersv1alpha1.AccessRequest{}, &clustersv1alpha1.Cluster{}).
 		WithFakeClient(onboarding, install.InstallOperatorAPIsOnboarding(runtime.NewScheme())).
 		WithReconcilerConstructor(mcpRec, func(clients ...client.Client) reconcile.Reconciler {
 			mcpr, err := managedcontrolplane.NewManagedControlPlaneReconciler(clusters.NewTestClusterFromClient(platform, clients[0]), clusters.NewTestClusterFromClient(onboarding, clients[1]), nil, cfg.ManagedControlPlane)
@@ -131,15 +131,44 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithReason(cconst.ReasonWaitingForClusterRequest)),
 		))
 
-		// fake ClusterRequest ready status
+		// fake ClusterRequest ready status and Cluster resource
 		By("fake: ClusterRequest readiness")
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{rec.Config.MCPClusterPurpose}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{
+			{
+				Type:               "TestCondition1",
+				Status:             metav1.ConditionTrue,
+				Reason:             "TestReason",
+				Message:            "This is a test condition",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: 1,
+			},
+			{
+				Type:               "TestCondition2",
+				Status:             metav1.ConditionFalse,
+				Reason:             "TestReason",
+				Message:            "This is another test condition",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: 1,
+			},
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
 		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{
+			Name:      cluster.Name,
+			Namespace: cluster.Namespace,
+		}
 		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
 
 		// reconcile the MCP again
 		// expected outcome:
 		// - multiple access requests have been created on the platform cluster, one for each configured OIDC provider
 		// - the mcp has conditions that reflect that it is waiting for the access requests (one for each OIDC provider and one overall one)
+		// - the mcp has taken over the conditions from the Cluster resource with a prefix
 		// - the mcp should be requeued with a short requeueAfter duration
 		By("second MCP reconciliation")
 		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
@@ -154,6 +183,19 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithType(corev2alpha1.ConditionAllAccessReady).
 				WithStatus(metav1.ConditionFalse).
 				WithReason(cconst.ReasonWaitingForAccessRequest)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionPrefixClusterCondition+"TestCondition1").
+				WithStatus(metav1.ConditionTrue).
+				WithReason("TestReason").
+				WithMessage("This is a test condition")),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionPrefixClusterCondition+"TestCondition2").
+				WithStatus(metav1.ConditionFalse).
+				WithReason("TestReason").
+				WithMessage("This is another test condition")),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionClusterConditionsSynced).
+				WithStatus(metav1.ConditionTrue)),
 		))
 		oidcProviders := []commonapi.OIDCProviderConfig{*rec.Config.DefaultOIDCProvider.DeepCopy()}
 		oidcProviders[0].RoleBindings = mcp.Spec.IAM.RoleBindings
@@ -552,10 +594,12 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithReason(cconst.ReasonWaitingForClusterRequestDeletion)),
 		))
 
-		// remove finalizer from cr
+		// remove finalizer from cr and remove Cluster resource
 		By("fake: removing finalizer from primary ClusterRequest")
 		controllerutil.RemoveFinalizer(cr, "dummy")
 		Expect(env.Client(platform).Update(env.Ctx, cr)).To(Succeed())
+		Expect(env.Client(platform).Delete(env.Ctx, cluster)).To(Succeed())
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cluster), cluster)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 
 		// add finalizer to MCP namespace
 		By("fake: adding finalizer to MCP namespace")
@@ -567,6 +611,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		// expected outcome:
 		// - the MCP namespace has a deletion timestamp
 		// - the MCP has a condition stating that it is waiting for the MCP namespace to be deleted
+		// - the Cluster conditions should have been removed
 		// - the MCP should be requeued with a short requeueAfter duration
 		By("fifth MCP reconciliation after delete")
 		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
@@ -580,6 +625,14 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithType(corev2alpha1.ConditionMeta).
 				WithStatus(metav1.ConditionFalse).
 				WithReason(cconst.ReasonWaitingForNamespaceDeletion)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionClusterConditionsSynced).
+				WithStatus(metav1.ConditionTrue)),
+		))
+		Expect(mcp.Status.Conditions).ToNot(ContainElements(
+			MatchFields(IgnoreExtras, Fields{
+				"Type": ContainSubstring(corev2alpha1.ConditionPrefixClusterCondition),
+			}),
 		))
 
 		// remove finalizer from MCP namespace

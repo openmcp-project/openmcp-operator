@@ -28,6 +28,8 @@ const (
 	ConditionMeta = "Meta"
 
 	ConditionClusterRequestReady       = "ClusterRequestReady"
+	ConditionClusterConditionsSynced   = "ClusterConditionsSynced"
+	ConditionPrefixClusterCondition    = "Cluster."
 	ConditionPrefixOIDCAccessReady     = "OIDCAccessReady."
 	ConditionAllAccessReady            = "AllAccessReady"
 	ConditionAllServicesDeleted        = "AllServicesDeleted"

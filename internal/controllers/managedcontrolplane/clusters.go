@@ -17,7 +17,7 @@ import (
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
 )
 
-func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, platformNamespace string) (sets.Set[string], errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, platformNamespace string) (sets.Set[string], *clustersv1alpha1.Cluster, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// delete depending cluster requests, if any
@@ -25,7 +25,7 @@ func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context
 
 	if mcp == nil {
 		log.Debug("MCP is nil, no need to check for cluster requests")
-		return crNames, nil
+		return crNames, nil, nil
 	}
 
 	// identify cluster request finalizers
@@ -37,7 +37,7 @@ func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context
 
 	if crNames.Len() == 0 {
 		log.Debug("No cluster request finalizers found on MCP")
-		return crNames, nil
+		return crNames, nil, nil
 	}
 
 	// fetch cluster requests, if any exist
@@ -56,18 +56,34 @@ func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context
 		resources[crName] = cr
 	}
 	if rerr := errs.Aggregate(); rerr != nil {
-		return sets.KeySet(resources), rerr
+		return sets.KeySet(resources), nil, rerr
 	}
 
 	// delete cluster requests
+	var cluster *clustersv1alpha1.Cluster
 	errs = errutils.NewReasonableErrorList()
 	for crName, cr := range resources {
-		if crName == mcp.Name && len(resources) > 1 {
-			// skip the MCP's main ClusterRequest for now
-			// we want to make sure that all other ClusterRequests are deleted first
-			// in case the corresponding clusters are hosting resources that depend on the MCP cluster
-			log.Debug("Skipping deletion of MCP's primary ClusterRequest, because there are other ClusterRequests to delete first", "crName", crName, "namespace", cr.GetNamespace())
-			continue
+		if crName == mcp.Name {
+			// this is the primary ClusterRequest for the MCP cluster
+			// try to fetch the corresponding Cluster resource
+			// to sync its conditions to the MCP
+			if cr != nil && cr.Status.Cluster != nil {
+				cluster = &clustersv1alpha1.Cluster{}
+				cluster.Name = cr.Status.Cluster.Name
+				cluster.Namespace = cr.Status.Cluster.Namespace
+				if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(cluster), cluster); err != nil {
+					// only log the error, this is not critical and should not break the function
+					log.Error(fmt.Errorf("unable to get Cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), "error trying to fetch the primary MCP Cluster resource for condition sync")
+					cluster = nil
+				}
+			}
+			if len(resources) > 1 {
+				// skip the MCP's main ClusterRequest for now
+				// we want to make sure that all other ClusterRequests are deleted first
+				// in case the corresponding clusters are hosting resources that depend on the MCP cluster
+				log.Debug("Skipping deletion of MCP's primary ClusterRequest, because there are other ClusterRequests to delete first", "crName", crName, "namespace", cr.GetNamespace())
+				continue
+			}
 		}
 		if !cr.GetDeletionTimestamp().IsZero() {
 			log.Debug("ClusterRequest resource already marked for deletion", "crName", crName, "namespace", cr.GetNamespace())
@@ -84,8 +100,8 @@ func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context
 		}
 	}
 	if rerr := errs.Aggregate(); rerr != nil {
-		return sets.KeySet(resources), rerr
+		return sets.KeySet(resources), cluster, rerr
 	}
 
-	return sets.KeySet(resources), nil
+	return sets.KeySet(resources), cluster, nil
 }

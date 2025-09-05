@@ -242,6 +242,26 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	log.Debug("ClusterRequest is ready", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace)
 	createCon(corev2alpha1.ConditionClusterRequestReady, metav1.ConditionTrue, "", "ClusterRequest is ready")
 
+	// fetch Cluster conditions to display them on the MCP
+	cluster := &clustersv1alpha1.Cluster{}
+	if cr.Status.Cluster == nil {
+		// should not happen if the ClusterRequest is granted
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("ClusterRequest '%s/%s' does not have a ClusterRef set", cr.Namespace, cr.Name), cconst.ReasonInternalError)
+		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+		return rr
+	}
+	cluster.Name = cr.Status.Cluster.Name
+	cluster.Namespace = cr.Status.Cluster.Namespace
+	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(cluster), cluster); err != nil {
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to get Cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+		return rr
+	}
+	for _, con := range cluster.Status.Conditions {
+		createCon(corev2alpha1.ConditionPrefixClusterCondition+con.Type, con.Status, con.Reason, con.Message)
+	}
+	createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions have been synced to MCP")
+
 	// manage AccessRequests
 	allAccessReady, removeConditions, rerr := r.manageAccessRequests(ctx, mcp, platformNamespace, cr, createCon)
 	rr.ConditionsToRemove = removeConditions.UnsortedList()
@@ -259,6 +279,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	return rr
 }
 
+//nolint:gocyclo
 func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	log.Info("Handling deletion of ManagedControlPlane resource")
@@ -325,11 +346,27 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	log.Debug("All AccessRequests deleted")
 
 	// delete cluster requests related to this MCP
-	remainingCRs, rerr := r.deleteRelatedClusterRequests(ctx, mcp, platformNamespace)
+	remainingCRs, primaryCluster, rerr := r.deleteRelatedClusterRequests(ctx, mcp, platformNamespace)
 	if rerr != nil {
 		rr.ReconcileError = rerr
 		createCon(corev2alpha1.ConditionAllClusterRequestsDeleted, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
 		return rr
+	}
+	if primaryCluster != nil {
+		// sync Cluster conditions to the MCP
+		for _, con := range primaryCluster.Status.Conditions {
+			createCon(corev2alpha1.ConditionPrefixClusterCondition+con.Type, con.Status, con.Reason, con.Message)
+		}
+		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions have been synced to MCP")
+	} else {
+		// since this point is only reached if no error occurred during r.deleteRelatedClusterRequests, we can assume that the primaryCluster is nil because it does not exist
+		for _, con := range mcp.Status.Conditions {
+			// remove all conditions that were synced from the Cluster from the MCP to avoid having unhealthy leftovers
+			if strings.HasPrefix(con.Type, corev2alpha1.ConditionPrefixClusterCondition) {
+				rr.ConditionsToRemove = append(rr.ConditionsToRemove, con.Type)
+			}
+		}
+		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Primary Cluster for MCP does not exist anymore")
 	}
 	finalizersToRemove := sets.New(filters.FilterSlice(mcp.Finalizers, func(args ...any) bool {
 		fin, ok := args[0].(string)
