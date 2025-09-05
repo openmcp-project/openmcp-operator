@@ -11,7 +11,7 @@ const (
 	MCPNameLabel            = GroupName + "/mcp-name"
 	MCPNamespaceLabel       = GroupName + "/mcp-namespace"
 	OIDCProviderLabel       = GroupName + "/oidc-provider"
-	MCPPurposeOverrideLabel = GroupName + "/purpose-override"
+	MCPPurposeOverrideLabel = GroupName + "/purpose"
 
 	// ManagedPurposeMCPPurposeOverride is used as value for the managed purpose label. It must not be modified.
 	ManagedPurposeMCPPurposeOverride = "mcp-purpose-override"
