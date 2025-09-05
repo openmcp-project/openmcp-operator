@@ -1,5 +1,4 @@
 scheduler:
-  scope: Cluster
   selectors:
     clusters:
       matchLabels:

@@ -73,7 +73,7 @@ type SchedulerSelectors struct {
 
 func (c *SchedulerConfig) Default(_ *field.Path) error {
 	if c.Scope == "" {
-		c.Scope = SCOPE_NAMESPACED
+		c.Scope = SCOPE_CLUSTER
 	}
 	if c.Strategy == "" {
 		c.Strategy = STRATEGY_BALANCED
