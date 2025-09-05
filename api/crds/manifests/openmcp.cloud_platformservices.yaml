@@ -2071,6 +2071,9 @@ spec:
                 - DEBUG
                 - INFO
                 - ERROR
+                - debug
+                - info
+                - error
                 type: string
             required:
             - image
