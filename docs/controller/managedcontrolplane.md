@@ -12,7 +12,7 @@ managedControlPlane:
   mcpClusterPurpose: mcp # defaults to 'mcp'
   reconcileMCPEveryXDays: 7 # defaults to 0
   defaultOIDCProvider:
-    name: my-oidc-provider
+    name: default # must be 'default' or omitted for the default oidc provider
     issuer: https://oidc.example.com
     clientID: my-client-id
     usernamePrefix: "my-user:"
