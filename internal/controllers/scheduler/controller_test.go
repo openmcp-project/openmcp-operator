@@ -51,6 +51,7 @@ var _ = Describe("Scheduler", func() {
 		It("should create a new exclusive cluster if no cluster exists", func() {
 			clusterNamespace := "exclusive"
 			sc, env := defaultTestSetup("testdata", "test-01")
+			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -78,6 +79,7 @@ var _ = Describe("Scheduler", func() {
 		It("should create a new exclusive cluster if a cluster exists", func() {
 			clusterNamespace := "exclusive"
 			sc, env := defaultTestSetup("testdata", "test-01")
+			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			oldCount := len(existingClusters.Items)
@@ -107,6 +109,7 @@ var _ = Describe("Scheduler", func() {
 		It("should create a new shared cluster if no cluster exists", func() {
 			clusterNamespace := "shared-twice"
 			sc, env := defaultTestSetup("testdata", "test-01")
+			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -134,6 +137,7 @@ var _ = Describe("Scheduler", func() {
 		It("should share a shared cluster if it still has capacity and create a new one otherwise", func() {
 			clusterNamespace := "shared-twice"
 			sc, env := defaultTestSetup("testdata", "test-01")
+			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			oldCount := len(existingClusters.Items)
@@ -214,6 +218,7 @@ var _ = Describe("Scheduler", func() {
 		It("should only create a new cluster if none exists for unlimitedly shared clusters", func() {
 			clusterNamespace := "shared-unlimited"
 			sc, env := defaultTestSetup("testdata", "test-01")
+			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			reqCount := 20
 			requests := make([]*clustersv1alpha1.ClusterRequest, reqCount)
 			for i := range reqCount {
@@ -244,7 +249,8 @@ var _ = Describe("Scheduler", func() {
 		})
 
 		It("should take over annotations and labels from the cluster template", func() {
-			_, env := defaultTestSetup("testdata", "test-02")
+			sc, env := defaultTestSetup("testdata", "test-02")
+			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
@@ -262,7 +268,8 @@ var _ = Describe("Scheduler", func() {
 
 		It("should use the request's namespace if none is specified in the template and ignore clusters that don't match the label selector", func() {
 			clusterNamespace := "foo"
-			_, env := defaultTestSetup("testdata", "test-02")
+			sc, env := defaultTestSetup("testdata", "test-02")
+			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())
@@ -316,7 +323,8 @@ var _ = Describe("Scheduler", func() {
 	Context("Scope: Cluster", func() {
 
 		It("should evaluate all namespaces in cluster scope", func() {
-			_, env := defaultTestSetup("testdata", "test-03")
+			sc, env := defaultTestSetup("testdata", "test-03")
+			Expect(sc.Config.Scope).To(Equal(config.SCOPE_CLUSTER))
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())

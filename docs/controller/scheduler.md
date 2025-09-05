@@ -9,7 +9,7 @@ To disable the scheduler, make sure that `scheduler` is not part of the `--contr
 If not disabled, the scheduler requires a config that looks like this:
 ```yaml
 scheduler:
-  scope: Namespaced  # optional
+  scope: Cluster  # optional
   strategy: Balanced # optional
 
   selectors:                  # optional
@@ -58,7 +58,7 @@ scheduler:
 ```
 
 The following fields can be specified inside the `scheduler` field:
-- `scope` _(optional, defaults to `Namespaced`)_
+- `scope` _(optional, defaults to `Cluster`)_
   - Valid values: `Namespaced`, `Cluster`
   - Determines whether the scheduler takes `Cluster` resources in all namespaces into accounts or only in a specific one.
     - In `Namespaced` mode, only `Cluster` resources from a single namespace are taken into account when checking for existing clusters to schedule requests to. If the cluster template that corresponds to the purpose specified in the request has a `metadata.namespace` set, this namespace is used to check for `Cluster` resources and also to create new ones. If not, the namespace of the `ClusterRequest` resource is used instead.
