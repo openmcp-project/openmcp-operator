@@ -1,8 +1,6 @@
 package config
 
 import (
-	"fmt"
-
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
@@ -54,8 +52,8 @@ func (c *ManagedControlPlaneConfig) Validate(fldPath *field.Path) error {
 		if len(c.DefaultOIDCProvider.RoleBindings) > 0 {
 			errs = append(errs, field.Forbidden(oidcFldPath.Child("roleBindings"), "role bindings are specified in the MCP spec and may not be set in the config"))
 		}
-		if c.DefaultOIDCProvider.Name != "" && c.DefaultOIDCProvider.Name != corev2alpha1.DefaultOIDCProviderName {
-			errs = append(errs, field.Invalid(oidcFldPath.Child("name"), c.DefaultOIDCProvider.Name, fmt.Sprintf("standard OIDC provider name must be '%s' or left empty (in which case it will be defaulted)", corev2alpha1.DefaultOIDCProviderName)))
+		if c.DefaultOIDCProvider.Name == "system" {
+			errs = append(errs, field.Invalid(oidcFldPath.Child("name"), c.DefaultOIDCProvider.Name, "'system' is a reserved string and may not be used as name for the default OIDC provider"))
 		}
 	}
 
