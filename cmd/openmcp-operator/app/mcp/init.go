@@ -13,7 +13,9 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	crdutil "github.com/openmcp-project/controller-utils/pkg/crds"
+	"github.com/openmcp-project/controller-utils/pkg/logging"
 	"github.com/openmcp-project/controller-utils/pkg/resources"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
@@ -22,12 +24,16 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/crds"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
+	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 )
 
 // currently hard-coded, can be made configurable in the future if needed
-const MCPPurposeOverrideValidationPolicyName = "mcp-purpose-override-validation"
+const (
+	MCPPurposeOverrideValidationPolicyName         = "mcp-purpose-override-validation." + corev2alpha1.GroupName
+	OIDCProviderNameUniquenessValidationPolicyName = "oidc-provider-name-uniqueness." + corev2alpha1.GroupName
+)
 
 func NewInitCommand(po *options.PersistentOptions) *cobra.Command {
 	opts := &InitOptions{
@@ -126,6 +132,42 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	}
 
 	// ensure ValidatingAdmissionPolicy to prevent removal or changes to the MCP purpose override label
+	if err := o.ensureMCPPurposeOverrideImmutabilityValidationPolicy(ctx, log, onboardingCluster); err != nil {
+		return fmt.Errorf("error ensuring MCP purpose override immutability ValidatingAdmissionPolicy: %w", err)
+	}
+
+	// ensure ValidatingAdmissionPolicy to prevent MCP resources to specify OIDC providers with the same name as the default OIDC provider
+	var mcpConfig *config.ManagedControlPlaneConfig
+	if o.Config != nil {
+		mcpConfig = o.Config.ManagedControlPlane
+	}
+	if err := o.ensureDefaultOIDCProviderNameUniquenessValidationPolicy(ctx, log, onboardingCluster, mcpConfig); err != nil {
+		return fmt.Errorf("error ensuring OIDC provider name uniqueness ValidatingAdmissionPolicy: %w", err)
+	}
+
+	log.Info("Finished init command")
+	return nil
+}
+
+func (o *InitOptions) PrintRaw(cmd *cobra.Command) {}
+
+func (o *InitOptions) PrintRawOptions(cmd *cobra.Command) {
+	cmd.Println("########## RAW OPTIONS START ##########")
+	o.PersistentOptions.PrintRaw(cmd)
+	o.PrintRaw(cmd)
+	cmd.Println("########## RAW OPTIONS END ##########")
+}
+
+func (o *InitOptions) PrintCompleted(cmd *cobra.Command) {}
+
+func (o *InitOptions) PrintCompletedOptions(cmd *cobra.Command) {
+	cmd.Println("########## COMPLETED OPTIONS START ##########")
+	o.PersistentOptions.PrintCompleted(cmd)
+	o.PrintCompleted(cmd)
+	cmd.Println("########## COMPLETED OPTIONS END ##########")
+}
+
+func (o *InitOptions) ensureMCPPurposeOverrideImmutabilityValidationPolicy(ctx context.Context, log logging.Logger, onboardingCluster *clusters.Cluster) error {
 	labelSelector := client.MatchingLabels{
 		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
@@ -136,7 +178,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	}
 	for _, evapb := range evapbs.Items {
 		if evapb.Name != MCPPurposeOverrideValidationPolicyName {
-			log.Info("Deleting existing ValidatingAdmissionPolicyBinding with architecture immutability purpose", "name", evapb.Name)
+			log.Info("Deleting existing ValidatingAdmissionPolicyBinding for MCP purpose immutability", "name", evapb.Name)
 			if err := onboardingCluster.Client().Delete(ctx, &evapb); client.IgnoreNotFound(err) != nil {
 				return fmt.Errorf("error deleting ValidatingAdmissionPolicyBinding '%s': %w", evapb.Name, err)
 			}
@@ -148,13 +190,13 @@ func (o *InitOptions) Run(ctx context.Context) error {
 	}
 	for _, evap := range evaps.Items {
 		if evap.Name != MCPPurposeOverrideValidationPolicyName {
-			log.Info("Deleting existing ValidatingAdmissionPolicy with architecture immutability purpose", "name", evap.Name)
+			log.Info("Deleting existing ValidatingAdmissionPolicy for MCP purpose immutability", "name", evap.Name)
 			if err := onboardingCluster.Client().Delete(ctx, &evap); client.IgnoreNotFound(err) != nil {
 				return fmt.Errorf("error deleting ValidatingAdmissionPolicy '%s': %w", evap.Name, err)
 			}
 		}
 	}
-	log.Info("creating/updating ValidatingAdmissionPolicies to prevent undesired changes to the MCP purpose override label ...")
+	log.Info("Creating/updating ValidatingAdmissionPolicies to prevent undesired changes to the MCP purpose override label ...")
 	vapm := resources.NewValidatingAdmissionPolicyMutator(MCPPurposeOverrideValidationPolicyName, admissionv1.ValidatingAdmissionPolicySpec{
 		FailurePolicy: ptr.To(admissionv1.Fail),
 		MatchConstraints: &admissionv1.MatchResources{
@@ -200,7 +242,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
 	})
 	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapm); err != nil {
-		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicy for mcp purpose override validation: %w", err)
+		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicy for MCP purpose immutability validation: %w", err)
 	}
 
 	vapbm := resources.NewValidatingAdmissionPolicyBindingMutator(MCPPurposeOverrideValidationPolicyName, admissionv1.ValidatingAdmissionPolicyBindingSpec{
@@ -233,28 +275,114 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
 	})
 	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapbm); err != nil {
-		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicyBinding for mcp purpose override validation: %w", err)
+		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicyBinding for MCP purpose immutability validation: %w", err)
 	}
-	log.Info("ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding for mcp purpose override validation created/updated")
-
-	log.Info("Finished init command")
+	log.Info("ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding for MCP purpose immutability validation created/updated")
 	return nil
 }
 
-func (o *InitOptions) PrintRaw(cmd *cobra.Command) {}
+func (o *InitOptions) ensureDefaultOIDCProviderNameUniquenessValidationPolicy(ctx context.Context, log logging.Logger, onboardingCluster *clusters.Cluster, mcpConfig *config.ManagedControlPlaneConfig) error {
+	if mcpConfig == nil {
+		mcpConfig = &config.ManagedControlPlaneConfig{}
+		if err := mcpConfig.Default(nil); err != nil {
+			return fmt.Errorf("error defaulting ManagedControlPlane controller config: %w", err)
+		}
+	}
+	defaultOIDCProvider := mcpConfig.DefaultOIDCProvider
+	defaultOIDCProviderName := ""
+	if defaultOIDCProvider != nil {
+		defaultOIDCProvider.Default()
+		defaultOIDCProviderName = defaultOIDCProvider.Name
+	}
 
-func (o *InitOptions) PrintRawOptions(cmd *cobra.Command) {
-	cmd.Println("########## RAW OPTIONS START ##########")
-	o.PersistentOptions.PrintRaw(cmd)
-	o.PrintRaw(cmd)
-	cmd.Println("########## RAW OPTIONS END ##########")
-}
+	labelSelector := client.MatchingLabels{
+		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeOIDCProviderNameUniqueness,
+	}
+	evapbs := &admissionv1.ValidatingAdmissionPolicyBindingList{}
+	if err := onboardingCluster.Client().List(ctx, evapbs, labelSelector); err != nil {
+		return fmt.Errorf("error listing ValidatingAdmissionPolicyBindings: %w", err)
+	}
+	for _, evapb := range evapbs.Items {
+		if evapb.Name != OIDCProviderNameUniquenessValidationPolicyName {
+			log.Info("Deleting existing ValidatingAdmissionPolicyBinding for OIDC provider name uniqueness", "name", evapb.Name)
+			if err := onboardingCluster.Client().Delete(ctx, &evapb); client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("error deleting ValidatingAdmissionPolicyBinding '%s': %w", evapb.Name, err)
+			}
+		}
+	}
+	evaps := &admissionv1.ValidatingAdmissionPolicyList{}
+	if err := onboardingCluster.Client().List(ctx, evaps, labelSelector); err != nil {
+		return fmt.Errorf("error listing ValidatingAdmissionPolicies: %w", err)
+	}
+	for _, evap := range evaps.Items {
+		if evap.Name != OIDCProviderNameUniquenessValidationPolicyName {
+			log.Info("Deleting existing ValidatingAdmissionPolicy for OIDC provider name uniqueness", "name", evap.Name)
+			if err := onboardingCluster.Client().Delete(ctx, &evap); client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("error deleting ValidatingAdmissionPolicy '%s': %w", evap.Name, err)
+			}
+		}
+	}
+	log.Info("Creating/updating ValidatingAdmissionPolicies to ensure that no MCP specifies duplicate OIDC provider names or an OIDC provider with the same name as the standard OIDC provider ...")
+	vapm := resources.NewValidatingAdmissionPolicyMutator(OIDCProviderNameUniquenessValidationPolicyName, admissionv1.ValidatingAdmissionPolicySpec{
+		FailurePolicy: ptr.To(admissionv1.Fail),
+		MatchConstraints: &admissionv1.MatchResources{
+			ResourceRules: []admissionv1.NamedRuleWithOperations{
+				{
+					RuleWithOperations: admissionv1.RuleWithOperations{
+						Operations: []admissionv1.OperationType{
+							admissionv1.Create,
+							admissionv1.Update,
+						},
+						Rule: admissionv1.Rule{
+							APIGroups:   []string{corev2alpha1.GroupVersion.Group},
+							APIVersions: []string{corev2alpha1.GroupVersion.Version},
+							Resources: []string{
+								"managedcontrolplanev2s",
+							},
+						},
+					},
+				},
+			},
+		},
+		Variables: []admissionv1.Variable{
+			{
+				Name:       "defaultOIDCProviderName",
+				Expression: fmt.Sprintf(`"%s"`, defaultOIDCProviderName),
+			},
+		},
+		Validations: []admissionv1.Validation{
+			{
+				Expression: `!(has(object.spec.iam.oidcProviders) && (
+	object.spec.iam.oidcProviders.exists(elem, elem.name == variables.defaultOIDCProviderName) ||
+  object.spec.iam.oidcProviders.exists(elem, !object.spec.iam.oidcProviders.exists_one(elem2, elem2.name == elem.name))
+))
+`,
+				Message: fmt.Sprintf(`There are no duplicate names allowed in spec.iam.oidcProviders and no OIDC provider may have the same name the default OIDC provider, which is "%s"`, defaultOIDCProviderName),
+			},
+		},
+	})
+	vapm.MetadataMutator().WithLabels(map[string]string{
+		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeOIDCProviderNameUniqueness,
+	})
+	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapm); err != nil {
+		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicy for OIDC provider name uniqueness validation: %w", err)
+	}
 
-func (o *InitOptions) PrintCompleted(cmd *cobra.Command) {}
-
-func (o *InitOptions) PrintCompletedOptions(cmd *cobra.Command) {
-	cmd.Println("########## COMPLETED OPTIONS START ##########")
-	o.PersistentOptions.PrintCompleted(cmd)
-	o.PrintCompleted(cmd)
-	cmd.Println("########## COMPLETED OPTIONS END ##########")
+	vapbm := resources.NewValidatingAdmissionPolicyBindingMutator(OIDCProviderNameUniquenessValidationPolicyName, admissionv1.ValidatingAdmissionPolicyBindingSpec{
+		PolicyName: OIDCProviderNameUniquenessValidationPolicyName,
+		ValidationActions: []admissionv1.ValidationAction{
+			admissionv1.Deny,
+		},
+	})
+	vapbm.MetadataMutator().WithLabels(map[string]string{
+		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeOIDCProviderNameUniqueness,
+	})
+	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapbm); err != nil {
+		return fmt.Errorf("error creating/updating ValidatingAdmissionPolicyBinding for OIDC provider name uniqueness validation: %w", err)
+	}
+	log.Info("ValidatingAdmissionPolicy and ValidatingAdmissionPolicyBinding for OIDC provider name uniqueness validation created/updated")
+	return nil
 }

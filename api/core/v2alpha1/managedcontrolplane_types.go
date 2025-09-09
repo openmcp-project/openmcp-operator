@@ -31,7 +31,6 @@ type IAMConfig struct {
 
 	// OIDCProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
 	// They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
-	// +kubebuilder:validation:items:XValidation:rule="self.name != 'default'", message="OIDC provider name must not be 'default' as this is reserved for the standard OIDC provider"
 	// +optional
 	OIDCProviders []*commonapi.OIDCProviderConfig `json:"oidcProviders,omitempty"`
 }

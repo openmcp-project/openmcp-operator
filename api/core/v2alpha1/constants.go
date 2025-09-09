@@ -15,6 +15,8 @@ const (
 
 	// ManagedPurposeMCPPurposeOverride is used as value for the managed purpose label. It must not be modified.
 	ManagedPurposeMCPPurposeOverride = "mcp-purpose-override"
+	// ManagedPurposeOIDCProviderNameUniqueness is used as value for the managed purpose label. It must not be modified.
+	ManagedPurposeOIDCProviderNameUniqueness = "oidc-provider-name-uniqueness"
 
 	MCPFinalizer = GroupName + "/mcp"
 

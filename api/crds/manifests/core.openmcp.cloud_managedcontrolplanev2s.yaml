@@ -182,10 +182,6 @@ spec:
                       - name
                       - roleBindings
                       type: object
-                      x-kubernetes-validations:
-                      - message: OIDC provider name must not be 'default' as this
-                          is reserved for the standard OIDC provider
-                        rule: self.name != 'default'
                     type: array
                   roleBindings:
                     description: |-
