@@ -12,11 +12,9 @@ managedControlPlane:
   mcpClusterPurpose: mcp # defaults to 'mcp'
   reconcileMCPEveryXDays: 7 # defaults to 0
   defaultOIDCProvider:
-    name: default # must be 'default' or omitted for the default oidc provider
+    name: openmcp # defaults to 'openmcp' when omitted
     issuer: https://oidc.example.com
     clientID: my-client-id
-    usernamePrefix: "my-user:"
-    groupsPrefix: "my-group:"
     extraScopes:
     - foo
 ```
@@ -45,8 +43,6 @@ spec:
     - name: my-oidc-provider
       issuer: https://oidc.example.com
       clientID: my-client-id
-      usernamePrefix: "my-user:"
-      groupsPrefix: "my-group:"
       extraScopes:
       - foo
       roleBindings:
