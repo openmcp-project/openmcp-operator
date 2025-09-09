@@ -1,23 +1,29 @@
 package common
 
 import (
-	"strings"
-
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 type OIDCProviderConfig struct {
 	// Name is the name of the OIDC provider.
 	// May be used in k8s resources, therefore has to be a valid k8s name.
+	// It is also used (with a ':' suffix) as prefix in k8s resources referencing users or groups from this OIDC provider.
+	// E.g. if the name is 'example', the username 'alice' from this provider will be referenced as 'example:alice' in k8s resources.
+	// Must be unique among all OIDC providers configured in the same environment.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
-	// +kubebuilder:validation:Pattern=`[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*`
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
+	// +kubebuilder:validation:XValidation:rule=`self != "system"`, message="'system' is a reserved string and may not be used as OIDC provider name"
 	Name string `json:"name"`
 
 	// Issuer is the issuer URL of the OIDC provider.
+	// Must be a valid URL.
+	// +kubebuilder:validation:Pattern=`^https?://[^\s/$.?#].[^\s]*$`
+	// +kubebuilder:validation:MinLength=1
 	Issuer string `json:"issuer"`
 
 	// ClientID is the client ID to use for the OIDC provider.
+	// +kubebuilder:validation:MinLength=1
 	ClientID string `json:"clientID"`
 
 	// GroupsClaim is the claim in the OIDC token that contains the groups.
@@ -26,23 +32,11 @@ type OIDCProviderConfig struct {
 	// +optional
 	GroupsClaim string `json:"groupsClaim"`
 
-	// GroupsPrefix is a prefix that will be added to all group names when referenced in RBAC rules.
-	// This is required to avoid conflicts with Kubernetes built-in groups.
-	// If the prefix does not end with a colon (:), it will be added automatically.
-	// +kubebuilder:validation:MinLength=1
-	GroupsPrefix string `json:"groupsPrefix"`
-
 	// UsernameClaim is the claim in the OIDC token that contains the username.
 	// If empty, the default claim "sub" will be used.
 	// +kubebuilder:default="sub"
 	// +optional
 	UsernameClaim string `json:"usernameClaim"`
-
-	// UsernamePrefix is a prefix that will be added to all usernames when referenced in RBAC rules.
-	// This is required to avoid conflicts with Kubernetes built-in users.
-	// If the prefix does not end with a colon (:), it will be added automatically.
-	// +kubebuilder:validation:MinLength=1
-	UsernamePrefix string `json:"usernamePrefix"`
 
 	// ExtraScopes is a list of extra scopes that should be requested from the OIDC provider.
 	// +optional
@@ -90,14 +84,14 @@ func (o *OIDCProviderConfig) Default() *OIDCProviderConfig {
 	if o.GroupsClaim == "" {
 		o.GroupsClaim = "groups"
 	}
-	if !strings.HasSuffix(o.GroupsPrefix, ":") {
-		o.GroupsPrefix += ":"
-	}
 	if o.UsernameClaim == "" {
 		o.UsernameClaim = "sub"
 	}
-	if !strings.HasSuffix(o.UsernamePrefix, ":") {
-		o.UsernamePrefix += ":"
-	}
 	return o
+}
+
+// UsernameGroupsPrefix returns the prefix for usernames and groups for this OIDC provider.
+// It is equivalent to <provider_name> + ":".
+func (o *OIDCProviderConfig) UsernameGroupsPrefix() string {
+	return o.Name + ":"
 }

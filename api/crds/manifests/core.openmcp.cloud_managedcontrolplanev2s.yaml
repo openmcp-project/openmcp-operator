@@ -58,6 +58,7 @@ spec:
                         clientID:
                           description: ClientID is the client ID to use for the OIDC
                             provider.
+                          minLength: 1
                           type: string
                         extraScopes:
                           description: ExtraScopes is a list of extra scopes that
@@ -71,24 +72,28 @@ spec:
                             GroupsClaim is the claim in the OIDC token that contains the groups.
                             If empty, the default claim "groups" will be used.
                           type: string
-                        groupsPrefix:
-                          description: |-
-                            GroupsPrefix is a prefix that will be added to all group names when referenced in RBAC rules.
-                            This is required to avoid conflicts with Kubernetes built-in groups.
-                            If the prefix does not end with a colon (:), it will be added automatically.
-                          minLength: 1
-                          type: string
                         issuer:
-                          description: Issuer is the issuer URL of the OIDC provider.
+                          description: |-
+                            Issuer is the issuer URL of the OIDC provider.
+                            Must be a valid URL.
+                          minLength: 1
+                          pattern: ^https?://[^\s/$.?#].[^\s]*$
                           type: string
                         name:
                           description: |-
                             Name is the name of the OIDC provider.
                             May be used in k8s resources, therefore has to be a valid k8s name.
+                            It is also used (with a ':' suffix) as prefix in k8s resources referencing users or groups from this OIDC provider.
+                            E.g. if the name is 'example', the username 'alice' from this provider will be referenced as 'example:alice' in k8s resources.
+                            Must be unique among all OIDC providers configured in the same environment.
                           maxLength: 253
                           minLength: 1
-                          pattern: '[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*'
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                           type: string
+                          x-kubernetes-validations:
+                          - message: '''system'' is a reserved string and may not
+                              be used as OIDC provider name'
+                            rule: self != "system"
                         roleBindings:
                           description: |-
                             RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
@@ -171,25 +176,12 @@ spec:
                             UsernameClaim is the claim in the OIDC token that contains the username.
                             If empty, the default claim "sub" will be used.
                           type: string
-                        usernamePrefix:
-                          description: |-
-                            UsernamePrefix is a prefix that will be added to all usernames when referenced in RBAC rules.
-                            This is required to avoid conflicts with Kubernetes built-in users.
-                            If the prefix does not end with a colon (:), it will be added automatically.
-                          minLength: 1
-                          type: string
                       required:
                       - clientID
-                      - groupsPrefix
                       - issuer
                       - name
                       - roleBindings
-                      - usernamePrefix
                       type: object
-                      x-kubernetes-validations:
-                      - message: OIDC provider name must not be 'default' as this
-                          is reserved for the standard OIDC provider
-                        rule: self.name != 'default'
                     type: array
                   roleBindings:
                     description: |-

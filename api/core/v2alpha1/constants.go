@@ -2,7 +2,7 @@ package v2alpha1
 
 const (
 	// DefaultOIDCProviderName is the identifier for the default OIDC provider.
-	DefaultOIDCProviderName = "default"
+	DefaultOIDCProviderName = "openmcp"
 	// DefaultMCPClusterPurpose is the default purpose for ManagedControlPlane clusters.
 	DefaultMCPClusterPurpose = "mcp"
 )
@@ -15,6 +15,8 @@ const (
 
 	// ManagedPurposeMCPPurposeOverride is used as value for the managed purpose label. It must not be modified.
 	ManagedPurposeMCPPurposeOverride = "mcp-purpose-override"
+	// ManagedPurposeOIDCProviderNameUniqueness is used as value for the managed purpose label. It must not be modified.
+	ManagedPurposeOIDCProviderNameUniqueness = "oidc-provider-name-uniqueness"
 
 	MCPFinalizer = GroupName + "/mcp"
 
