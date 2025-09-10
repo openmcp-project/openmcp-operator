@@ -342,6 +342,13 @@ type Manager interface {
 	// permissions are the permissions to request for the AccessRequest.
 	CreateAndWaitForCluster(ctx context.Context, clusterName, purpose string,
 		scheme *runtime.Scheme, permissions []clustersv1alpha1.PermissionsRequest) (*clusters.Cluster, error)
+
+	// WaitForClusterAccess creates or updates an AccessRequest for the given reference and waits until it is granted.
+	// localName is used to derive the name of the AccessRequest, which will be "<controllerName>--<localName>".
+	// ref is the reference to either a Cluster or a ClusterRequest, depending on refType.
+	// refType is either 'Cluster' or 'ClusterRequest' and determines what ref references.
+	// permissions are the permissions to request for the AccessRequest.
+	WaitForClusterAccess(ctx context.Context, localName string, scheme *runtime.Scheme, ref *commonapi.ObjectReference, refType ClusterReferenceType, permissions []clustersv1alpha1.PermissionsRequest) (*clusters.Cluster, *clustersv1alpha1.AccessRequest, error)
 }
 
 type managerImpl struct {
@@ -419,28 +426,52 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, localName, pu
 		return nil, fmt.Errorf("failed to wait for ClusterRequest: %w", err)
 	}
 
+	cl, _, err := m.WaitForClusterAccess(ctx, localName, scheme, &commonapi.ObjectReference{
+		Name:      cr.Name,
+		Namespace: cr.Namespace,
+	}, ReferenceToClusterRequest, permissions)
+	return cl, err
+}
+
+type ClusterReferenceType string
+
+const (
+	ReferenceToCluster        ClusterReferenceType = "Cluster"
+	ReferenceToClusterRequest ClusterReferenceType = "ClusterRequest"
+)
+
+// WaitForClusterAccess creates or updates an AccessRequest for the given reference and waits until it is granted.
+// localName is used to derive the name of the AccessRequest, which will be "<controllerName>--<localName>".
+// ref is the reference to either a Cluster or a ClusterRequest, depending on refType.
+// refType is either 'Cluster' or 'ClusterRequest' and determines what ref references.
+// permissions are the permissions to request for the AccessRequest.
+func (m *managerImpl) WaitForClusterAccess(ctx context.Context, localName string, scheme *runtime.Scheme, ref *commonapi.ObjectReference, refType ClusterReferenceType, permissions []clustersv1alpha1.PermissionsRequest) (*clusters.Cluster, *clustersv1alpha1.AccessRequest, error) {
 	ar := &clustersv1alpha1.AccessRequest{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
+			Name:      StableRequestNameFromLocalName(m.controllerName, localName),
 			Namespace: m.controllerNamespace,
 		},
 	}
 
 	accessRequestMutator := newAccessRequestMutator(ar.Name, ar.Namespace)
-	accessRequestMutator.WithRequestRef(&commonapi.ObjectReference{
-		Name:      cr.Name,
-		Namespace: cr.Namespace,
-	})
+	switch refType {
+	case ReferenceToCluster:
+		accessRequestMutator.WithClusterRef(ref)
+	case ReferenceToClusterRequest:
+		accessRequestMutator.WithRequestRef(ref)
+	default:
+		return nil, nil, fmt.Errorf("invalid ClusterReferenceType: %s", refType)
+	}
 	accessRequestMutator.WithTokenPermissions(permissions)
 	accessRequestMutator.WithMetadata(resources.NewMetadataMutator().WithLabels(map[string]string{
 		constv1alpha1.ManagedByLabel: m.controllerName,
 	}))
 
 	if err := resources.CreateOrUpdateResource(ctx, m.platformClusterClient, accessRequestMutator); err != nil {
-		return nil, fmt.Errorf("failed to create/update AccessRequest: %w", err)
+		return nil, nil, fmt.Errorf("failed to create/update AccessRequest: %w", err)
 	}
 
-	err = m.wait(ctx, func(ctx context.Context) (bool, error) {
+	if err := m.wait(ctx, func(ctx context.Context) (bool, error) {
 		if err := m.platformClusterClient.Get(ctx, client.ObjectKeyFromObject(ar), ar); err != nil {
 			return false, fmt.Errorf("failed to get AccessRequest: %w", err)
 		}
@@ -450,13 +481,12 @@ func (m *managerImpl) CreateAndWaitForCluster(ctx context.Context, localName, pu
 		}
 
 		return ar.Status.IsGranted() || ar.Status.IsDenied(), nil
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to wait for AccessRequest: %w", err)
+	}); err != nil {
+		return nil, ar, fmt.Errorf("failed to wait for AccessRequest: %w", err)
 	}
 
-	return createClusterForAccessRequest(ctx, m.platformClusterClient, clustersv1alpha1.PURPOSE_ONBOARDING, scheme, ar)
+	cl, err := createClusterForAccessRequest(ctx, m.platformClusterClient, clustersv1alpha1.PURPOSE_ONBOARDING, scheme, ar)
+	return cl, ar, err
 }
 
 func (m *managerImpl) wait(ctx context.Context, test func(ctx context.Context) (bool, error)) error {
