@@ -13,7 +13,7 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/onsi/ginkgo/v2 v2.25.3
 	github.com/onsi/gomega v1.38.2
-	github.com/openmcp-project/controller-utils v0.19.0
+	github.com/openmcp-project/controller-utils v0.20.0
 	github.com/openmcp-project/openmcp-operator/api v0.14.0
 	github.com/openmcp-project/openmcp-operator/lib v0.14.0
 	github.com/spf13/cobra v1.10.1
@@ -67,7 +67,7 @@ require (
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
-	github.com/spf13/pflag v1.0.9 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
