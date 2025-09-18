@@ -11,19 +11,20 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"github.com/openmcp-project/controller-utils/pkg/clusters"
-	"github.com/openmcp-project/controller-utils/pkg/resources"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/openmcp-project/controller-utils/pkg/clusters"
+	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
+	"github.com/openmcp-project/controller-utils/pkg/resources"
+
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
+	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	constv1alpha1 "github.com/openmcp-project/openmcp-operator/api/constants"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
-
-	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 const (
@@ -839,11 +840,13 @@ func (m *accessRequestMutator) Mutate(accessRequest *clustersv1alpha1.AccessRequ
 
 // StableRequestName generates a stable name for a Cluster- or AccessRequest related to an MCP.
 // This basically results in '<lowercase_controller_name>--<request_name>'.
+// If the resulting string exceeds the Kubernetes name length limit of 63 characters, it will be truncated with the last characters replaced by a hash of what was removed.
 func StableRequestName(controllerName string, request reconcile.Request) string {
 	return StableRequestNameFromLocalName(controllerName, request.Name)
 }
 
+// StableRequestNameFromLocalName works like StableRequestName but takes a local name directly instead of a reconcile.Request.
 func StableRequestNameFromLocalName(controllerName, localName string) string {
 	controllerName = strings.ToLower(controllerName)
-	return fmt.Sprintf("%s--%s", controllerName, localName)
+	return ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s--%s", controllerName, localName), ctrlutils.K8sMaxNameLength)
 }
