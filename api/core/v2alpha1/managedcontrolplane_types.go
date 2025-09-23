@@ -3,12 +3,16 @@ package v2alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
+
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 type ManagedControlPlaneV2Spec struct {
 	// IAM contains the access management configuration for the ManagedControlPlaneV2.
 	IAM IAMConfig `json:"iam"`
+
+	Token map[string]clustersv1alpha1.TokenConfig `json:"token,omitempty"`
 }
 
 type ManagedControlPlaneV2Status struct {

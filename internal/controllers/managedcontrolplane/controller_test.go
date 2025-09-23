@@ -207,12 +207,12 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			By("verifying that the AccessRequest is not ready for oidc provider: " + oidc.Name)
 			Expect(mcp.Status.Conditions).To(ContainElements(
 				MatchCondition(TestCondition().
-					WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
+					WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.OIDCNamePrefix + oidc.Name).
 					WithStatus(metav1.ConditionFalse).
 					WithReason(cconst.ReasonWaitingForAccessRequest)),
 			))
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			Expect(ar.Spec.RequestRef.Name).To(Equal(cr.Name))
@@ -226,7 +226,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("fake: AccessRequest readiness for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
@@ -238,7 +238,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			sec.SetName(ar.Status.SecretRef.Name)
 			sec.SetNamespace(ar.Namespace)
 			sec.Data = map[string][]byte{
-				clustersv1alpha1.SecretKeyKubeconfig: []byte(oidc.Name),
+				clustersv1alpha1.SecretKeyKubeconfig: []byte(corev2alpha1.OIDCNamePrefix + oidc.Name),
 			}
 			Expect(env.Client(platform).Status().Update(env.Ctx, ar)).To(Succeed())
 			Expect(env.Client(platform).Create(env.Ctx, sec)).To(Succeed())
@@ -264,7 +264,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			Expect(mcp.Status.Conditions).To(ContainElements(
 				MatchCondition(TestCondition().
-					WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
+					WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.OIDCNamePrefix + oidc.Name).
 					WithStatus(metav1.ConditionTrue)),
 			))
 		}
@@ -292,7 +292,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("fake: adding finalizer to AccessRequest for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			controllerutil.AddFinalizer(ar, "dummy")
@@ -327,7 +327,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				removedOIDCIdx = i
 				Expect(mcp.Status.Conditions).To(ContainElements(
 					MatchCondition(TestCondition().
-						WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
+						WithType(corev2alpha1.ConditionPrefixAccessReady + oidc.Name).
 						WithStatus(metav1.ConditionFalse).
 						WithReason(cconst.ReasonWaitingForAccessRequestDeletion),
 					)))
@@ -335,21 +335,21 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			} else {
 				Expect(mcp.Status.Conditions).To(ContainElements(
 					MatchCondition(TestCondition().
-						WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
+						WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.OIDCNamePrefix + oidc.Name).
 						WithStatus(metav1.ConditionTrue),
 					)))
-				Expect(mcp.Status.Access).To(HaveKey(oidc.Name))
+				Expect(mcp.Status.Access).To(HaveKey(corev2alpha1.OIDCNamePrefix + oidc.Name))
 			}
 		}
 		Expect(removedOIDCIdx).To(BeNumerically(">", -1))
 		oidcProviders = append(oidcProviders[:removedOIDCIdx], oidcProviders[removedOIDCIdx+1:]...)
-		Expect(mcp.Status.Access).ToNot(HaveKey(removedOIDCProviderName))
+		Expect(mcp.Status.Access).ToNot(HaveKey(corev2alpha1.OIDCNamePrefix + removedOIDCProviderName))
 		sec := &corev1.Secret{}
 		sec.SetName(toBeRemovedSecretName)
 		sec.SetNamespace(mcp.Namespace)
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(sec), sec)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 		ar := &clustersv1alpha1.AccessRequest{}
-		ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, removedOIDCProviderName))
+		ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+removedOIDCProviderName))
 		ar.SetNamespace(platformNamespace)
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 		Expect(ar.GetDeletionTimestamp().IsZero()).To(BeFalse())
@@ -380,14 +380,14 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			By("verifying condition for oidc provider: " + oidc.Name)
 			Expect(mcp.Status.Conditions).To(ContainElements(
 				MatchCondition(TestCondition().
-					WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
+					WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.OIDCNamePrefix + oidc.Name).
 					WithStatus(metav1.ConditionTrue)),
 			))
 		}
 		Expect(mcp.Status.Access).ToNot(HaveKey(removedOIDCProviderName))
 		Expect(mcp.Status.Conditions).ToNot(ContainElements(
 			MatchCondition(TestCondition().
-				WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + removedOIDCProviderName),
+				WithType(corev2alpha1.ConditionPrefixAccessReady + removedOIDCProviderName),
 			),
 		))
 
@@ -447,7 +447,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("verifying AccessRequest does not have a deletion timestamp for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			Expect(ar.DeletionTimestamp.IsZero()).To(BeTrue())
@@ -499,13 +499,13 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("verifying AccessRequest and access secret deletion status for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			Expect(ar.DeletionTimestamp.IsZero()).To(BeFalse())
 			Expect(mcp.Status.Conditions).To(ContainElements(
 				MatchCondition(TestCondition().
-					WithType(corev2alpha1.ConditionPrefixOIDCAccessReady + oidc.Name).
+					WithType(corev2alpha1.ConditionPrefixAccessReady + oidc.Name).
 					WithStatus(metav1.ConditionFalse).
 					WithReason(cconst.ReasonWaitingForAccessRequestDeletion),
 				),
@@ -526,7 +526,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("fake: removing finalizer from AccessRequest for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+oidc.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			controllerutil.RemoveFinalizer(ar, "dummy")

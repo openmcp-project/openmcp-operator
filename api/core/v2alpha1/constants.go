@@ -11,6 +11,7 @@ const (
 	MCPNameLabel            = GroupName + "/mcp-name"
 	MCPNamespaceLabel       = GroupName + "/mcp-namespace"
 	OIDCProviderLabel       = GroupName + "/oidc-provider"
+	TokenProviderLabel      = GroupName + "/token-provider"
 	MCPPurposeOverrideLabel = GroupName + "/purpose"
 
 	// ManagedPurposeMCPPurposeOverride is used as value for the managed purpose label. It must not be modified.
@@ -32,8 +33,13 @@ const (
 	ConditionClusterRequestReady       = "ClusterRequestReady"
 	ConditionClusterConditionsSynced   = "ClusterConditionsSynced"
 	ConditionPrefixClusterCondition    = "Cluster."
-	ConditionPrefixOIDCAccessReady     = "OIDCAccessReady."
+	ConditionPrefixAccessReady         = "AccessReady."
 	ConditionAllAccessReady            = "AllAccessReady"
 	ConditionAllServicesDeleted        = "AllServicesDeleted"
 	ConditionAllClusterRequestsDeleted = "AllClusterRequestsDeleted"
+)
+
+const (
+	OIDCNamePrefix  = "oidc:"
+	TokenNamePrefix = "token:"
 )
