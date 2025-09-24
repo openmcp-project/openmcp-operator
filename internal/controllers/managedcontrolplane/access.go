@@ -298,16 +298,16 @@ func (r *ManagedControlPlaneReconciler) deleteUndesiredAccessSecrets(ctx context
 		accessSecretsInDeletion.Insert(providerName)
 		if !mcpSecret.DeletionTimestamp.IsZero() {
 			log.Debug("Waiting for deletion of access secret that is no longer required", "secretName", mcpSecret.Name, "secretNamespace", mcpSecret.Namespace, "oidcProviderName", oidcProviderName)
-			createCon(corev2alpha1.ConditionPrefixAccessReady+oidcProviderName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequestDeletion, "AccessRequest secret is being deleted")
+			createCon(corev2alpha1.ConditionPrefixAccessReady+providerName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequestDeletion, "AccessRequest secret is being deleted")
 			continue
 		}
 		log.Debug("Deleting access secret that is no longer required", "secretName", mcpSecret.Name, "secretNamespace", mcpSecret.Namespace, "oidcProviderName", oidcProviderName)
 		if err := r.OnboardingCluster.Client().Delete(ctx, &mcpSecret); client.IgnoreNotFound(err) != nil {
 			rerr := errutils.WithReason(fmt.Errorf("error deleting access secret '%s/%s': %w", mcpSecret.Namespace, mcpSecret.Name, err), cconst.ReasonOnboardingClusterInteractionProblem)
 			errs.Append(rerr)
-			createCon(corev2alpha1.ConditionPrefixAccessReady+oidcProviderName, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
+			createCon(corev2alpha1.ConditionPrefixAccessReady+providerName, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
 		}
-		createCon(corev2alpha1.ConditionPrefixAccessReady+oidcProviderName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequestDeletion, "access secret is being deleted")
+		createCon(corev2alpha1.ConditionPrefixAccessReady+providerName, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequestDeletion, "access secret is being deleted")
 	}
 	if rerr := errs.Aggregate(); rerr != nil {
 		createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequestDeletion, "Error deleting access secrets that are no longer needed")

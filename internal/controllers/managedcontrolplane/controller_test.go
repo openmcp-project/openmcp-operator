@@ -220,6 +220,24 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			Expect(ar.Spec.OIDC).ToNot(BeNil())
 			Expect(ar.Spec.OIDC.OIDCProviderConfig).To(Equal(oidc))
 		}
+		for _, token := range mcp.Spec.IAM.Tokens {
+			By("verifying that the AccessRequest is not ready for token: " + token.Name)
+			Expect(mcp.Status.Conditions).To(ContainElements(
+				MatchCondition(TestCondition().
+					WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.TokenNamePrefix + token.Name).
+					WithStatus(metav1.ConditionFalse).
+					WithReason(cconst.ReasonWaitingForAccessRequest)),
+			))
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.TokenNamePrefix+token.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			Expect(ar.Spec.RequestRef.Name).To(Equal(cr.Name))
+			Expect(ar.Spec.RequestRef.Namespace).To(Equal(cr.Namespace))
+			Expect(ar.Spec.Token).ToNot(BeNil())
+			Expect(ar.Spec.Token.Permissions).To(Equal(token.Permissions))
+			Expect(ar.Spec.Token.RoleRefs).To(Equal(token.RoleRefs))
+		}
 
 		// fake AccessRequest ready status
 		By("fake: AccessRequest readiness")
@@ -299,7 +317,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		}
 		Expect(mcp.Status.Access).To(HaveLen(len(oidcProviders) + len(tokens)))
 		for providerName, secretRef := range mcp.Status.Access {
-			By("verifying MCP access secret for oidc provider: " + providerName)
+			By("verifying MCP access secret for oidc provider/token: " + providerName)
 			sec := &corev1.Secret{}
 			sec.SetName(secretRef.Name)
 			sec.SetNamespace(mcp.Namespace)
@@ -309,12 +327,17 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 
 		By("=== UPDATE ===")
 
-		// change the rolebindings in the MCP spec and remove one OIDC provider
+		// change the rolebindings in the MCP spec and remove one OIDC provider and one token
 		By("updating MCP spec")
+		// oidc
 		mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings = mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings[:len(mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings)-1]
 		removedOIDCProviderName := mcp.Spec.IAM.OIDC.ExtraProviders[len(mcp.Spec.IAM.OIDC.ExtraProviders)-1].Name
-		toBeRemovedSecretName := mcp.Status.Access[removedOIDCProviderName].Name
+		toBeRemovedSecretNameOIDC := mcp.Status.Access[removedOIDCProviderName].Name
 		mcp.Spec.IAM.OIDC.ExtraProviders = mcp.Spec.IAM.OIDC.ExtraProviders[:len(mcp.Spec.IAM.OIDC.ExtraProviders)-1]
+		// token
+		mcp.Spec.IAM.Tokens = mcp.Spec.IAM.Tokens[:len(mcp.Spec.IAM.Tokens)-1]
+		removedTokenName := tokens[len(tokens)-1].Name
+		toBeRemovedSecretNameToken := mcp.Status.Access[removedTokenName].Name
 		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
 
 		By("fake: adding finalizers to AccessRequests")
@@ -326,6 +349,16 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			controllerutil.AddFinalizer(ar, "dummy")
 			Expect(env.Client(platform).Update(env.Ctx, ar)).To(Succeed())
+		}
+		for _, token := range tokens {
+			By("fake: adding finalizer to AccessRequest for token: " + token.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.TokenNamePrefix+token.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			controllerutil.AddFinalizer(ar, "dummy")
+			Expect(env.Client(platform).Update(env.Ctx, ar)).To(Succeed())
+
 		}
 
 		// reconcile the MCP
@@ -356,7 +389,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				removedOIDCIdx = i
 				Expect(mcp.Status.Conditions).To(ContainElements(
 					MatchCondition(TestCondition().
-						WithType(corev2alpha1.ConditionPrefixAccessReady + oidc.Name).
+						WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.OIDCNamePrefix + oidc.Name).
 						WithStatus(metav1.ConditionFalse).
 						WithReason(cconst.ReasonWaitingForAccessRequestDeletion),
 					)))
@@ -373,25 +406,67 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(removedOIDCIdx).To(BeNumerically(">", -1))
 		oidcProviders = append(oidcProviders[:removedOIDCIdx], oidcProviders[removedOIDCIdx+1:]...)
 		Expect(mcp.Status.Access).ToNot(HaveKey(corev2alpha1.OIDCNamePrefix + removedOIDCProviderName))
-		sec := &corev1.Secret{}
-		sec.SetName(toBeRemovedSecretName)
-		sec.SetNamespace(mcp.Namespace)
-		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(sec), sec)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
-		ar := &clustersv1alpha1.AccessRequest{}
-		ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+removedOIDCProviderName))
-		ar.SetNamespace(platformNamespace)
-		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
-		Expect(ar.GetDeletionTimestamp().IsZero()).To(BeFalse())
+
+		removedTokenIdx := -1
+		for i, token := range tokens {
+			By("verifying condition for token: " + token.Name)
+			if token.Name == removedTokenName {
+				removedTokenIdx = i
+				Expect(mcp.Status.Conditions).To(ContainElements(
+					MatchCondition(TestCondition().
+						WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.TokenNamePrefix + token.Name).
+						WithStatus(metav1.ConditionFalse).
+						WithReason(cconst.ReasonWaitingForAccessRequestDeletion),
+					)))
+				Expect(mcp.Status.Access).ToNot(HaveKey(token.Name))
+			} else {
+				Expect(mcp.Status.Conditions).To(ContainElements(
+					MatchCondition(TestCondition().
+						WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.TokenNamePrefix + token.Name).
+						WithStatus(metav1.ConditionTrue),
+					)))
+				Expect(mcp.Status.Access).To(HaveKey(corev2alpha1.TokenNamePrefix + token.Name))
+			}
+		}
+		Expect(removedTokenIdx).To(BeNumerically(">", -1))
+		tokens = append(tokens[:removedTokenIdx], tokens[removedTokenIdx+1:]...)
+		Expect(mcp.Status.Access).ToNot(HaveKey(corev2alpha1.TokenNamePrefix + removedTokenName))
+
+		secOIDC := &corev1.Secret{}
+		secOIDC.SetName(toBeRemovedSecretNameOIDC)
+		secOIDC.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(secOIDC), secOIDC)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		arOIDC := &clustersv1alpha1.AccessRequest{}
+		arOIDC.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+removedOIDCProviderName))
+		arOIDC.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(arOIDC), arOIDC)).To(Succeed())
+		Expect(arOIDC.GetDeletionTimestamp().IsZero()).To(BeFalse())
+
+		secToken := &corev1.Secret{}
+		secToken.SetName(toBeRemovedSecretNameToken)
+		secToken.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(secToken), secToken)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		arToken := &clustersv1alpha1.AccessRequest{}
+		arToken.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.TokenNamePrefix+removedTokenName))
+		arToken.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(arToken), arToken)).To(Succeed())
+		Expect(arToken.GetDeletionTimestamp().IsZero()).To(BeFalse())
 
 		// remove dummy finalizer from AccessRequest belonging to the removed OIDC provider
 		By("fake: removing dummy finalizer from AccessRequest for removed OIDC provider: " + removedOIDCProviderName)
-		controllerutil.RemoveFinalizer(ar, "dummy")
-		Expect(env.Client(platform).Update(env.Ctx, ar)).To(Succeed())
+		controllerutil.RemoveFinalizer(arOIDC, "dummy")
+		Expect(env.Client(platform).Update(env.Ctx, arOIDC)).To(Succeed())
+		// remove dummy finalizer from AccessRequest belonging to the removed token
+		By("fake: removing dummy finalizer from AccessRequest for removed token: " + removedTokenName)
+		controllerutil.RemoveFinalizer(arToken, "dummy")
+		Expect(env.Client(platform).Update(env.Ctx, arToken)).To(Succeed())
 
 		// reconcile the MCP again
 		// expected outcome:
 		// - the AccessRequest for the removed OIDC provider has been deleted
+		// - the AccessRequest for the removed token has been deleted
 		// - the condition for the removed OIDC provider is gone
+		// - the condition for the removed token is gone
 		// - the mcp should be requeued with a requeueAfter duration that matches the reconcile interval from the controller config
 		By("second MCP reconciliation after update")
 		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
@@ -413,10 +488,24 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 					WithStatus(metav1.ConditionTrue)),
 			))
 		}
+		for _, token := range tokens {
+			By("verifying condition for token: " + token.Name)
+			Expect(mcp.Status.Conditions).To(ContainElements(
+				MatchCondition(TestCondition().
+					WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.TokenNamePrefix + token.Name).
+					WithStatus(metav1.ConditionTrue)),
+			))
+		}
 		Expect(mcp.Status.Access).ToNot(HaveKey(removedOIDCProviderName))
 		Expect(mcp.Status.Conditions).ToNot(ContainElements(
 			MatchCondition(TestCondition().
 				WithType(corev2alpha1.ConditionPrefixAccessReady + removedOIDCProviderName),
+			),
+		))
+		Expect(mcp.Status.Access).ToNot(HaveKey(removedTokenName))
+		Expect(mcp.Status.Conditions).ToNot(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionPrefixAccessReady + removedTokenName),
 			),
 		))
 
@@ -481,6 +570,14 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			Expect(ar.DeletionTimestamp.IsZero()).To(BeTrue())
 		}
+		for _, token := range tokens {
+			By("verifying AccessRequest does not have a deletion timestamp for token: " + token.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.TokenNamePrefix+token.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			Expect(ar.DeletionTimestamp.IsZero()).To(BeTrue())
+		}
 		for _, obj := range []client.Object{cr, cr2, cr3} {
 			By("verifying ClusterRequest does not have a deletion timestamp: " + obj.GetName())
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
@@ -534,7 +631,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			Expect(ar.DeletionTimestamp.IsZero()).To(BeFalse())
 			Expect(mcp.Status.Conditions).To(ContainElements(
 				MatchCondition(TestCondition().
-					WithType(corev2alpha1.ConditionPrefixAccessReady + oidc.Name).
+					WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.OIDCNamePrefix + oidc.Name).
 					WithStatus(metav1.ConditionFalse).
 					WithReason(cconst.ReasonWaitingForAccessRequestDeletion),
 				),
@@ -556,6 +653,15 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			By("fake: removing finalizer from AccessRequest for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
 			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.OIDCNamePrefix+oidc.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			controllerutil.RemoveFinalizer(ar, "dummy")
+			Expect(env.Client(platform).Update(env.Ctx, ar)).To(Succeed())
+		}
+		for _, token := range tokens {
+			By("fake: removing finalizer from AccessRequest for token: " + token.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.TokenNamePrefix+token.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			controllerutil.RemoveFinalizer(ar, "dummy")
@@ -584,7 +690,14 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		for _, oidc := range oidcProviders {
 			By("verifying AccessRequest deletion for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
-			ar.SetName(ctrlutils.K8sNameUUIDUnsafe(mcp.Name, oidc.Name))
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, oidc.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		}
+		for _, token := range tokens {
+			By("verifying AccessRequest deletion for token: " + token.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, token.Name))
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
 		}
