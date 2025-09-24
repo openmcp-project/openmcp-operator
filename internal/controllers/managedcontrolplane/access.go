@@ -85,19 +85,22 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 	log := logging.FromContextOrPanic(ctx)
 
 	updatedAccessRequests := map[string]*clustersv1alpha1.AccessRequest{}
-	var oidcProviders []*commonapi.OIDCProviderConfig
+	var oidcProviders []commonapi.OIDCProviderConfig
+	var tokenProviders []corev2alpha1.TokenConfig
 
 	// create or update AccessRequests for the ManagedControlPlane
 	if mcp.DeletionTimestamp.IsZero() {
-		oidcProviders = make([]*commonapi.OIDCProviderConfig, 0, len(mcp.Spec.IAM.OIDCProviders)+1)
-		if r.Config.DefaultOIDCProvider != nil && len(mcp.Spec.IAM.RoleBindings) > 0 {
+		oidcProviders = make([]commonapi.OIDCProviderConfig, 0, len(mcp.Spec.IAM.OIDC.ExtraProviders)+1)
+		if r.Config.DefaultOIDCProvider != nil && len(mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings) > 0 {
 			// add default OIDC provider, unless it has been disabled
 			defaultOidc := r.Config.DefaultOIDCProvider.DeepCopy()
 			defaultOidc.Name = corev2alpha1.DefaultOIDCProviderName
-			defaultOidc.RoleBindings = mcp.Spec.IAM.RoleBindings
-			oidcProviders = append(oidcProviders, defaultOidc)
+			defaultOidc.RoleBindings = mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings
+			oidcProviders = append(oidcProviders, *defaultOidc)
 		}
-		oidcProviders = append(oidcProviders, mcp.Spec.IAM.OIDCProviders...)
+		oidcProviders = append(oidcProviders, mcp.Spec.IAM.OIDC.ExtraProviders...)
+
+		tokenProviders = mcp.Spec.IAM.Tokens
 	}
 
 	setArLabels := func(ar *clustersv1alpha1.AccessRequest) {
@@ -121,7 +124,7 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 				Namespace: cr.Namespace,
 			}
 			ar.Spec.OIDC = &clustersv1alpha1.OIDCConfig{
-				OIDCProviderConfig: *oidc,
+				OIDCProviderConfig: oidc,
 			}
 
 			// set labels
@@ -138,10 +141,10 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 		updatedAccessRequests[corev2alpha1.OIDCNamePrefix+oidc.Name] = ar
 	}
 
-	for tokenName, token := range mcp.Spec.Token {
-		log.Debug("Creating/updating AccessRequest for token", "tokenName", tokenName)
+	for _, token := range tokenProviders {
+		log.Debug("Creating/updating AccessRequest for token", "tokenName", token.Name)
 		// add the "token:" prefix to avoid name clashes with OIDC providers
-		arName := ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.TokenNamePrefix+tokenName)
+		arName := ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.TokenNamePrefix+token.Name)
 		ar := &clustersv1alpha1.AccessRequest{}
 		ar.Name = arName
 		ar.Namespace = platformNamespace
@@ -150,19 +153,22 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 				Name:      cr.Name,
 				Namespace: cr.Namespace,
 			}
-			ar.Spec.Token = &token
+			ar.Spec.Token = &clustersv1alpha1.TokenConfig{
+				Permissions: token.Permissions,
+				RoleRefs:    token.RoleRefs,
+			}
 
 			setArLabels(ar)
-			ar.Labels[corev2alpha1.TokenProviderLabel] = tokenName
+			ar.Labels[corev2alpha1.TokenProviderLabel] = token.Name
 
 			return nil
 		}); err != nil {
 			rerr := errutils.WithReason(fmt.Errorf("error creating/updating AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-			createCon(corev2alpha1.ConditionPrefixAccessReady+corev2alpha1.TokenNamePrefix+tokenName, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
-			createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Error creating/updating AccessRequest for token "+tokenName)
+			createCon(corev2alpha1.ConditionPrefixAccessReady+corev2alpha1.TokenNamePrefix+token.Name, metav1.ConditionFalse, rerr.Reason(), rerr.Error())
+			createCon(corev2alpha1.ConditionAllAccessReady, metav1.ConditionFalse, cconst.ReasonWaitingForAccessRequest, "Error creating/updating AccessRequest for token "+token.Name)
 			return nil, rerr
 		}
-		updatedAccessRequests[corev2alpha1.TokenNamePrefix+tokenName] = ar
+		updatedAccessRequests[corev2alpha1.TokenNamePrefix+token.Name] = ar
 	}
 
 	return updatedAccessRequests, nil
@@ -370,10 +376,8 @@ func (r *ManagedControlPlaneReconciler) syncAccessSecrets(ctx context.Context, m
 				return false, rerr
 			}
 			log.Debug("Access secret for ManagedControlPlane created/updated", "secretName", mcpSecret.Name, "oidcProviderName", providerName)
-			if ar.Spec.OIDC != nil {
-				mcp.Status.Access[providerName] = commonapi.LocalObjectReference{
-					Name: mcpSecret.Name,
-				}
+			mcp.Status.Access[providerName] = commonapi.LocalObjectReference{
+				Name: mcpSecret.Name,
 			}
 			createCon(corev2alpha1.ConditionPrefixAccessReady+providerName, metav1.ConditionTrue, "", "")
 		}

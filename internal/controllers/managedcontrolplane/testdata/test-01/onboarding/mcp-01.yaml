@@ -8,42 +8,62 @@ metadata:
   - services.openmcp.cloud/sp-02
 spec:
   iam:
-    roleBindings:
-    - subjects:
-      - kind: User
-        name: user1
-      - kind: User
-        name: user2
-      roleRefs:
-      - kind: ClusterRole
-        name: cluster-admin
-    - subjects:
-      - kind: Group
-        name: group1
-      roleRefs:
-      - kind: ClusterRole
-        name: cluster-viewer
+    tokens:
+      - name: admin
+        roleRefs:
+          - kind: ClusterRole
+            name: cluster-admin
+        permissions:
+          - rules:
+              - apiGroups: [ '' ]
+                resources: [ 'secretcs']
+                verbs: [ '*' ]
+      - name: viewer
+        permissions:
+          - rules:
+              - apiGroups: [ '' ]
+                resources: [ 'pods', 'services' ]
+                verbs: [ 'get', 'list', 'watch' ]
 
-    oidcProviders:
-    - name: add1
-      issuer: https://example.com/add1
-      groupsPrefix: 'add1groups:'
-      usernamePrefix: 'add1user:'
-      roleBindings:
-      - subjects:
-        - kind: User
-          name: user3
-        roleRefs:
-        - kind: ClusterRole
-          name: cluster-admin
-    - name: add2
-      issuer: https://example.com/add2
-      groupsPrefix: 'add2groups:'
-      usernamePrefix: 'add2user:'
-      roleBindings:
-      - subjects:
-        - kind: Group
-          name: group2
-        roleRefs:
-        - kind: ClusterRole
-          name: cluster-viewer
+    oidc:
+      defaultProvider:
+        roleBindings:
+        - subjects:
+          - kind: User
+            name: user1
+          - kind: User
+            name: user2
+          roleRefs:
+          - kind: ClusterRole
+            name: cluster-admin
+        - subjects:
+          - kind: Group
+            name: group1
+          roleRefs:
+          - kind: ClusterRole
+            name: cluster-viewer
+
+      extraProviders:
+      - name: add1
+        issuer: https://example.com/add1
+        groupsPrefix: 'add1groups:'
+        usernamePrefix: 'add1user:'
+        roleBindings:
+        - subjects:
+          - kind: User
+            name: user3
+          roleRefs:
+          - kind: ClusterRole
+            name: cluster-admin
+      - name: add2
+        issuer: https://example.com/add2
+        groupsPrefix: 'add2groups:'
+        usernamePrefix: 'add2user:'
+        roleBindings:
+        - subjects:
+          - kind: Group
+            name: group2
+          roleRefs:
+          - kind: ClusterRole
+            name: cluster-viewer
+

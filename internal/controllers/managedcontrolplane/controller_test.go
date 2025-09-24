@@ -198,8 +198,8 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithStatus(metav1.ConditionTrue)),
 		))
 		oidcProviders := []commonapi.OIDCProviderConfig{*rec.Config.DefaultOIDCProvider.DeepCopy()}
-		oidcProviders[0].RoleBindings = mcp.Spec.IAM.RoleBindings
-		for _, addProv := range mcp.Spec.IAM.OIDCProviders {
+		oidcProviders[0].RoleBindings = mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings
+		for _, addProv := range mcp.Spec.IAM.OIDC.ExtraProviders {
 			oidcProviders = append(oidcProviders, *addProv.DeepCopy())
 		}
 		Expect(oidcProviders).To(HaveLen(3))
@@ -244,6 +244,28 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			Expect(env.Client(platform).Create(env.Ctx, sec)).To(Succeed())
 		}
 
+		tokens := mcp.Spec.IAM.Tokens
+		for _, token := range tokens {
+			By("fake: Token AccessRequest readiness for token: " + token.Name)
+			ar := &clustersv1alpha1.AccessRequest{}
+			ar.SetName(ctrlutils.NameHashSHAKE128Base32(mcp.Name, corev2alpha1.TokenNamePrefix+token.Name))
+			ar.SetNamespace(platformNamespace)
+			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+			ar.Status.SecretRef = &commonapi.ObjectReference{
+				Name:      ar.Name,
+				Namespace: ar.Namespace,
+			}
+			sec := &corev1.Secret{}
+			sec.SetName(ar.Status.SecretRef.Name)
+			sec.SetNamespace(ar.Namespace)
+			sec.Data = map[string][]byte{
+				clustersv1alpha1.SecretKeyKubeconfig: []byte(corev2alpha1.TokenNamePrefix + token.Name),
+			}
+			Expect(env.Client(platform).Status().Update(env.Ctx, ar)).To(Succeed())
+			Expect(env.Client(platform).Create(env.Ctx, sec)).To(Succeed())
+		}
+
 		// reconcile the MCP again
 		// expected outcome:
 		// - the mcp has conditions that reflect that all access requests are ready
@@ -268,7 +290,14 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 					WithStatus(metav1.ConditionTrue)),
 			))
 		}
-		Expect(mcp.Status.Access).To(HaveLen(len(oidcProviders)))
+		for _, token := range tokens {
+			Expect(mcp.Status.Conditions).To(ContainElements(
+				MatchCondition(TestCondition().
+					WithType(corev2alpha1.ConditionPrefixAccessReady + corev2alpha1.TokenNamePrefix + token.Name).
+					WithStatus(metav1.ConditionTrue)),
+			))
+		}
+		Expect(mcp.Status.Access).To(HaveLen(len(oidcProviders) + len(tokens)))
 		for providerName, secretRef := range mcp.Status.Access {
 			By("verifying MCP access secret for oidc provider: " + providerName)
 			sec := &corev1.Secret{}
@@ -282,10 +311,10 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 
 		// change the rolebindings in the MCP spec and remove one OIDC provider
 		By("updating MCP spec")
-		mcp.Spec.IAM.RoleBindings = mcp.Spec.IAM.RoleBindings[:len(mcp.Spec.IAM.RoleBindings)-1]
-		removedOIDCProviderName := mcp.Spec.IAM.OIDCProviders[len(mcp.Spec.IAM.OIDCProviders)-1].Name
+		mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings = mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings[:len(mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings)-1]
+		removedOIDCProviderName := mcp.Spec.IAM.OIDC.ExtraProviders[len(mcp.Spec.IAM.OIDC.ExtraProviders)-1].Name
 		toBeRemovedSecretName := mcp.Status.Access[removedOIDCProviderName].Name
-		mcp.Spec.IAM.OIDCProviders = mcp.Spec.IAM.OIDCProviders[:len(mcp.Spec.IAM.OIDCProviders)-1]
+		mcp.Spec.IAM.OIDC.ExtraProviders = mcp.Spec.IAM.OIDC.ExtraProviders[:len(mcp.Spec.IAM.OIDC.ExtraProviders)-1]
 		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
 
 		By("fake: adding finalizers to AccessRequests")
