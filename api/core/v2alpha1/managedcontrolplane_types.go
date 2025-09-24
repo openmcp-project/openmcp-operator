@@ -14,11 +14,15 @@ type ManagedControlPlaneV2Spec struct {
 }
 
 type IAMConfig struct {
+	// Tokens is a list of token-based access configurations.
+	// +optional
 	Tokens []TokenConfig `json:"tokens,omitempty"`
-	OIDC   *OIDCConfig   `json:"oidc,omitempty"`
+	// OIDC is the OIDC-based access configuration.
+	OIDC *OIDCConfig `json:"oidc,omitempty"`
 }
 
 type OIDCConfig struct {
+	// DefaultProvider is the standard OIDC provider that is enabled for all ManagedControlPlaneV2 resources.
 	DefaultProvider DefaultProviderConfig `json:"defaultProvider,omitempty"`
 	// ExtraProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
 	// They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
@@ -35,7 +39,9 @@ type DefaultProviderConfig struct {
 }
 
 type TokenConfig struct {
-	//+kubebuilder:validation:minLength=1
+	// Name is the name of this token configuration.
+	// It is used to generate a secret name and must be unique among all token configurations in the same ManagedControlPlaneV2.
+	// +kubebuilder:validation:minLength=1
 	Name                         string `json:"name"`
 	clustersv1alpha1.TokenConfig `json:",inline"`
 }

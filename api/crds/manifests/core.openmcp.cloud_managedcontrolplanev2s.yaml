@@ -50,8 +50,11 @@ spec:
                   the ManagedControlPlaneV2.
                 properties:
                   oidc:
+                    description: OIDC is the OIDC-based access configuration.
                     properties:
                       defaultProvider:
+                        description: DefaultProvider is the standard OIDC provider
+                          that is enabled for all ManagedControlPlaneV2 resources.
                         properties:
                           roleBindings:
                             description: |-
@@ -268,9 +271,13 @@ spec:
                         type: array
                     type: object
                   tokens:
+                    description: Tokens is a list of token-based access configurations.
                     items:
                       properties:
                         name:
+                          description: |-
+                            Name is the name of this token configuration.
+                            It is used to generate a secret name and must be unique among all token configurations in the same ManagedControlPlaneV2.
                           type: string
                         permissions:
                           description: |-
