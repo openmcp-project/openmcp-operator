@@ -32,31 +32,53 @@ metadata:
   namespace: foo
 spec:
   iam:
-    roleBindings: # this sets the role bindings for the default OIDC provider (no effect if none is configured)
-    - subjects:
-      - kind: User
-        name: john.doe@example.com
-      roleRefs:
-      - kind: ClusterRole
-        name: cluster-admin
-    oidcProviders: # here, additional OIDC providers can be configured
-    - name: my-oidc-provider
-      issuer: https://oidc.example.com
-      clientID: my-client-id
-      extraScopes:
-      - foo
-      roleBindings:
-      - subjects:
-        - kind: User
-          name: foo
-        - kind: Group
-          name: bar
-        roleRefs:
-        - kind: ClusterRole
-          name: my-cluster-role
-        - kind: Role
-          name: my-role
-          namespace: default
+    oidc:
+      defaultProvider:
+        roleBindings: # this sets the role bindings for the default OIDC provider (no effect if none is configured)
+        - subjects:
+          - kind: User
+            name: john.doe@example.com
+          roleRefs:
+          - kind: ClusterRole
+            name: cluster-admin
+            
+        extraProviders: # here, additional OIDC providers can be configured
+        - name: my-oidc-provider
+          issuer: https://oidc.example.com
+          clientID: my-client-id
+          extraScopes:
+          - foo
+          roleBindings:
+          - subjects:
+            - kind: User
+              name: foo
+            - kind: Group
+              name: bar
+            roleRefs:
+            - kind: ClusterRole
+              name: my-cluster-role
+            - kind: Role
+              name: my-role
+              namespace: default
+              
+      tokens: # here, static tokens can be configured
+      - name: admin # this token will be named 'admin' and must be unique per MCP
+        # roleRefs and permissions can be either set individually or together
+        roleRefs: # this sets the role bindings for the static token named 'admin'
+          - kind: ClusterRole
+            name: cluster-admin
+        permissions: # here, additional permissions can be configured
+          - rules:
+              - apiGroups: [ '' ]
+                resources: [ 'secretcs']
+                verbs: [ '*' ]
+      - name: viewer
+        permissions:
+          - rules:
+              - apiGroups: [ '' ]
+                resources: [ 'pods', 'services' ]
+                verbs: [ 'get', 'list', 'watch' ]
+
 ```
 
 ### Purpose Overriding

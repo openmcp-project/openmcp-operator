@@ -3,12 +3,47 @@ package v2alpha1
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
+
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
 type ManagedControlPlaneV2Spec struct {
 	// IAM contains the access management configuration for the ManagedControlPlaneV2.
 	IAM IAMConfig `json:"iam"`
+}
+
+type IAMConfig struct {
+	// Tokens is a list of token-based access configurations.
+	// +optional
+	Tokens []TokenConfig `json:"tokens,omitempty"`
+	// OIDC is the OIDC-based access configuration.
+	OIDC *OIDCConfig `json:"oidc,omitempty"`
+}
+
+type OIDCConfig struct {
+	// DefaultProvider is the standard OIDC provider that is enabled for all ManagedControlPlaneV2 resources.
+	DefaultProvider DefaultProviderConfig `json:"defaultProvider,omitempty"`
+	// ExtraProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
+	// They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
+	// +optional
+	ExtraProviders []commonapi.OIDCProviderConfig `json:"extraProviders,omitempty"`
+}
+
+type DefaultProviderConfig struct {
+	// RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
+	// These bindings refer to the standard OIDC provider. If empty, the standard OIDC provider is disabled.
+	// Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
+	// +optional
+	RoleBindings []commonapi.RoleBindings `json:"roleBindings,omitempty"`
+}
+
+type TokenConfig struct {
+	// Name is the name of this token configuration.
+	// It is used to generate a secret name and must be unique among all token configurations in the same ManagedControlPlaneV2.
+	// +kubebuilder:validation:minLength=1
+	Name                         string `json:"name"`
+	clustersv1alpha1.TokenConfig `json:",inline"`
 }
 
 type ManagedControlPlaneV2Status struct {
@@ -20,19 +55,6 @@ type ManagedControlPlaneV2Status struct {
 	// The "default" key is also used if the ClusterProvider does not support OIDC-based access and created a serviceaccount with a token instead.
 	// +optional
 	Access map[string]commonapi.LocalObjectReference `json:"access,omitempty"`
-}
-
-type IAMConfig struct {
-	// RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
-	// These bindings refer to the standard OIDC provider. If empty, the standard OIDC provider is disabled.
-	// Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
-	// +optional
-	RoleBindings []commonapi.RoleBindings `json:"roleBindings,omitempty"`
-
-	// OIDCProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
-	// They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
-	// +optional
-	OIDCProviders []*commonapi.OIDCProviderConfig `json:"oidcProviders,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -49,151 +49,313 @@ spec:
                 description: IAM contains the access management configuration for
                   the ManagedControlPlaneV2.
                 properties:
-                  oidcProviders:
-                    description: |-
-                      OIDCProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
-                      They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
+                  oidc:
+                    description: OIDC is the OIDC-based access configuration.
+                    properties:
+                      defaultProvider:
+                        description: DefaultProvider is the standard OIDC provider
+                          that is enabled for all ManagedControlPlaneV2 resources.
+                        properties:
+                          roleBindings:
+                            description: |-
+                              RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
+                              These bindings refer to the standard OIDC provider. If empty, the standard OIDC provider is disabled.
+                              Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
+                            items:
+                              properties:
+                                roleRefs:
+                                  description: |-
+                                    RoleRefs is a list of (cluster) role references that the subjects should be bound to.
+                                    Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
+                                  items:
+                                    description: RoleRef defines a reference to a
+                                      (cluster) role that should be bound to the subjects.
+                                    properties:
+                                      kind:
+                                        description: |-
+                                          Kind is the kind of the role to bind to the subjects.
+                                          It must be 'Role' or 'ClusterRole'.
+                                        enum:
+                                        - Role
+                                        - ClusterRole
+                                        type: string
+                                      name:
+                                        description: Name is the name of the role
+                                          or cluster role to bind to the subjects.
+                                        minLength: 1
+                                        type: string
+                                      namespace:
+                                        description: |-
+                                          Namespace is the namespace of the role to bind to the subjects.
+                                          It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
+                                        type: string
+                                    required:
+                                    - kind
+                                    - name
+                                    type: object
+                                  type: array
+                                subjects:
+                                  description: |-
+                                    Subjects is a list of subjects that should be bound to the specified roles.
+                                    The subjects' names will be prefixed with the username prefix of the OIDC provider.
+                                  items:
+                                    description: |-
+                                      Subject contains a reference to the object or user identities a role binding applies to.  This can either hold a direct API object reference,
+                                      or a value for non-objects such as user and group names.
+                                    properties:
+                                      apiGroup:
+                                        description: |-
+                                          APIGroup holds the API group of the referenced subject.
+                                          Defaults to "" for ServiceAccount subjects.
+                                          Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
+                                        type: string
+                                      kind:
+                                        description: |-
+                                          Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
+                                          If the Authorizer does not recognized the kind value, the Authorizer should report an error.
+                                        type: string
+                                      name:
+                                        description: Name of the object being referenced.
+                                        type: string
+                                      namespace:
+                                        description: |-
+                                          Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
+                                          the Authorizer should report an error.
+                                        type: string
+                                    required:
+                                    - kind
+                                    - name
+                                    type: object
+                                    x-kubernetes-map-type: atomic
+                                  type: array
+                              required:
+                              - roleRefs
+                              - subjects
+                              type: object
+                            type: array
+                        type: object
+                      extraProviders:
+                        description: |-
+                          ExtraProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
+                          They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
+                        items:
+                          properties:
+                            clientID:
+                              description: ClientID is the client ID to use for the
+                                OIDC provider.
+                              minLength: 1
+                              type: string
+                            extraScopes:
+                              description: ExtraScopes is a list of extra scopes that
+                                should be requested from the OIDC provider.
+                              items:
+                                type: string
+                              type: array
+                            groupsClaim:
+                              default: groups
+                              description: |-
+                                GroupsClaim is the claim in the OIDC token that contains the groups.
+                                If empty, the default claim "groups" will be used.
+                              type: string
+                            issuer:
+                              description: |-
+                                Issuer is the issuer URL of the OIDC provider.
+                                Must be a valid URL.
+                              minLength: 1
+                              pattern: ^https?://[^\s/$.?#].[^\s]*$
+                              type: string
+                            name:
+                              description: |-
+                                Name is the name of the OIDC provider.
+                                May be used in k8s resources, therefore has to be a valid k8s name.
+                                It is also used (with a ':' suffix) as prefix in k8s resources referencing users or groups from this OIDC provider.
+                                E.g. if the name is 'example', the username 'alice' from this provider will be referenced as 'example:alice' in k8s resources.
+                                Must be unique among all OIDC providers configured in the same environment.
+                              maxLength: 253
+                              minLength: 1
+                              pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                              type: string
+                              x-kubernetes-validations:
+                              - message: '''system'' is a reserved string and may
+                                  not be used as OIDC provider name'
+                                rule: self != "system"
+                            roleBindings:
+                              description: |-
+                                RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
+                                Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
+                              items:
+                                properties:
+                                  roleRefs:
+                                    description: |-
+                                      RoleRefs is a list of (cluster) role references that the subjects should be bound to.
+                                      Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
+                                    items:
+                                      description: RoleRef defines a reference to
+                                        a (cluster) role that should be bound to the
+                                        subjects.
+                                      properties:
+                                        kind:
+                                          description: |-
+                                            Kind is the kind of the role to bind to the subjects.
+                                            It must be 'Role' or 'ClusterRole'.
+                                          enum:
+                                          - Role
+                                          - ClusterRole
+                                          type: string
+                                        name:
+                                          description: Name is the name of the role
+                                            or cluster role to bind to the subjects.
+                                          minLength: 1
+                                          type: string
+                                        namespace:
+                                          description: |-
+                                            Namespace is the namespace of the role to bind to the subjects.
+                                            It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
+                                          type: string
+                                      required:
+                                      - kind
+                                      - name
+                                      type: object
+                                    type: array
+                                  subjects:
+                                    description: |-
+                                      Subjects is a list of subjects that should be bound to the specified roles.
+                                      The subjects' names will be prefixed with the username prefix of the OIDC provider.
+                                    items:
+                                      description: |-
+                                        Subject contains a reference to the object or user identities a role binding applies to.  This can either hold a direct API object reference,
+                                        or a value for non-objects such as user and group names.
+                                      properties:
+                                        apiGroup:
+                                          description: |-
+                                            APIGroup holds the API group of the referenced subject.
+                                            Defaults to "" for ServiceAccount subjects.
+                                            Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
+                                          type: string
+                                        kind:
+                                          description: |-
+                                            Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
+                                            If the Authorizer does not recognized the kind value, the Authorizer should report an error.
+                                          type: string
+                                        name:
+                                          description: Name of the object being referenced.
+                                          type: string
+                                        namespace:
+                                          description: |-
+                                            Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
+                                            the Authorizer should report an error.
+                                          type: string
+                                      required:
+                                      - kind
+                                      - name
+                                      type: object
+                                      x-kubernetes-map-type: atomic
+                                    type: array
+                                required:
+                                - roleRefs
+                                - subjects
+                                type: object
+                              type: array
+                            usernameClaim:
+                              default: sub
+                              description: |-
+                                UsernameClaim is the claim in the OIDC token that contains the username.
+                                If empty, the default claim "sub" will be used.
+                              type: string
+                          required:
+                          - clientID
+                          - issuer
+                          - name
+                          - roleBindings
+                          type: object
+                        type: array
+                    type: object
+                  tokens:
+                    description: Tokens is a list of token-based access configurations.
                     items:
                       properties:
-                        clientID:
-                          description: ClientID is the client ID to use for the OIDC
-                            provider.
-                          minLength: 1
-                          type: string
-                        extraScopes:
-                          description: ExtraScopes is a list of extra scopes that
-                            should be requested from the OIDC provider.
-                          items:
-                            type: string
-                          type: array
-                        groupsClaim:
-                          default: groups
-                          description: |-
-                            GroupsClaim is the claim in the OIDC token that contains the groups.
-                            If empty, the default claim "groups" will be used.
-                          type: string
-                        issuer:
-                          description: |-
-                            Issuer is the issuer URL of the OIDC provider.
-                            Must be a valid URL.
-                          minLength: 1
-                          pattern: ^https?://[^\s/$.?#].[^\s]*$
-                          type: string
                         name:
                           description: |-
-                            Name is the name of the OIDC provider.
-                            May be used in k8s resources, therefore has to be a valid k8s name.
-                            It is also used (with a ':' suffix) as prefix in k8s resources referencing users or groups from this OIDC provider.
-                            E.g. if the name is 'example', the username 'alice' from this provider will be referenced as 'example:alice' in k8s resources.
-                            Must be unique among all OIDC providers configured in the same environment.
-                          maxLength: 253
-                          minLength: 1
-                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                            Name is the name of this token configuration.
+                            It is used to generate a secret name and must be unique among all token configurations in the same ManagedControlPlaneV2.
                           type: string
-                          x-kubernetes-validations:
-                          - message: '''system'' is a reserved string and may not
-                              be used as OIDC provider name'
-                            rule: self != "system"
-                        roleBindings:
+                        permissions:
                           description: |-
-                            RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
-                            Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
+                            Permissions are the requested permissions.
+                            If not empty, corresponding Roles and ClusterRoles will be created in the target cluster.
+                            The created serviceaccount will be bound to the created Roles and ClusterRoles.
                           items:
                             properties:
-                              roleRefs:
+                              name:
                                 description: |-
-                                  RoleRefs is a list of (cluster) role references that the subjects should be bound to.
-                                  Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
-                                items:
-                                  description: RoleRef defines a reference to a (cluster)
-                                    role that should be bound to the subjects.
-                                  properties:
-                                    kind:
-                                      description: |-
-                                        Kind is the kind of the role to bind to the subjects.
-                                        It must be 'Role' or 'ClusterRole'.
-                                      enum:
-                                      - Role
-                                      - ClusterRole
-                                      type: string
-                                    name:
-                                      description: Name is the name of the role or
-                                        cluster role to bind to the subjects.
-                                      minLength: 1
-                                      type: string
-                                    namespace:
-                                      description: |-
-                                        Namespace is the namespace of the role to bind to the subjects.
-                                        It must be set if the kind is 'Role' and may not be set if the kind is 'ClusterRole'.
-                                      type: string
-                                  required:
-                                  - kind
-                                  - name
-                                  type: object
-                                type: array
-                              subjects:
+                                  Name is an optional name for the (Cluster)Role that will be created for the requested permissions.
+                                  If not set, a randomized name that is unique in the cluster will be generated.
+                                  Note that the AccessRequest will not be granted if the to-be-created (Cluster)Role already exists, but is not managed by the AccessRequest, so choose this name carefully.
+                                type: string
+                              namespace:
                                 description: |-
-                                  Subjects is a list of subjects that should be bound to the specified roles.
-                                  The subjects' names will be prefixed with the username prefix of the OIDC provider.
+                                  Namespace is the namespace for which the permissions are requested.
+                                  If empty, this will result in a ClusterRole, otherwise in a Role in the respective namespace.
+                                  Note that for a Role, the namespace needs to either exist or a permission to create it must be included in the requested permissions (it will be created automatically then), otherwise the request will be rejected.
+                                type: string
+                              rules:
+                                description: Rules are the requested RBAC rules.
                                 items:
                                   description: |-
-                                    Subject contains a reference to the object or user identities a role binding applies to.  This can either hold a direct API object reference,
-                                    or a value for non-objects such as user and group names.
+                                    PolicyRule holds information that describes a policy rule, but does not contain information
+                                    about who the rule applies to or which namespace the rule applies to.
                                   properties:
-                                    apiGroup:
+                                    apiGroups:
                                       description: |-
-                                        APIGroup holds the API group of the referenced subject.
-                                        Defaults to "" for ServiceAccount subjects.
-                                        Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
-                                      type: string
-                                    kind:
+                                        APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
+                                        the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    nonResourceURLs:
                                       description: |-
-                                        Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
-                                        If the Authorizer does not recognized the kind value, the Authorizer should report an error.
-                                      type: string
-                                    name:
-                                      description: Name of the object being referenced.
-                                      type: string
-                                    namespace:
-                                      description: |-
-                                        Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
-                                        the Authorizer should report an error.
-                                      type: string
+                                        NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
+                                        Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
+                                        Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    resourceNames:
+                                      description: ResourceNames is an optional white
+                                        list of names that the rule applies to.  An
+                                        empty set means that everything is allowed.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    resources:
+                                      description: Resources is a list of resources
+                                        this rule applies to. '*' represents all resources.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    verbs:
+                                      description: Verbs is a list of Verbs that apply
+                                        to ALL the ResourceKinds contained in this
+                                        rule. '*' represents all verbs.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
                                   required:
-                                  - kind
-                                  - name
+                                  - verbs
                                   type: object
-                                  x-kubernetes-map-type: atomic
                                 type: array
                             required:
-                            - roleRefs
-                            - subjects
+                            - rules
                             type: object
                           type: array
-                        usernameClaim:
-                          default: sub
-                          description: |-
-                            UsernameClaim is the claim in the OIDC token that contains the username.
-                            If empty, the default claim "sub" will be used.
-                          type: string
-                      required:
-                      - clientID
-                      - issuer
-                      - name
-                      - roleBindings
-                      type: object
-                    type: array
-                  roleBindings:
-                    description: |-
-                      RoleBindings is a list of subjects with (cluster) role bindings that should be created for them.
-                      These bindings refer to the standard OIDC provider. If empty, the standard OIDC provider is disabled.
-                      Note that the username prefix is added automatically to the subjects' names, it must not be explicitly specified here.
-                    items:
-                      properties:
                         roleRefs:
-                          description: |-
-                            RoleRefs is a list of (cluster) role references that the subjects should be bound to.
-                            Note that existence of the roles is not checked and missing (cluster) roles will result in ineffective (cluster) role bindings.
+                          description: RoleRefs are references to existing (Cluster)Roles
+                            that should be bound to the created serviceaccount.
                           items:
                             description: RoleRef defines a reference to a (cluster)
                               role that should be bound to the subjects.
@@ -221,43 +383,8 @@ spec:
                             - name
                             type: object
                           type: array
-                        subjects:
-                          description: |-
-                            Subjects is a list of subjects that should be bound to the specified roles.
-                            The subjects' names will be prefixed with the username prefix of the OIDC provider.
-                          items:
-                            description: |-
-                              Subject contains a reference to the object or user identities a role binding applies to.  This can either hold a direct API object reference,
-                              or a value for non-objects such as user and group names.
-                            properties:
-                              apiGroup:
-                                description: |-
-                                  APIGroup holds the API group of the referenced subject.
-                                  Defaults to "" for ServiceAccount subjects.
-                                  Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
-                                type: string
-                              kind:
-                                description: |-
-                                  Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
-                                  If the Authorizer does not recognized the kind value, the Authorizer should report an error.
-                                type: string
-                              name:
-                                description: Name of the object being referenced.
-                                type: string
-                              namespace:
-                                description: |-
-                                  Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
-                                  the Authorizer should report an error.
-                                type: string
-                            required:
-                            - kind
-                            - name
-                            type: object
-                            x-kubernetes-map-type: atomic
-                          type: array
                       required:
-                      - roleRefs
-                      - subjects
+                      - name
                       type: object
                     type: array
                 type: object
