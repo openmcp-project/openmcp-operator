@@ -93,7 +93,7 @@ type reconcilerImpl struct {
 	workloadRoleRefs      []commonapi.RoleRef
 	mcpScheme             *runtime.Scheme
 	workloadScheme        *runtime.Scheme
-	SkipWorkloadCLuster   bool
+	skipWorkloadCluster   bool
 }
 
 // NewClusterAccessReconciler creates a new ClusterAccessReconciler with the given parameters.
@@ -110,7 +110,7 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 		workloadRoleRefs:      []commonapi.RoleRef{},
 		mcpScheme:             runtime.NewScheme(),
 		workloadScheme:        runtime.NewScheme(),
-		SkipWorkloadCLuster:   false,
+		skipWorkloadCluster:   false,
 	}
 }
 
@@ -150,7 +150,7 @@ func (r *reconcilerImpl) WithWorkloadScheme(scheme *runtime.Scheme) Reconciler {
 }
 
 func (r *reconcilerImpl) SkipWorkloadCluster() Reconciler {
-	r.SkipWorkloadCLuster = true
+	r.skipWorkloadCluster = true
 	return r
 }
 
@@ -255,7 +255,7 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
 	}
 
-	if !r.SkipWorkloadCLuster {
+	if !r.skipWorkloadCluster {
 		// Create or update the ClusterRequest for the Workload cluster and wait until it is ready.
 
 		log.Debug("Create and wait for Workload cluster request", "clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace)
@@ -315,7 +315,7 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 	workloadAccessDeleted := true
 	workloadClusterDeleted := true
 
-	if !r.SkipWorkloadCLuster {
+	if !r.skipWorkloadCluster {
 		// Delete the Workload AccessRequest if it exists
 		workloadAccessDeleted, err = deleteAccessRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace)
 		if err != nil {

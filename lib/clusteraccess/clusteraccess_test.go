@@ -129,12 +129,14 @@ func buildTestEnvironmentNoReconcile(testdataDir string, objectsWitStatus ...cli
 		Build()
 }
 
+const (
+	expectedRequestNamespace = "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
+)
+
 var _ = Describe("ClusterAccessReconciler", func() {
 	Context("Reconcile", func() {
 		It("should create MCP-/Workload ClusterRequests/AccessRequests", func() {
 			var reconcileResult reconcile.Result
-
-			expectedRequestNamespace := "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
 
 			request := reconcile.Request{
 				NamespacedName: client.ObjectKey{
@@ -254,8 +256,6 @@ var _ = Describe("ClusterAccessReconciler", func() {
 		It("should create MCP-/Workload ClusterRequests/AccessRequests without Workload Cluster", func() {
 			var reconcileResult reconcile.Result
 
-			expectedRequestNamespace := "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
-
 			request := reconcile.Request{
 				NamespacedName: client.ObjectKey{
 					Name:      "instance",
@@ -326,10 +326,10 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 			accessRequestList := &clustersv1alpha1.AccessRequestList{}
 			Expect(env.Client().List(env.Ctx, accessRequestList, client.InNamespace(expectedRequestNamespace))).To(Succeed())
-			Expect(len(accessRequestList.Items)).To(Equal(1), "there should be only one access request (for the MCP cluster)")
+			Expect(accessRequestList.Items).To(HaveLen(1), "there should be only one access request (for the MCP cluster)")
 			clusterRequestList := &clustersv1alpha1.ClusterRequestList{}
 			Expect(env.Client().List(env.Ctx, clusterRequestList, client.InNamespace(expectedRequestNamespace))).To(Succeed())
-			Expect(len(clusterRequestList.Items)).To(Equal(0), "there should be no cluster request (for the Workload cluster)")
+			Expect(clusterRequestList.Items).To(BeEmpty(), "there should be no cluster request (for the Workload cluster)")
 		})
 
 		Context("Delete", func() {
@@ -377,7 +377,7 @@ var _ = Describe("ClusterAccessReconciler", func() {
 				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestWorkload), accessRequestWorkload)).ToNot(Succeed(), "access request for Workload cluster should not exist")
 			})
 
-			It("should delete only MCP AccessRequest with SkipWorkloadCluster", func() {
+			It("should delete only MCP AccessRequest with skipWorkloadCluster", func() {
 				var reconcileResult reconcile.Result
 
 				expectedRequestNamespace := "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
