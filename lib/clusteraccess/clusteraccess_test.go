@@ -37,7 +37,7 @@ func TestUtils(t *testing.T) {
 	RunSpecs(t, "ClusterAccess Test Suite")
 }
 
-func buildTestEnvironmentReconcile(testdataDir string, objectsWitStatus ...client.Object) *testutils.Environment {
+func buildTestEnvironmentReconcile(testdataDir string, skipWorkloadCluster bool, objectsWitStatus ...client.Object) *testutils.Environment {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
@@ -74,6 +74,9 @@ func buildTestEnvironmentReconcile(testdataDir string, objectsWitStatus ...clien
 				WithWorkloadPermissions(permissions).
 				WithWorkloadRoleRefs(roleRefs).
 				WithRetryInterval(1 * time.Second)
+			if skipWorkloadCluster {
+				r.SkipWorkloadCluster()
+			}
 			return r
 		}).
 		WithDynamicObjectsWithStatus(objectsWitStatus...).
@@ -88,7 +91,7 @@ func (dr *deleteReconciler) Reconcile(ctx context.Context, req reconcile.Request
 	return dr.r.ReconcileDelete(ctx, req)
 }
 
-func buildTestEnvironmentDelete(testdataDir string, objectsWitStatus ...client.Object) *testutils.Environment {
+func buildTestEnvironmentDelete(testdataDir string, skipWorkloadCluster bool, objectsWitStatus ...client.Object) *testutils.Environment {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
@@ -99,6 +102,10 @@ func buildTestEnvironmentDelete(testdataDir string, objectsWitStatus ...client.O
 		WithReconcilerConstructor(func(c client.Client) reconcile.Reconciler {
 			r := clusteraccess.NewClusterAccessReconciler(c, controllerName)
 			r.WithRetryInterval(1 * time.Second)
+
+			if skipWorkloadCluster {
+				r.SkipWorkloadCluster()
+			}
 
 			dr := &deleteReconciler{
 				r: r,
@@ -122,12 +129,14 @@ func buildTestEnvironmentNoReconcile(testdataDir string, objectsWitStatus ...cli
 		Build()
 }
 
+const (
+	expectedRequestNamespace = "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
+)
+
 var _ = Describe("ClusterAccessReconciler", func() {
 	Context("Reconcile", func() {
 		It("should create MCP-/Workload ClusterRequests/AccessRequests", func() {
 			var reconcileResult reconcile.Result
-
-			expectedRequestNamespace := "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
 
 			request := reconcile.Request{
 				NamespacedName: client.ObjectKey{
@@ -157,7 +166,7 @@ var _ = Describe("ClusterAccessReconciler", func() {
 				},
 			}
 
-			env := buildTestEnvironmentReconcile("test-01", accessRequestMCP, clusterRequestWorkload, accessRequestWorkload)
+			env := buildTestEnvironmentReconcile("test-01", false, accessRequestMCP, clusterRequestWorkload, accessRequestWorkload)
 
 			reconcileResult = env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 			Expect(reconcileResult.RequeueAfter).ToNot(BeZero(), "reconcile should requeue after a delay")
@@ -244,6 +253,85 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			Expect(workloadCluster).ToNot(BeNil(), "should return a valid Workload cluster")
 		})
 
+		It("should create MCP-/Workload ClusterRequests/AccessRequests without Workload Cluster", func() {
+			var reconcileResult reconcile.Result
+
+			request := reconcile.Request{
+				NamespacedName: client.ObjectKey{
+					Name:      "instance",
+					Namespace: "test",
+				},
+			}
+
+			accessRequestMCP := &clustersv1alpha1.AccessRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusteraccess.StableRequestName(controllerName, request) + "--mcp",
+					Namespace: expectedRequestNamespace,
+				},
+			}
+
+			env := buildTestEnvironmentReconcile("test-01", true, accessRequestMCP)
+
+			reconcileResult = env.ShouldReconcile(request, "reconcilerImpl should not return an error")
+			Expect(reconcileResult.RequeueAfter).ToNot(BeZero(), "reconcile should requeue after a delay")
+
+			// reconcile now waits until the request namespace is being created
+			// the format if the request namespace is "ob-<onboarding-namespace>"
+			// create the expected request namespace
+			requestNamespace := &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: expectedRequestNamespace,
+				},
+			}
+
+			Expect(env.Client().Create(env.Ctx, requestNamespace)).To(Succeed())
+
+			// reconcile again to process the request
+			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
+
+			// there should be an access request for the MCP cluster created
+			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestMCP), accessRequestMCP)).To(Succeed())
+
+			// set the access request status to "Granted"
+			accessRequestMCP.Status = clustersv1alpha1.AccessRequestStatus{
+				Status: commonapi.Status{
+					Phase: clustersv1alpha1.REQUEST_GRANTED,
+				},
+			}
+			Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
+
+			// reconcile again to process the granted access request
+			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
+
+			// set the secret reference for the MCP access request
+			accessRequestMCP.Status.SecretRef = &commonapi.ObjectReference{
+				Name:      "mcp-access",
+				Namespace: expectedRequestNamespace,
+			}
+			Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
+
+			// reconcile again to process the granted access request
+			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
+
+			// cast to ClusterAccessReconciler to access the reconcilerImpl methods
+			reconciler, ok := env.Reconciler().(clusteraccess.Reconciler) // nolint:staticcheck
+			Expect(ok).To(BeTrue(), "reconcilerImpl should be of type ClusterAccessReconciler")
+
+			mcpCluster, err := reconciler.MCPCluster(env.Ctx, request)
+			Expect(err).ToNot(HaveOccurred(), "should not return an error when getting MCP cluster")
+			Expect(mcpCluster).ToNot(BeNil(), "should return a valid MCP cluster")
+
+			_, err = reconciler.WorkloadCluster(env.Ctx, request)
+			Expect(err).To(HaveOccurred(), "should return an error when trying to get the Workload cluster")
+
+			accessRequestList := &clustersv1alpha1.AccessRequestList{}
+			Expect(env.Client().List(env.Ctx, accessRequestList, client.InNamespace(expectedRequestNamespace))).To(Succeed())
+			Expect(accessRequestList.Items).To(HaveLen(1), "there should be only one access request (for the MCP cluster)")
+			clusterRequestList := &clustersv1alpha1.ClusterRequestList{}
+			Expect(env.Client().List(env.Ctx, clusterRequestList, client.InNamespace(expectedRequestNamespace))).To(Succeed())
+			Expect(clusterRequestList.Items).To(BeEmpty(), "there should be no cluster request (for the Workload cluster)")
+		})
+
 		Context("Delete", func() {
 			It("should delete MCP-/Workload ClusterRequests/AccessRequests", func() {
 				var reconcileResult reconcile.Result
@@ -278,7 +366,7 @@ var _ = Describe("ClusterAccessReconciler", func() {
 					},
 				}
 
-				env := buildTestEnvironmentDelete("test-02")
+				env := buildTestEnvironmentDelete("test-02", false)
 
 				reconcileResult = env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 				Expect(reconcileResult.RequeueAfter).To(BeZero(), "reconcile should requeue after a delay")
@@ -287,6 +375,34 @@ var _ = Describe("ClusterAccessReconciler", func() {
 				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestMCP), accessRequestMCP)).ToNot(Succeed(), "access request for MCP cluster should not exist")
 				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(clusterRequestWorkload), clusterRequestWorkload)).ToNot(Succeed(), "cluster request for Workload cluster should not exist")
 				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestWorkload), accessRequestWorkload)).ToNot(Succeed(), "access request for Workload cluster should not exist")
+			})
+
+			It("should delete only MCP AccessRequest with skipWorkloadCluster", func() {
+				var reconcileResult reconcile.Result
+
+				expectedRequestNamespace := "mcp--80158a25-6874-80a6-a75d-94f57da600c0"
+
+				request := reconcile.Request{
+					NamespacedName: client.ObjectKey{
+						Name:      "instance",
+						Namespace: "test",
+					},
+				}
+
+				accessRequestMCP := &clustersv1alpha1.AccessRequest{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      clusteraccess.StableRequestName(controllerName, request) + "--mcp",
+						Namespace: expectedRequestNamespace,
+					},
+				}
+
+				env := buildTestEnvironmentDelete("test-02", true)
+
+				reconcileResult = env.ShouldReconcile(request, "reconcilerImpl should not return an error")
+				Expect(reconcileResult.RequeueAfter).To(BeZero(), "reconcile should requeue after a delay")
+
+				// access request should be deleted
+				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestMCP), accessRequestMCP)).ToNot(Succeed(), "access request for MCP cluster should not exist")
 			})
 		})
 	})

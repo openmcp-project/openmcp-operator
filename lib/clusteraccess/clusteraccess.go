@@ -53,6 +53,9 @@ type Reconciler interface {
 	// WithWorkloadScheme sets the scheme for the Workload Kubernetes client.
 	WithWorkloadScheme(scheme *runtime.Scheme) Reconciler
 
+	// SkipWorkloadCluster disables the request of a Workload cluster.
+	SkipWorkloadCluster() Reconciler
+
 	// MCPCluster creates a Cluster for the MCP AccessRequest.
 	// This function will only be successful if the MCP AccessRequest is granted and Reconcile returned without an error
 	// and a reconcile.Result with no RequeueAfter value.
@@ -90,6 +93,7 @@ type reconcilerImpl struct {
 	workloadRoleRefs      []commonapi.RoleRef
 	mcpScheme             *runtime.Scheme
 	workloadScheme        *runtime.Scheme
+	skipWorkloadCluster   bool
 }
 
 // NewClusterAccessReconciler creates a new ClusterAccessReconciler with the given parameters.
@@ -106,6 +110,7 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 		workloadRoleRefs:      []commonapi.RoleRef{},
 		mcpScheme:             runtime.NewScheme(),
 		workloadScheme:        runtime.NewScheme(),
+		skipWorkloadCluster:   false,
 	}
 }
 
@@ -141,6 +146,11 @@ func (r *reconcilerImpl) WithMCPScheme(scheme *runtime.Scheme) Reconciler {
 
 func (r *reconcilerImpl) WithWorkloadScheme(scheme *runtime.Scheme) Reconciler {
 	r.workloadScheme = scheme
+	return r
+}
+
+func (r *reconcilerImpl) SkipWorkloadCluster() Reconciler {
+	r.skipWorkloadCluster = true
 	return r
 }
 
@@ -245,47 +255,49 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
 	}
 
-	// Create or update the ClusterRequest for the Workload cluster and wait until it is ready.
+	if !r.skipWorkloadCluster {
+		// Create or update the ClusterRequest for the Workload cluster and wait until it is ready.
 
-	log.Debug("Create and wait for Workload cluster request", "clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace)
+		log.Debug("Create and wait for Workload cluster request", "clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace)
 
-	workloadRequest, err := ensureClusterRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace, clustersv1alpha1.PURPOSE_WORKLOAD, metadata)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to create or update Workload ClusterRequest: %w", err)
-	}
+		workloadRequest, err := ensureClusterRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace, clustersv1alpha1.PURPOSE_WORKLOAD, metadata)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to create or update Workload ClusterRequest: %w", err)
+		}
 
-	if workloadRequest.Status.IsDenied() {
-		return reconcile.Result{}, fmt.Errorf("workload ClusterRequest denied")
-	}
+		if workloadRequest.Status.IsDenied() {
+			return reconcile.Result{}, fmt.Errorf("workload ClusterRequest denied")
+		}
 
-	if !workloadRequest.Status.IsGranted() {
-		log.Debug("Workload ClusterRequest is not yet granted",
-			"clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace, "requestPhase", workloadRequest.Status.Phase)
-		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
-	}
+		if !workloadRequest.Status.IsGranted() {
+			log.Debug("Workload ClusterRequest is not yet granted",
+				"clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace, "requestPhase", workloadRequest.Status.Phase)
+			return reconcile.Result{RequeueAfter: r.retryInterval}, nil
+		}
 
-	// Create or update the AccessRequest for the Workload cluster.
+		// Create or update the AccessRequest for the Workload cluster.
 
-	log.Debug("Create and wait for Workload cluster access request", "accessRequestName", requestNameWorkload, "accessRequestNamespace", requestNamespace)
+		log.Debug("Create and wait for Workload cluster access request", "accessRequestName", requestNameWorkload, "accessRequestNamespace", requestNamespace)
 
-	workloadAccessRequest, err := ensureAccessRequest(ctx, r.platformClusterClient,
-		requestNameWorkload, requestNamespace, &commonapi.ObjectReference{
-			Name:      requestNameWorkload,
-			Namespace: requestNamespace,
-		}, nil, r.workloadPermissions, r.workloadRoleRefs, metadata)
+		workloadAccessRequest, err := ensureAccessRequest(ctx, r.platformClusterClient,
+			requestNameWorkload, requestNamespace, &commonapi.ObjectReference{
+				Name:      requestNameWorkload,
+				Namespace: requestNamespace,
+			}, nil, r.workloadPermissions, r.workloadRoleRefs, metadata)
 
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to create or update Workload AccessRequest: %w", err)
-	}
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to create or update Workload AccessRequest: %w", err)
+		}
 
-	if workloadAccessRequest.Status.IsDenied() {
-		return reconcile.Result{}, fmt.Errorf("workload AccessRequest denied")
-	}
+		if workloadAccessRequest.Status.IsDenied() {
+			return reconcile.Result{}, fmt.Errorf("workload AccessRequest denied")
+		}
 
-	if !workloadAccessRequest.Status.IsGranted() {
-		log.Debug("Workload AccessRequest is not yet granted",
-			"accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace, "requestPhase", workloadAccessRequest.Status.Phase)
-		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
+		if !workloadAccessRequest.Status.IsGranted() {
+			log.Debug("Workload AccessRequest is not yet granted",
+				"accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace, "requestPhase", workloadAccessRequest.Status.Phase)
+			return reconcile.Result{RequeueAfter: r.retryInterval}, nil
+		}
 	}
 
 	return reconcile.Result{}, nil
@@ -300,16 +312,22 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 	requestNameMCP := StableRequestName(r.controllerName, request) + requestSuffixMCP
 	requestNameWorkload := StableRequestName(r.controllerName, request) + requestSuffixWorkload
 
-	// Delete the Workload AccessRequest if it exists
-	workloadAccessDeleted, err := deleteAccessRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to delete Workload AccessRequest: %w", err)
-	}
+	workloadAccessDeleted := true
+	workloadClusterDeleted := true
 
-	// Delete the Workload ClusterRequest if it exists
-	workloadClusterDeleted, err := deleteClusterRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to delete Workload ClusterRequest: %w", err)
+	if !r.skipWorkloadCluster {
+		// Delete the Workload AccessRequest if it exists
+		workloadAccessDeleted, err = deleteAccessRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to delete Workload AccessRequest: %w", err)
+		}
+
+		// Delete the Workload ClusterRequest if it exists
+		workloadClusterDeleted, err = deleteClusterRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to delete Workload ClusterRequest: %w", err)
+		}
+
 	}
 
 	// Delete the MCP AccessRequest if it exists
