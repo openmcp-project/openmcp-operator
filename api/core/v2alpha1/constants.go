@@ -40,6 +40,6 @@ const (
 )
 
 const (
-	OIDCNamePrefix  = "oidc:"
-	TokenNamePrefix = "token:"
+	OIDCNamePrefix  = "oidc_"
+	TokenNamePrefix = "token_"
 )

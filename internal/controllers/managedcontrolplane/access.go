@@ -90,15 +90,27 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 
 	// create or update AccessRequests for the ManagedControlPlane
 	if mcp.DeletionTimestamp.IsZero() {
-		oidcProviders = make([]commonapi.OIDCProviderConfig, 0, len(mcp.Spec.IAM.OIDC.ExtraProviders)+1)
-		if r.Config.DefaultOIDCProvider != nil && len(mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings) > 0 {
+		oidcProvidersLen := 1
+		defaultProviderRoleBindingsLen := 0
+
+		if mcp.Spec.IAM.OIDC != nil {
+			oidcProvidersLen += len(mcp.Spec.IAM.OIDC.ExtraProviders)
+			defaultProviderRoleBindingsLen = len(mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings)
+		}
+
+		oidcProviders = make([]commonapi.OIDCProviderConfig, 0, oidcProvidersLen)
+
+		if r.Config.DefaultOIDCProvider != nil && defaultProviderRoleBindingsLen > 0 {
 			// add default OIDC provider, unless it has been disabled
 			defaultOidc := r.Config.DefaultOIDCProvider.DeepCopy()
 			defaultOidc.Name = corev2alpha1.DefaultOIDCProviderName
 			defaultOidc.RoleBindings = mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings
 			oidcProviders = append(oidcProviders, *defaultOidc)
 		}
-		oidcProviders = append(oidcProviders, mcp.Spec.IAM.OIDC.ExtraProviders...)
+
+		if mcp.Spec.IAM.OIDC != nil && len(mcp.Spec.IAM.OIDC.ExtraProviders) > 0 {
+			oidcProviders = append(oidcProviders, mcp.Spec.IAM.OIDC.ExtraProviders...)
+		}
 
 		tokenProviders = mcp.Spec.IAM.Tokens
 	}
