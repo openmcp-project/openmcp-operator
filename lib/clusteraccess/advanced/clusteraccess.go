@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -31,18 +32,18 @@ import (
 /// INTERFACES ///
 //////////////////
 
-// Reconciler is an interface for reconciling access k8s clusters based on the openMCP 'Cluster' API.
+// ClusterAccessReconciler is an interface for reconciling access k8s clusters based on the openMCP 'Cluster' API.
 // It can create ClusterRequests and/or AccessRequests for an amount of clusters.
-type Reconciler interface {
+type ClusterAccessReconciler interface {
 	// Register registers a cluster to be managed by the reconciler.
-	Register(reg ClusterRegistration) Reconciler
+	Register(reg ClusterRegistration) ClusterAccessReconciler
 	// WithRetryInterval sets the retry interval.
-	WithRetryInterval(interval time.Duration) Reconciler
+	WithRetryInterval(interval time.Duration) ClusterAccessReconciler
 	// WithManagedLabels allows to overwrite the managed-by and managed-purpose labels that are set on the created resources.
 	// Note that the implementation might depend on these labels to identify the resources it created,
 	// so changing them might lead to unexpected behavior. They also must be unique within the context of this reconciler.
 	// Use with caution.
-	WithManagedLabels(managedBy, managedPurpose string) Reconciler
+	WithManagedLabels(managedBy, managedPurpose string) ClusterAccessReconciler
 
 	// Access returns an internal Cluster object granting access to the cluster for the specified request with the specified id.
 	// Will fail if the cluster is not registered or no AccessRequest is registered for the cluster, or if some other error occurs.
@@ -73,7 +74,32 @@ type Reconciler interface {
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
 	ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error)
+
+	// WithFakingCallback passes a callback function with a specific key.
+	// The available keys depend on the implementation.
+	// The key determines when the callback function is executed.
+	// This feature is meant for unit testing, where usually no ClusterProvider, which could answer ClusterRequests and AccessRequests, is running.
+	WithFakingCallback(key string, callback FakingCallback) ClusterAccessReconciler
 }
+
+// FakingCallback is a function that allows to mock a desired state for unit testing.
+//
+// The idea behind this is: Before running any reconciliation logic in a unit tests, make sure to pass these callback functions to the cluster access reconciler implementation.
+// During the reocncile, the cluster access reconciler will call these functions at specific points, e.g. when it is waiting for an AccessRequest to be approved.
+// The time of the execution depends on the key and the implementation of the cluster access reconciler.
+// In the callback function, modify the cluster state as desired by mocking actions usually performed by external operators, e.g. set the AccessRequest to approved.
+//
+// Note that most of the arguments can be nil, depending on when the callback is executed.
+// The arguments are:
+// - ctx is the context, which is required for interacting with the cluster.
+// - platformClusterClient is the client for the platform cluster.
+// - key is the key that determined the execution of the callback.
+// - req is the reconcile.Request that triggered the reconciliation, if known.
+// - cr is the ClusterRequest related to the cluster access reconciliation, if known.
+// - ar is the AccessRequest related to the cluster access reconciliation, if known.
+// - c is the Cluster related to the cluster access reconciliation, if known.
+// - access is the access to the cluster, if already retrieved.
+type FakingCallback func(ctx context.Context, platformClusterClient client.Client, key string, req *reconcile.Request, cr *clustersv1alpha1.ClusterRequest, ar *clustersv1alpha1.AccessRequest, c *clustersv1alpha1.Cluster, access *clusters.Cluster) error
 
 type ClusterRegistration interface {
 	// ID is the unique identifier for the cluster.
@@ -105,11 +131,9 @@ type ClusterRegistration interface {
 	// Scheme is the scheme for the Kubernetes client of the cluster.
 	// If nil, the default scheme will be used.
 	Scheme() *runtime.Scheme
-	// NamespaceGenerator returns a function that generates the namespace on the Platform cluster to use for the created requests.
-	// The function must take the name and namespace of the reconciled object as parameters and return the namespace or an error.
-	// The generated namespace must be unique within the context of the reconciler.
-	// If nil, the StableMCPNamespace function will be used.
-	NamespaceGenerator() func(requestName, requestNamespace string) (string, error)
+	// Namespace generates the namespace on the Platform cluster to use for the created requests.
+	// The generated namespace is expected be unique within the context of the reconciler.
+	Namespace(requestName, requestNamespace string) (string, error)
 }
 
 type ClusterRegistrationBuilder interface {
@@ -125,7 +149,6 @@ type ClusterRegistrationBuilder interface {
 	// If not set or set to nil, the default scheme will be used.
 	WithScheme(scheme *runtime.Scheme) ClusterRegistrationBuilder
 	// WithNamespaceGenerator sets the function that generates the namespace on the Platform cluster to use for the created requests.
-	// If set to nil, the StableMCPNamespace function will be used.
 	WithNamespaceGenerator(f func(requestName, requestNamespace string) (string, error)) ClusterRegistrationBuilder
 	// Build builds the ClusterRegistration object.
 	Build() ClusterRegistration
@@ -192,12 +215,12 @@ func (c *clusterRegistrationImpl) Scheme() *runtime.Scheme {
 	return c.scheme
 }
 
-// NamespaceGenerator implements ClusterRegistration.
-func (c *clusterRegistrationImpl) NamespaceGenerator() func(requestName, requestNamespace string) (string, error) {
+// Namespace implements ClusterRegistration.
+func (c *clusterRegistrationImpl) Namespace(requestName, requestNamespace string) (string, error) {
 	if c.namespaceGenerator != nil {
-		return c.namespaceGenerator
+		return c.namespaceGenerator(requestName, requestNamespace)
 	}
-	return libutils.StableMCPNamespace
+	return libutils.StableMCPNamespace(requestName, requestNamespace)
 }
 
 //////////////////////////////////////////////////
@@ -240,13 +263,14 @@ func (c *clusterRegistrationBuilderImpl) WithNamespaceGenerator(f func(requestNa
 }
 
 // NewCluster instructs the Reconciler to create and manage a new ClusterRequest.
-func NewCluster(id, suffix string, purpose string) ClusterRegistrationBuilder {
+func NewCluster(id, suffix, purpose string, waitForClusterDeletion bool) ClusterRegistrationBuilder {
 	return &clusterRegistrationBuilderImpl{
 		clusterRegistrationImpl: clusterRegistrationImpl{
 			id:     id,
 			suffix: suffix,
 			clusterRequestSpec: &clustersv1alpha1.ClusterRequestSpec{
-				Purpose: purpose,
+				Purpose:                purpose,
+				WaitForClusterDeletion: &waitForClusterDeletion,
 			},
 		},
 	}
@@ -292,9 +316,23 @@ type reconcilerImpl struct {
 	registrations  map[string]ClusterRegistration
 	managedBy      string
 	managedPurpose string
+
+	fakingCallbacks map[string]FakingCallback
 }
 
-var _ Reconciler = &reconcilerImpl{}
+// NewClusterAccessReconciler creates a new Cluster Access Reconciler.
+// Note that it needs to be configured further by calling its Register method and optionally its builder-like With* methods.
+// This is meant to be instantiated and configured once during controller setup and then its Reconcile or ReconcileDelete methods should be called during each reconciliation of the controller.
+func NewClusterAccessReconciler(platformClusterClient client.Client, controllerName string) ClusterAccessReconciler {
+	return &reconcilerImpl{
+		controllerName:        controllerName,
+		platformClusterClient: platformClusterClient,
+		interval:              5 * time.Second,
+		registrations:         map[string]ClusterRegistration{},
+	}
+}
+
+var _ ClusterAccessReconciler = &reconcilerImpl{}
 
 // Access implements Reconciler.
 func (r *reconcilerImpl) Access(ctx context.Context, request reconcile.Request, id string) (*clusters.Cluster, error) {
@@ -329,7 +367,7 @@ func (r *reconcilerImpl) AccessRequest(ctx context.Context, request reconcile.Re
 	if suffix == "" {
 		suffix = reg.ID()
 	}
-	namespace, err := reg.NamespaceGenerator()(request.Name, request.Namespace)
+	namespace, err := reg.Namespace(request.Name, request.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s/%s': %w", request.Namespace, request.Name, err)
 	}
@@ -351,7 +389,7 @@ func (r *reconcilerImpl) Cluster(ctx context.Context, request reconcile.Request,
 	clusterRef := reg.ClusterReference()
 	if clusterRef == nil {
 		// if no ClusterReference is specified, try to get it from the ClusterRequest
-		if reg.ClusterRequestReference() != nil {
+		if reg.ClusterRequestReference() != nil || reg.ClusterRequestSpec() != nil {
 			cr, err := r.ClusterRequest(ctx, request, id)
 			if err != nil {
 				return nil, fmt.Errorf("unable to fetch ClusterRequest for request '%s' with id '%s': %w", request.String(), id, err)
@@ -389,13 +427,13 @@ func (r *reconcilerImpl) ClusterRequest(ctx context.Context, request reconcile.R
 	crRef := reg.ClusterRequestReference()
 	if crRef == nil {
 		// if the ClusterRequest is not referenced directly, check if was created or can be retrieved via an AccessRequest
-		if reg.ClusterRequestSpec() == nil {
+		if reg.ClusterRequestSpec() != nil {
 			// the ClusterRequest was created by this library
 			suffix := reg.Suffix()
 			if suffix == "" {
 				suffix = reg.ID()
 			}
-			namespace, err := reg.NamespaceGenerator()(request.Name, request.Namespace)
+			namespace, err := reg.Namespace(request.Name, request.Namespace)
 			if err != nil {
 				return nil, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s/%s': %w", request.Namespace, request.Name, err)
 			}
@@ -450,7 +488,7 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		}
 
 		// ensure namespace exists
-		namespace, err := reg.NamespaceGenerator()(request.Name, request.Namespace)
+		namespace, err := reg.Namespace(request.Name, request.Namespace)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s/%s': %w", request.Namespace, request.Name, err)
 		}
@@ -493,6 +531,12 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 			}
 			if !cr.Status.IsGranted() {
 				rlog.Info("Waiting for ClusterRequest to be granted", "crName", cr.Name, "crNamespace", cr.Namespace)
+				if fc := r.fakingCallbacks[FakingCallback_WaitingForClusterRequestReadiness]; fc != nil {
+					rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForClusterRequestReadiness)
+					if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForClusterRequestReadiness, &request, cr, nil, nil, nil); err != nil {
+						return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForClusterRequestReadiness, err)
+					}
+				}
 				return reconcile.Result{RequeueAfter: r.interval}, nil
 			}
 			rlog.Debug("ClusterRequest is granted", "crName", cr.Name, "crNamespace", cr.Namespace)
@@ -541,6 +585,12 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 			}
 			if !ar.Status.IsGranted() {
 				rlog.Info("Waiting for AccessRequest to be granted", "arName", ar.Name, "arNamespace", ar.Namespace)
+				if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestReadiness]; fc != nil {
+					rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestReadiness)
+					if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestReadiness, &request, cr, ar, nil, nil); err != nil {
+						return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForAccessRequestReadiness, err)
+					}
+				}
 				return reconcile.Result{RequeueAfter: r.interval}, nil
 			}
 		}
@@ -576,7 +626,7 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 			expectedLabels[openmcpconst.ManagedPurposeLabel] = fmt.Sprintf("%s.%s.%s", request.Namespace, request.Name, reg.ID())
 		}
 
-		namespace, err := reg.NamespaceGenerator()(request.Name, request.Namespace)
+		namespace, err := reg.Namespace(request.Name, request.Namespace)
 		if err != nil {
 			return reconcile.Result{}, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s/%s': %w", request.Namespace, request.Name, err)
 		}
@@ -601,6 +651,12 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 					}
 				} else {
 					rlog.Info("Waiting for AccessRequest to be deleted", "arName", ar.Name, "arNamespace", ar.Namespace)
+				}
+				if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestDeletion]; fc != nil {
+					rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestDeletion)
+					if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestDeletion, &request, nil, ar, nil, nil); err != nil {
+						return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForAccessRequestDeletion, err)
+					}
 				}
 				return reconcile.Result{RequeueAfter: r.interval}, nil
 			}
@@ -627,6 +683,12 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 				} else {
 					rlog.Info("Waiting for ClusterRequest to be deleted", "crName", cr.Name, "crNamespace", cr.Namespace)
 				}
+				if fc := r.fakingCallbacks[FakingCallback_WaitingForClusterRequestDeletion]; fc != nil {
+					rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForClusterRequestDeletion)
+					if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForClusterRequestDeletion, &request, cr, nil, nil, nil); err != nil {
+						return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForClusterRequestDeletion, err)
+					}
+				}
 				return reconcile.Result{RequeueAfter: r.interval}, nil
 			}
 		}
@@ -639,23 +701,47 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 }
 
 // Register implements Reconciler.
-func (r *reconcilerImpl) Register(reg ClusterRegistration) Reconciler {
+func (r *reconcilerImpl) Register(reg ClusterRegistration) ClusterAccessReconciler {
 	r.registrations[reg.ID()] = reg
 	return r
 }
 
 // WithManagedLabels implements Reconciler.
-func (r *reconcilerImpl) WithManagedLabels(managedBy string, managedPurpose string) Reconciler {
+func (r *reconcilerImpl) WithManagedLabels(managedBy string, managedPurpose string) ClusterAccessReconciler {
 	r.managedBy = managedBy
 	r.managedPurpose = managedPurpose
 	return r
 }
 
 // WithRetryInterval implements Reconciler.
-func (r *reconcilerImpl) WithRetryInterval(interval time.Duration) Reconciler {
+func (r *reconcilerImpl) WithRetryInterval(interval time.Duration) ClusterAccessReconciler {
 	r.interval = interval
 	return r
 }
+
+// WithFakingCallback implements Reconciler.
+func (r *reconcilerImpl) WithFakingCallback(key string, callback FakingCallback) ClusterAccessReconciler {
+	if r.fakingCallbacks == nil {
+		r.fakingCallbacks = map[string]FakingCallback{}
+	}
+	r.fakingCallbacks[key] = callback
+	return r
+}
+
+const (
+	// FakingCallback_WaitingForAccessRequestReadiness is a key for a faking callback that is called when the reconciler is waiting for the AccessRequest to be granted.
+	// Note that the execution happens directly before the return of the reconcile function (with a requeue). This means that the reconciliation needs to run a second time to pick up the changes made in the callback.
+	FakingCallback_WaitingForAccessRequestReadiness = "WaitingForAccessRequestReadiness"
+	// FakingCallback_WaitingForClusterRequestReadiness is a key for a faking callback that is called when the reconciler is waiting for the ClusterRequest to be granted.
+	// Note that the execution happens directly before the return of the reconcile function (with a requeue). This means that the reconciliation needs to run a second time to pick up the changes made in the callback.
+	FakingCallback_WaitingForClusterRequestReadiness = "WaitingForClusterRequestReadiness"
+	// FakingCallback_WaitingForAccessRequestDeletion is a key for a faking callback that is called when the reconciler is waiting for the AccessRequest to be deleted.
+	// Note that the execution happens directly before the return of the reconcile function (with a requeue). This means that the reconciliation needs to run a second time to pick up the changes made in the callback.
+	FakingCallback_WaitingForAccessRequestDeletion = "WaitingForAccessRequestDeletion"
+	// FakingCallback_WaitingForClusterRequestDeletion is a key for a faking callback that is called when the reconciler is waiting for the ClusterRequest to be deleted.
+	// Note that the execution happens directly before the return of the reconcile function (with a requeue). This means that the reconciliation needs to run a second time to pick up the changes made in the callback.
+	FakingCallback_WaitingForClusterRequestDeletion = "WaitingForClusterRequestDeletion"
+)
 
 ///////////////////////////
 /// AUXILIARY FUNCTIONS ///
@@ -713,4 +799,258 @@ func AccessFromAccessRequest(ctx context.Context, platformClusterClient client.C
 	}
 
 	return c, nil
+}
+
+////////////////////////////////
+/// FAKE AUXILIARY FUNCTIONS ///
+////////////////////////////////
+
+// FakeClusterRequestReadiness returns a faking callback that sets the ClusterRequest to 'Granted'.
+// If the given ClusterSpec is not nil, it creates a corresponding Cluster next to the ClusterRequest, if it doesn't exist yet.
+// If during the callback, the Cluster is non-nil, with a non-empty name and namespace, but doesn't exist yet, it will be created with the data from the Cluster, ignoring the given ClusterSpec.
+// Otherwise, only the ClusterRequest's status is modified.
+// The callback is a no-op if the ClusterRequest is already granted (Cluster reference and existence are not checked in this case).
+// It returns an error if the ClusterRequest is nil.
+//
+// The returned callback is meant to be used with the key stored in FakingCallback_WaitingForClusterRequestReadiness.
+func FakeClusterRequestReadiness(clusterSpec *clustersv1alpha1.ClusterSpec) FakingCallback {
+	return func(ctx context.Context, platformClusterClient client.Client, key string, _ *reconcile.Request, cr *clustersv1alpha1.ClusterRequest, _ *clustersv1alpha1.AccessRequest, c *clustersv1alpha1.Cluster, _ *clusters.Cluster) error {
+		if cr == nil {
+			return fmt.Errorf("ClusterRequest is nil")
+		}
+		if cr.Status.IsGranted() {
+			// already granted, nothing to do
+			return nil
+		}
+
+		// create cluster, if desired
+		if c != nil && c.Name != "" && c.Namespace != "" {
+			// check if cluster exists
+			if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("unable to get Cluster '%s/%s': %w", c.Namespace, c.Name, err)
+				}
+				// create cluster
+				if err := platformClusterClient.Create(ctx, c); err != nil {
+					return fmt.Errorf("unable to create Cluster '%s/%s': %w", c.Namespace, c.Name, err)
+				}
+			}
+		} else {
+			// cluster not known, create fake one, if spec is given
+			c = &clustersv1alpha1.Cluster{}
+			c.Name = cr.Name
+			c.Namespace = cr.Namespace
+			if clusterSpec != nil {
+				c.Spec = *clusterSpec.DeepCopy()
+				if err := platformClusterClient.Create(ctx, c); err != nil {
+					return fmt.Errorf("unable to create Cluster '%s/%s': %w", c.Namespace, c.Name, err)
+				}
+			}
+		}
+
+		// mock ClusterRequest status
+		old := cr.DeepCopy()
+		cr.Status.Cluster = &commonapi.ObjectReference{
+			Name:      c.Name,
+			Namespace: c.Namespace,
+		}
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.ObservedGeneration = cr.Generation
+		if err := platformClusterClient.Status().Patch(ctx, cr, client.MergeFrom(old)); err != nil {
+			return fmt.Errorf("unable to update status of ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
+		}
+		return nil
+	}
+}
+
+// FakeAccessRequestReadiness returns a faking callback that sets the AccessRequest to 'Granted'.
+// If kcfgData is not nil or empty, it will be used as 'kubeconfig' data in the secret referenced by the AccessRequest.
+// Otherwise, the content of the kubeconfig key will just be 'fake'.
+// The callback is a no-op if the AccessRequest is already granted (Secret reference and existence are not checked in this case).
+// It returns an error if the AccessRequest is nil.
+//
+// The returned callback is meant to be used with the key stored in FakingCallback_WaitingForAccessRequestReadiness.
+func FakeAccessRequestReadiness(kcfgData []byte) FakingCallback {
+	return func(ctx context.Context, platformClusterClient client.Client, key string, req *reconcile.Request, cr *clustersv1alpha1.ClusterRequest, ar *clustersv1alpha1.AccessRequest, c *clustersv1alpha1.Cluster, access *clusters.Cluster) error {
+		if ar == nil {
+			return fmt.Errorf("AccessRequest is nil")
+		}
+		if ar.Status.IsGranted() {
+			// already granted, nothing to do
+			return nil
+		}
+
+		// create secret
+		if len(kcfgData) == 0 {
+			kcfgData = []byte("fake")
+		}
+		s := &corev1.Secret{}
+		s.Name = ar.Name
+		s.Namespace = ar.Namespace
+		s.Data = map[string][]byte{
+			clustersv1alpha1.SecretKeyKubeconfig: kcfgData,
+		}
+		if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(s), s); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("unable to get secret '%s/%s': %w", s.Namespace, s.Name, err)
+			}
+			// create secret
+			if err := platformClusterClient.Create(ctx, s); err != nil {
+				return fmt.Errorf("unable to create secret '%s/%s': %w", s.Namespace, s.Name, err)
+			}
+		}
+
+		// mock AccessRequest status
+		old := ar.DeepCopy()
+		ar.Status.SecretRef = &commonapi.ObjectReference{
+			Name:      s.Name,
+			Namespace: s.Namespace,
+		}
+		ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		ar.Status.ObservedGeneration = ar.Generation
+		if err := platformClusterClient.Status().Patch(ctx, ar, client.MergeFrom(old)); err != nil {
+			return fmt.Errorf("unable to update status of AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+		}
+		return nil
+	}
+}
+
+// FakeClusterRequestDeletion returns a faking callback that removes finalizers from the given ClusterRequest and potentially deletes the referenced Cluster.
+// The callback is a no-op if the ClusterRequest is already nil (not found).
+// If deleteCluster is true, the Cluster referenced by the ClusterRequest will be deleted, if it exists.
+// All finalizers from the finalizersToRemove* slices will be removed from the ClusterRequest and/or Cluster before deletion.
+// The ClusterRequest itself is not deleted by this callback, only finalizers are removed.
+//
+// The returned callback is meant to be used with the key stored in FakingCallback_WaitingForClusterRequestDeletion.
+func FakeClusterRequestDeletion(deleteCluster bool, finalizersToRemoveFromClusterRequest, finalizersToRemoveFromCluster []string) FakingCallback {
+	return func(ctx context.Context, platformClusterClient client.Client, key string, _ *reconcile.Request, cr *clustersv1alpha1.ClusterRequest, _ *clustersv1alpha1.AccessRequest, _ *clustersv1alpha1.Cluster, _ *clusters.Cluster) error {
+		if cr == nil {
+			// already deleted, nothing to do
+			return nil
+		}
+
+		// delete cluster, if desired
+		if deleteCluster && cr.Status.Cluster != nil {
+			c := &clustersv1alpha1.Cluster{}
+			c.Name = cr.Status.Cluster.Name
+			c.Namespace = cr.Status.Cluster.Namespace
+
+			if len(finalizersToRemoveFromCluster) > 0 {
+				// fetch cluster to remove finalizers
+				if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(c), c); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return fmt.Errorf("unable to get Cluster '%s/%s': %w", c.Namespace, c.Name, err)
+					}
+					// cluster doesn't exist, nothing to do
+					c = nil
+				} else {
+					cOld := c.DeepCopy()
+					if removeFinalizers(c, finalizersToRemoveFromCluster...) {
+						if err := platformClusterClient.Patch(ctx, c, client.MergeFrom(cOld)); err != nil {
+							return fmt.Errorf("unable to remove finalizers from Cluster '%s/%s': %w", c.Namespace, c.Name, err)
+						}
+					}
+				}
+			}
+
+			if c != nil {
+				if err := platformClusterClient.Delete(ctx, c); client.IgnoreNotFound(err) != nil {
+					return fmt.Errorf("unable to delete Cluster '%s/%s': %w", c.Namespace, c.Name, err)
+				}
+			}
+		}
+
+		// remove finalizers from ClusterRequest, if any
+		if len(finalizersToRemoveFromClusterRequest) > 0 {
+			crOld := cr.DeepCopy()
+			if removeFinalizers(cr, finalizersToRemoveFromClusterRequest...) {
+				if err := platformClusterClient.Patch(ctx, cr, client.MergeFrom(crOld)); err != nil {
+					return fmt.Errorf("unable to remove finalizers from ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
+				}
+			}
+		}
+
+		return nil
+	}
+}
+
+// FakeAccessRequestDeletion returns a faking callback that removes finalizers from the given AccessRequest and deletes the referenced Secret, if it exists.
+// The callback is a no-op if the AccessRequest is already nil (not found).
+// It returns an error if the AccessRequest is non-nil but cannot be deleted.
+// All finalizers from the finalizersToRemove* slices will be removed from the AccessRequest and/or Secret before deletion.
+// The AccessRequest itself is not deleted by this callback, only finalizers are removed.
+//
+// The returned callback is meant to be used with the key stored in FakingCallback_WaitingForAccessRequestDeletion.
+func FakeAccessRequestDeletion(finalizersToRemoveFromAccessRequest, finalizersToRemoveFromSecret []string) FakingCallback {
+	return func(ctx context.Context, platformClusterClient client.Client, key string, _ *reconcile.Request, _ *clustersv1alpha1.ClusterRequest, ar *clustersv1alpha1.AccessRequest, _ *clustersv1alpha1.Cluster, _ *clusters.Cluster) error {
+		if ar == nil {
+			// already deleted, nothing to do
+			return nil
+		}
+
+		// delete secret
+		if ar.Status.SecretRef != nil {
+			s := &corev1.Secret{}
+			s.Name = ar.Status.SecretRef.Name
+			s.Namespace = ar.Status.SecretRef.Namespace
+
+			if len(finalizersToRemoveFromSecret) > 0 {
+				// fetch secret to remove finalizers
+				if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(s), s); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return fmt.Errorf("unable to get secret '%s/%s': %w", s.Namespace, s.Name, err)
+					}
+					// secret doesn't exist, nothing to do
+					s = nil
+				} else {
+					sOld := s.DeepCopy()
+					if removeFinalizers(s, finalizersToRemoveFromSecret...) {
+						if err := platformClusterClient.Patch(ctx, s, client.MergeFrom(sOld)); err != nil {
+							return fmt.Errorf("unable to remove finalizers from secret '%s/%s': %w", s.Namespace, s.Name, err)
+						}
+					}
+				}
+			}
+
+			if s != nil {
+				if err := platformClusterClient.Delete(ctx, s); client.IgnoreNotFound(err) != nil {
+					return fmt.Errorf("unable to delete secret '%s/%s': %w", s.Namespace, s.Name, err)
+				}
+			}
+		}
+
+		// remove finalizers from AccessRequest, if any
+		if len(finalizersToRemoveFromAccessRequest) > 0 {
+			arOld := ar.DeepCopy()
+			if removeFinalizers(ar, finalizersToRemoveFromAccessRequest...) {
+				if err := platformClusterClient.Patch(ctx, ar, client.MergeFrom(arOld)); err != nil {
+					return fmt.Errorf("unable to remove finalizers from AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+				}
+			}
+		}
+
+		return nil
+	}
+}
+
+// removeFinalizers takes an object and a list of finalizers to remove from that object.
+// If the list contains "*", all finalizers will be removed.
+// It updates the object in-place and returns an indicator whether any finalizers were removed.
+func removeFinalizers(obj client.Object, finalizersToRemove ...string) bool {
+	if obj == nil || len(obj.GetFinalizers()) == 0 || len(finalizersToRemove) == 0 {
+		return false
+	}
+
+	changed := false
+	if slices.Contains(finalizersToRemove, "*") {
+		obj.SetFinalizers(nil)
+		changed = true
+	} else {
+		for _, ftr := range finalizersToRemove {
+			if controllerutil.RemoveFinalizer(obj, ftr) {
+				changed = true
+			}
+		}
+	}
+	return changed
 }
