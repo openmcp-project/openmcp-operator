@@ -1,0 +1,26 @@
+apiVersion: core.openmcp.cloud/v2alpha1
+kind: ManagedControlPlaneV2
+metadata:
+  name: mcp-03
+  namespace: test
+  finalizers:
+  - services.openmcp.cloud/sp-01
+  - services.openmcp.cloud/sp-02
+spec:
+  iam:
+    tokens:
+      - name: admin
+        roleRefs:
+          - kind: ClusterRole
+            name: cluster-admin
+        permissions:
+          - rules:
+              - apiGroups: [ '' ]
+                resources: [ 'secretcs']
+                verbs: [ '*' ]
+      - name: viewer
+        permissions:
+          - rules:
+              - apiGroups: [ '' ]
+                resources: [ 'pods', 'services' ]
+                verbs: [ 'get', 'list', 'watch' ]

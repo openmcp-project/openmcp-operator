@@ -814,4 +814,57 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(cr.Spec.WaitForClusterDeletion).To(PointTo(BeTrue()))
 	})
 
+	It("should correctly handle an MCP without OIDC providers", func() {
+		rec, env := defaultTestSetup("testdata", "test-01")
+
+		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp.SetName("mcp-03")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		// fake ClusterRequest ready status and Cluster resource
+		By("fake: ClusterRequest readiness")
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{rec.Config.MCPClusterPurpose}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{
+			{
+				Type:               "TestCondition1",
+				Status:             metav1.ConditionTrue,
+				Reason:             "TestReason",
+				Message:            "This is a test condition",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: 1,
+			},
+			{
+				Type:               "TestCondition2",
+				Status:             metav1.ConditionFalse,
+				Reason:             "TestReason",
+				Message:            "This is another test condition",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: 1,
+			},
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{
+			Name:      cluster.Name,
+			Namespace: cluster.Namespace,
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+	})
+
 })
