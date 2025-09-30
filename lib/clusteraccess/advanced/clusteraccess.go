@@ -43,7 +43,7 @@ type ClusterAccessReconciler interface {
 	// Note that the implementation might depend on these labels to identify the resources it created,
 	// so changing them might lead to unexpected behavior. They also must be unique within the context of this reconciler.
 	// Use with caution.
-	WithManagedLabels(managedBy, managedPurpose string) ClusterAccessReconciler
+	WithManagedLabels(gen ManagedLabelGenerator) ClusterAccessReconciler
 
 	// Access returns an internal Cluster object granting access to the cluster for the specified request with the specified id.
 	// Will fail if the cluster is not registered or no AccessRequest is registered for the cluster, or if some other error occurs.
@@ -100,6 +100,13 @@ type ClusterAccessReconciler interface {
 // - c is the Cluster related to the cluster access reconciliation, if known.
 // - access is the access to the cluster, if already retrieved.
 type FakingCallback func(ctx context.Context, platformClusterClient client.Client, key string, req *reconcile.Request, cr *clustersv1alpha1.ClusterRequest, ar *clustersv1alpha1.AccessRequest, c *clustersv1alpha1.Cluster, access *clusters.Cluster) error
+
+// ManagedLabelGenerator is a function that generates the managed-by and managed-purpose labels for the created resources.
+type ManagedLabelGenerator func(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string)
+
+func DefaultManagedLabelGenerator(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string) {
+	return controllerName, fmt.Sprintf("%s.%s.%s", req.Namespace, req.Name, reg.ID())
+}
 
 type ClusterRegistration interface {
 	// ID is the unique identifier for the cluster.
@@ -312,10 +319,9 @@ type reconcilerImpl struct {
 	controllerName        string
 	platformClusterClient client.Client
 
-	interval       time.Duration
-	registrations  map[string]ClusterRegistration
-	managedBy      string
-	managedPurpose string
+	interval      time.Duration
+	registrations map[string]ClusterRegistration
+	managedBy     ManagedLabelGenerator
 
 	fakingCallbacks map[string]FakingCallback
 }
@@ -329,6 +335,7 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 		platformClusterClient: platformClusterClient,
 		interval:              5 * time.Second,
 		registrations:         map[string]ClusterRegistration{},
+		managedBy:             DefaultManagedLabelGenerator,
 	}
 }
 
@@ -475,17 +482,10 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		if suffix == "" {
 			suffix = reg.ID()
 		}
+		managedBy, managedPurpose := r.managedBy(r.controllerName, request, reg)
 		expectedLabels := map[string]string{}
-		if r.managedBy != "" {
-			expectedLabels[openmcpconst.ManagedByLabel] = r.managedBy
-		} else {
-			expectedLabels[openmcpconst.ManagedByLabel] = r.controllerName
-		}
-		if r.managedPurpose != "" {
-			expectedLabels[openmcpconst.ManagedPurposeLabel] = r.managedPurpose
-		} else {
-			expectedLabels[openmcpconst.ManagedPurposeLabel] = fmt.Sprintf("%s.%s.%s", request.Namespace, request.Name, reg.ID())
-		}
+		expectedLabels[openmcpconst.ManagedByLabel] = managedBy
+		expectedLabels[openmcpconst.ManagedPurposeLabel] = managedPurpose
 
 		// ensure namespace exists
 		namespace, err := reg.Namespace(request.Name, request.Namespace)
@@ -527,6 +527,15 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				cr.Spec = *reg.ClusterRequestSpec().DeepCopy()
 				if err := r.platformClusterClient.Create(ctx, cr); err != nil {
 					return reconcile.Result{}, fmt.Errorf("unable to create ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
+				}
+			} else {
+				for k, v := range expectedLabels {
+					if v2, ok := cr.Labels[k]; !ok || v2 != v {
+						if !ok {
+							v2 = "<null>"
+						}
+						return reconcile.Result{}, fmt.Errorf("ClusterRequest '%s/%s' already exists but is not managed by this controller (label '%s' is expected to have value '%s', but is '%s')", cr.Namespace, cr.Name, k, v, v2)
+					}
 				}
 			}
 			if !cr.Status.IsGranted() {
@@ -573,6 +582,14 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 					return reconcile.Result{}, fmt.Errorf("no ClusterRequestSpec, ClusterReference or ClusterRequestReference specified for registration with id '%s'", reg.ID())
 				}
 			} else {
+				for k, v := range expectedLabels {
+					if v2, ok := ar.Labels[k]; !ok || v2 != v {
+						if !ok {
+							v2 = "<null>"
+						}
+						return reconcile.Result{}, fmt.Errorf("AccessRequest '%s/%s' already exists but is not managed by this controller (label '%s' is expected to have value '%s', but is '%s')", ar.Namespace, ar.Name, k, v, v2)
+					}
+				}
 				rlog.Debug("Updating AccessRequest", "arName", ar.Name, "arNamespace", ar.Namespace)
 			}
 			if _, err := controllerutil.CreateOrUpdate(ctx, r.platformClusterClient, ar, func() error {
@@ -614,17 +631,10 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 		if suffix == "" {
 			suffix = reg.ID()
 		}
+		managedBy, managedPurpose := r.managedBy(r.controllerName, request, reg)
 		expectedLabels := map[string]string{}
-		if r.managedBy != "" {
-			expectedLabels[openmcpconst.ManagedByLabel] = r.managedBy
-		} else {
-			expectedLabels[openmcpconst.ManagedByLabel] = r.controllerName
-		}
-		if r.managedPurpose != "" {
-			expectedLabels[openmcpconst.ManagedPurposeLabel] = r.managedPurpose
-		} else {
-			expectedLabels[openmcpconst.ManagedPurposeLabel] = fmt.Sprintf("%s.%s.%s", request.Namespace, request.Name, reg.ID())
-		}
+		expectedLabels[openmcpconst.ManagedByLabel] = managedBy
+		expectedLabels[openmcpconst.ManagedPurposeLabel] = managedPurpose
 
 		namespace, err := reg.Namespace(request.Name, request.Namespace)
 		if err != nil {
@@ -644,21 +654,32 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 				}
 				rlog.Debug("AccessRequest already deleted", "arName", ar.Name, "arNamespace", ar.Namespace)
 			} else {
-				if ar.DeletionTimestamp.IsZero() {
-					rlog.Info("Deleting AccessRequest", "arName", ar.Name, "arNamespace", ar.Namespace)
-					if err := r.platformClusterClient.Delete(ctx, ar); err != nil {
-						return reconcile.Result{}, fmt.Errorf("unable to delete AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+				managed := true
+				for k, v := range expectedLabels {
+					if v2, ok := ar.Labels[k]; !ok || v2 != v {
+						managed = false
+						break
 					}
+				}
+				if !managed {
+					rlog.Info("Skipping AccessRequest '%s/%s' deletion because it is not managed by this controller", ar.Namespace, ar.Name)
 				} else {
-					rlog.Info("Waiting for AccessRequest to be deleted", "arName", ar.Name, "arNamespace", ar.Namespace)
-				}
-				if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestDeletion]; fc != nil {
-					rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestDeletion)
-					if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestDeletion, &request, nil, ar, nil, nil); err != nil {
-						return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForAccessRequestDeletion, err)
+					if ar.DeletionTimestamp.IsZero() {
+						rlog.Info("Deleting AccessRequest", "arName", ar.Name, "arNamespace", ar.Namespace)
+						if err := r.platformClusterClient.Delete(ctx, ar); err != nil {
+							return reconcile.Result{}, fmt.Errorf("unable to delete AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+						}
+					} else {
+						rlog.Info("Waiting for AccessRequest to be deleted", "arName", ar.Name, "arNamespace", ar.Namespace)
 					}
+					if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestDeletion]; fc != nil {
+						rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestDeletion)
+						if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestDeletion, &request, nil, ar, nil, nil); err != nil {
+							return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForAccessRequestDeletion, err)
+						}
+					}
+					return reconcile.Result{RequeueAfter: r.interval}, nil
 				}
-				return reconcile.Result{RequeueAfter: r.interval}, nil
 			}
 		}
 
@@ -675,21 +696,32 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 				}
 				rlog.Debug("ClusterRequest already deleted", "crName", cr.Name, "crNamespace", cr.Namespace)
 			} else {
-				if cr.DeletionTimestamp.IsZero() {
-					rlog.Info("Deleting ClusterRequest", "crName", cr.Name, "crNamespace", cr.Namespace)
-					if err := r.platformClusterClient.Delete(ctx, cr); err != nil {
-						return reconcile.Result{}, fmt.Errorf("unable to delete ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
+				managed := true
+				for k, v := range expectedLabels {
+					if v2, ok := cr.Labels[k]; !ok || v2 != v {
+						managed = false
+						break
 					}
+				}
+				if !managed {
+					rlog.Info("Skipping ClusterRequest '%s/%s' deletion because it is not managed by this controller", cr.Namespace, cr.Name)
 				} else {
-					rlog.Info("Waiting for ClusterRequest to be deleted", "crName", cr.Name, "crNamespace", cr.Namespace)
-				}
-				if fc := r.fakingCallbacks[FakingCallback_WaitingForClusterRequestDeletion]; fc != nil {
-					rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForClusterRequestDeletion)
-					if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForClusterRequestDeletion, &request, cr, nil, nil, nil); err != nil {
-						return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForClusterRequestDeletion, err)
+					if cr.DeletionTimestamp.IsZero() {
+						rlog.Info("Deleting ClusterRequest", "crName", cr.Name, "crNamespace", cr.Namespace)
+						if err := r.platformClusterClient.Delete(ctx, cr); err != nil {
+							return reconcile.Result{}, fmt.Errorf("unable to delete ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
+						}
+					} else {
+						rlog.Info("Waiting for ClusterRequest to be deleted", "crName", cr.Name, "crNamespace", cr.Namespace)
 					}
+					if fc := r.fakingCallbacks[FakingCallback_WaitingForClusterRequestDeletion]; fc != nil {
+						rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForClusterRequestDeletion)
+						if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForClusterRequestDeletion, &request, cr, nil, nil, nil); err != nil {
+							return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForClusterRequestDeletion, err)
+						}
+					}
+					return reconcile.Result{RequeueAfter: r.interval}, nil
 				}
-				return reconcile.Result{RequeueAfter: r.interval}, nil
 			}
 		}
 
@@ -707,9 +739,11 @@ func (r *reconcilerImpl) Register(reg ClusterRegistration) ClusterAccessReconcil
 }
 
 // WithManagedLabels implements Reconciler.
-func (r *reconcilerImpl) WithManagedLabels(managedBy string, managedPurpose string) ClusterAccessReconciler {
-	r.managedBy = managedBy
-	r.managedPurpose = managedPurpose
+func (r *reconcilerImpl) WithManagedLabels(gen ManagedLabelGenerator) ClusterAccessReconciler {
+	if gen == nil {
+		gen = DefaultManagedLabelGenerator
+	}
+	r.managedBy = gen
 	return r
 }
 
@@ -880,6 +914,38 @@ func FakeAccessRequestReadiness(kcfgData []byte) FakingCallback {
 			return nil
 		}
 
+		// if a ClusterRequest is referenced, but no Cluster, try to identify the Cluster
+		if ar.Spec.ClusterRef == nil {
+			old := ar.DeepCopy()
+			if c != nil {
+				ar.Spec.ClusterRef = &commonapi.ObjectReference{
+					Name:      c.Name,
+					Namespace: c.Namespace,
+				}
+				if err := platformClusterClient.Patch(ctx, ar, client.MergeFrom(old)); err != nil {
+					return fmt.Errorf("unable to update spec of AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+				}
+			} else if cr != nil && cr.Status.Cluster != nil {
+				ar.Spec.ClusterRef = cr.Status.Cluster.DeepCopy()
+				if err := platformClusterClient.Patch(ctx, ar, client.MergeFrom(old)); err != nil {
+					return fmt.Errorf("unable to update spec of AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+				}
+			} else if ar.Spec.RequestRef != nil {
+				cr2 := &clustersv1alpha1.ClusterRequest{}
+				cr2.Name = ar.Spec.RequestRef.Name
+				cr2.Namespace = ar.Spec.RequestRef.Namespace
+				if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(cr2), cr2); err == nil {
+					if cr2.Status.Cluster != nil {
+						old := ar.DeepCopy()
+						ar.Spec.ClusterRef = cr2.Status.Cluster.DeepCopy()
+						if err := platformClusterClient.Patch(ctx, ar, client.MergeFrom(old)); err != nil {
+							return fmt.Errorf("unable to update spec of AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+						}
+					}
+				}
+			}
+		}
+
 		// create secret
 		if len(kcfgData) == 0 {
 			kcfgData = []byte("fake")
@@ -922,6 +988,8 @@ func FakeAccessRequestReadiness(kcfgData []byte) FakingCallback {
 // The ClusterRequest itself is not deleted by this callback, only finalizers are removed.
 //
 // The returned callback is meant to be used with the key stored in FakingCallback_WaitingForClusterRequestDeletion.
+//
+//nolint:dupl
 func FakeClusterRequestDeletion(deleteCluster bool, finalizersToRemoveFromClusterRequest, finalizersToRemoveFromCluster []string) FakingCallback {
 	return func(ctx context.Context, platformClusterClient client.Client, key string, _ *reconcile.Request, cr *clustersv1alpha1.ClusterRequest, _ *clustersv1alpha1.AccessRequest, _ *clustersv1alpha1.Cluster, _ *clusters.Cluster) error {
 		if cr == nil {
@@ -981,6 +1049,8 @@ func FakeClusterRequestDeletion(deleteCluster bool, finalizersToRemoveFromCluste
 // The AccessRequest itself is not deleted by this callback, only finalizers are removed.
 //
 // The returned callback is meant to be used with the key stored in FakingCallback_WaitingForAccessRequestDeletion.
+//
+//nolint:dupl
 func FakeAccessRequestDeletion(finalizersToRemoveFromAccessRequest, finalizersToRemoveFromSecret []string) FakingCallback {
 	return func(ctx context.Context, platformClusterClient client.Client, key string, _ *reconcile.Request, _ *clustersv1alpha1.ClusterRequest, ar *clustersv1alpha1.AccessRequest, _ *clustersv1alpha1.Cluster, _ *clusters.Cluster) error {
 		if ar == nil {
