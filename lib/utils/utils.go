@@ -49,7 +49,7 @@ func StableRequestNameOnboarding(onboardingName, controllerName string) string {
 	return fmt.Sprint(prefixOnboarding, controller.K8sNameHash(onboardingName, controllerName))
 }
 
-// StableMCPNamespace computes the namespace on the onboarding cluster that belongs to the given MCP.
+// StableMCPNamespace computes the namespace on the platform cluster that belongs to the given MCP.
 // onboardingName and onboardingNamespace are name and namespace of the MCP resource on the onboarding cluster.
 func StableMCPNamespace(onboardingName, onboardingNamespace string) (string, error) {
 	res, err := controller.K8sNameUUID(onboardingNamespace, onboardingName)
