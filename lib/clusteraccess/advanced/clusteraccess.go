@@ -28,6 +28,8 @@ import (
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
+const caControllerName = "ClusterAccess"
+
 //////////////////
 /// INTERFACES ///
 //////////////////
@@ -65,7 +67,8 @@ type ClusterAccessReconciler interface {
 	// It returns a reconcile.Result and an error if the reconciliation failed.
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
-	Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error)
+	// Any additional arguments provided are passed into all methods of the ClusterRegistration objects that are called.
+	Reconcile(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error)
 	// ReconcileDelete deletes the ClusterRequests and/or AccessRequests for the registered clusters.
 	// This function should be called during the deletion of the reconciled object.
 	// ctx is the context for the reconciliation.
@@ -73,7 +76,8 @@ type ClusterAccessReconciler interface {
 	// It returns a reconcile.Result and an error if the reconciliation failed.
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
-	ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error)
+	// Any additional arguments provided are passed into all methods of the ClusterRegistration objects that are called.
+	ReconcileDelete(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error)
 
 	// WithFakingCallback passes a callback function with a specific key.
 	// The available keys depend on the implementation.
@@ -102,63 +106,96 @@ type ClusterAccessReconciler interface {
 type FakingCallback func(ctx context.Context, platformClusterClient client.Client, key string, req *reconcile.Request, cr *clustersv1alpha1.ClusterRequest, ar *clustersv1alpha1.AccessRequest, c *clustersv1alpha1.Cluster, access *clusters.Cluster) error
 
 // ManagedLabelGenerator is a function that generates the managed-by and managed-purpose labels for the created resources.
-type ManagedLabelGenerator func(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string)
+// The first return value is the value for the managed-by label, the second one is the value for the managed-purpose label.
+// The third return value can be nil, or it can contain additional labels to be set on the created resources.
+type ManagedLabelGenerator func(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string, map[string]string)
 
-func DefaultManagedLabelGenerator(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string) {
-	return controllerName, fmt.Sprintf("%s.%s.%s", req.Namespace, req.Name, reg.ID())
+func DefaultManagedLabelGenerator(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string, map[string]string) {
+	return controllerName, fmt.Sprintf("%s.%s.%s", req.Namespace, req.Name, reg.ID()), nil
 }
 
 type ClusterRegistration interface {
+	// static (identical, independent from the reconcile request)
+
 	// ID is the unique identifier for the cluster.
 	ID() string
 	// Suffix is the suffix to be used for the names of the created resources.
 	// It must be unique within the context of the reconciler.
 	// If empty, the ID will be used as suffix.
 	Suffix() string
-	// AccessRequestTokenConfig is the token configuration for the AccessRequest to be created for the cluster.
-	// Might be nil if no AccessRequest should be created or if OIDC access is used.
-	// Only one of AccessRequestTokenConfig and AccessRequestOIDCConfig should be non-nil.
-	AccessRequestTokenConfig() *clustersv1alpha1.TokenConfig
-	// AccessRequestOIDCConfig is the OIDC configuration for the AccessRequest to be created for the cluster.
-	// Might be nil if no AccessRequest should be created or if token-based access is used.
-	// Only one of AccessRequestTokenConfig and AccessRequestOIDCConfig should be non-nil.
-	AccessRequestOIDCConfig() *clustersv1alpha1.OIDCConfig
-	// ClusterRequestSpec is the spec for the ClusterRequest to be created for the cluster.
-	// It is nil if no ClusterRequest should be created.
-	// Only one of ClusterRequestSpec, ClusterReference and ClusterRequestReference should be non-nil.
-	ClusterRequestSpec() *clustersv1alpha1.ClusterRequestSpec
-	// ClusterReference returns name and namespace of an existing Cluster resource.
-	// It is nil if a new ClusterRequest should be created or if the Cluster is referenced by an existing ClusterRequest.
-	// Only one of ClusterRequestSpec, ClusterReference and ClusterRequestReference should be non-nil.
-	ClusterReference() *commonapi.ObjectReference
-	// ClusterRequestReference returns name and namespace of the ClusterRequest resource.
-	// It is nil if a new ClusterRequest should be created or if the Cluster is referenced directly.
-	// Only one of ClusterRequestSpec, ClusterReference and ClusterRequestReference should be non-nil.
-	ClusterRequestReference() *commonapi.ObjectReference
 	// Scheme is the scheme for the Kubernetes client of the cluster.
 	// If nil, the default scheme will be used.
 	Scheme() *runtime.Scheme
+	// AccessRequestAvailable returns true if an AccessRequest can be retrieved from this registration.
+	AccessRequestAvailable() bool
+	// ClusterRequestAvailable returns true if a ClusterRequest can be retrieved from this registration.
+	ClusterRequestAvailable() bool
+
+	// dynamic (can depend on the reconcile request and potential other factors)
+
+	// AccessRequestTokenConfig is the token configuration for the AccessRequest to be created for the cluster.
+	// Might be nil if no AccessRequest should be created or if OIDC access is used.
+	// Only one of AccessRequestTokenConfig and AccessRequestOIDCConfig should be non-nil.
+	AccessRequestTokenConfig(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)
+	// AccessRequestOIDCConfig is the OIDC configuration for the AccessRequest to be created for the cluster.
+	// Might be nil if no AccessRequest should be created or if token-based access is used.
+	// Only one of AccessRequestTokenConfig and AccessRequestOIDCConfig should be non-nil.
+	AccessRequestOIDCConfig(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.OIDCConfig, error)
+	// ClusterRequestSpec is the spec for the ClusterRequest to be created for the cluster.
+	// It is nil if no ClusterRequest should be created.
+	// Only one of ClusterRequestSpec, ClusterReference and ClusterRequestReference should be non-nil.
+	ClusterRequestSpec(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.ClusterRequestSpec, error)
+	// ClusterReference returns name and namespace of an existing Cluster resource.
+	// It is nil if a new ClusterRequest should be created or if the Cluster is referenced by an existing ClusterRequest.
+	// Only one of ClusterRequestSpec, ClusterReference and ClusterRequestReference should be non-nil.
+	ClusterReference(req reconcile.Request, additionalData ...any) (*commonapi.ObjectReference, error)
+	// ClusterRequestReference returns name and namespace of the ClusterRequest resource.
+	// It is nil if a new ClusterRequest should be created or if the Cluster is referenced directly.
+	// Only one of ClusterRequestSpec, ClusterReference and ClusterRequestReference should be non-nil.
+	ClusterRequestReference(req reconcile.Request, additionalData ...any) (*commonapi.ObjectReference, error)
 	// Namespace generates the namespace on the Platform cluster to use for the created requests.
 	// The generated namespace is expected be unique within the context of the reconciler.
-	Namespace(requestName, requestNamespace string) (string, error)
+	Namespace(req reconcile.Request, additionalData ...any) (string, error)
 }
 
 type ClusterRegistrationBuilder interface {
 	// WithTokenAccess enables an AccessRequest for token-based access to be created for the cluster.
-	// It is mutually exclusive to WithOIDCAccess, calling this method after WithOIDCAccess will override the previous call.
+	// Use this method, if the token configuration does not depend on the reconcile request, use WithTokenAccessGenerator otherwise.
+	// Calling this method will override any previous calls to WithTokenAccess, WithTokenAccessGenerator, WithOIDCAccess, or WithOIDCAccessGenerator.
 	// Passing in a nil cfg will disable AccessRequest creation, if it was token-based before, and have no effect if it was OIDC-based before.
 	WithTokenAccess(cfg *clustersv1alpha1.TokenConfig) ClusterRegistrationBuilder
+	// WithTokenAccessGenerator is like WithTokenAccess, but takes a function that generates the TokenConfig based on the reconcile request.
+	// Calling this method will override any previous calls to WithTokenAccess, WithTokenAccessGenerator, WithOIDCAccess, or WithOIDCAccessGenerator.
+	// Passing in a nil function will disable AccessRequest creation, if it was token-based before, and have no effect if it was OIDC-based before.
+	WithTokenAccessGenerator(f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)) ClusterRegistrationBuilder
 	// WithOIDCAccess enables an AccessRequest for OIDC-based access to be created for the cluster.
-	// It is mutually exclusive to WithTokenAccess, calling this method after WithTokenAccess will override the previous call.
+	// Use this method, if the OIDC configuration does not depend on the reconcile request, use WithOIDCAccessGenerator otherwise.
+	// Calling this method will override any previous calls to WithTokenAccess, WithTokenAccessGenerator, WithOIDCAccess, or WithOIDCAccessGenerator.
 	// Passing in a nil cfg will disable AccessRequest creation, if it was OIDC-based before, and have no effect if it was token-based before.
 	WithOIDCAccess(cfg *clustersv1alpha1.OIDCConfig) ClusterRegistrationBuilder
+	// WithOIDCAccessGenerator is like WithOIDCAccess, but takes a function that generates the OIDCConfig based on the reconcile request.
+	// Calling this method will override any previous calls to WithTokenAccess, WithTokenAccessGenerator, WithOIDCAccess, or WithOIDCAccessGenerator.
+	// Passing in a nil function will disable AccessRequest creation, if it was OIDC-based before, and have no effect if it was token-based before.
+	WithOIDCAccessGenerator(f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.OIDCConfig, error)) ClusterRegistrationBuilder
 	// WithScheme sets the scheme for the Kubernetes client of the cluster.
 	// If not set or set to nil, the default scheme will be used.
 	WithScheme(scheme *runtime.Scheme) ClusterRegistrationBuilder
 	// WithNamespaceGenerator sets the function that generates the namespace on the Platform cluster to use for the created requests.
-	WithNamespaceGenerator(f func(requestName, requestNamespace string) (string, error)) ClusterRegistrationBuilder
+	WithNamespaceGenerator(f func(req reconcile.Request, additionalData ...any) (string, error)) ClusterRegistrationBuilder
 	// Build builds the ClusterRegistration object.
 	Build() ClusterRegistration
+}
+
+// DefaultNamespaceGenerator is a default implementation of a namespace generator.
+// It computes a UUID-style hash from the given request.
+func DefaultNamespaceGenerator(req reconcile.Request, _ ...any) (string, error) {
+	return ctrlutils.K8sNameUUID(req.Namespace, req.Name)
+}
+
+// DefaultNamespaceGeneratorForMCP is a default implementation of a namespace generator for MCPs.
+// It computes a UUID-style hash from the given request and prefixes it with "mcp--".
+func DefaultNamespaceGeneratorForMCP(req reconcile.Request, _ ...any) (string, error) {
+	return libutils.StableMCPNamespace(req.Name, req.Namespace)
 }
 
 ///////////////////////////////////////////
@@ -166,42 +203,67 @@ type ClusterRegistrationBuilder interface {
 ///////////////////////////////////////////
 
 type clusterRegistrationImpl struct {
-	id                 string
-	suffix             string
-	scheme             *runtime.Scheme
-	accessTokenConfig  *clustersv1alpha1.TokenConfig
-	accessOIDCConfig   *clustersv1alpha1.OIDCConfig
-	clusterRequestSpec *clustersv1alpha1.ClusterRequestSpec
-	clusterRef         *commonapi.ObjectReference
-	clusterRequestRef  *commonapi.ObjectReference
-	namespaceGenerator func(requestName, requestNamespace string) (string, error)
+	id                         string
+	suffix                     string
+	scheme                     *runtime.Scheme
+	generateAccessTokenConfig  func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)
+	generateAccessOIDCConfig   func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.OIDCConfig, error)
+	generateClusterRequestSpec func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.ClusterRequestSpec, error)
+	generateClusterRef         func(req reconcile.Request, additionalData ...any) (*commonapi.ObjectReference, error)
+	generateClusterRequestRef  func(req reconcile.Request, additionalData ...any) (*commonapi.ObjectReference, error)
+	generateNamespace          func(req reconcile.Request, additionalData ...any) (string, error)
 }
 
 var _ ClusterRegistration = &clusterRegistrationImpl{}
 
+// AccessRequestAvailable implements ClusterRegistration.
+func (c *clusterRegistrationImpl) AccessRequestAvailable() bool {
+	return c.generateAccessOIDCConfig != nil || c.generateAccessTokenConfig != nil
+}
+
+// ClusterRequestAvailable implements ClusterRegistration.
+func (c *clusterRegistrationImpl) ClusterRequestAvailable() bool {
+	return c.generateClusterRequestSpec != nil || c.generateClusterRequestRef != nil
+}
+
 // AccessRequestTokenConfig implements ClusterRegistration.
-func (c *clusterRegistrationImpl) AccessRequestTokenConfig() *clustersv1alpha1.TokenConfig {
-	return c.accessTokenConfig.DeepCopy()
+func (c *clusterRegistrationImpl) AccessRequestTokenConfig(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error) {
+	if c.generateAccessTokenConfig == nil {
+		return nil, nil
+	}
+	return c.generateAccessTokenConfig(req, additionalData...)
 }
 
 // AccessRequestOIDCConfig implements ClusterRegistration.
-func (c *clusterRegistrationImpl) AccessRequestOIDCConfig() *clustersv1alpha1.OIDCConfig {
-	return c.accessOIDCConfig.DeepCopy()
+func (c *clusterRegistrationImpl) AccessRequestOIDCConfig(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.OIDCConfig, error) {
+	if c.generateAccessOIDCConfig == nil {
+		return nil, nil
+	}
+	return c.generateAccessOIDCConfig(req, additionalData...)
 }
 
 // ClusterRequestSpec implements ClusterRegistration.
-func (c *clusterRegistrationImpl) ClusterRequestSpec() *clustersv1alpha1.ClusterRequestSpec {
-	return c.clusterRequestSpec.DeepCopy()
+func (c *clusterRegistrationImpl) ClusterRequestSpec(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.ClusterRequestSpec, error) {
+	if c.generateClusterRequestSpec == nil {
+		return nil, nil
+	}
+	return c.generateClusterRequestSpec(req, additionalData...)
 }
 
 // ClusterReference implements ClusterRegistration.
-func (c *clusterRegistrationImpl) ClusterReference() *commonapi.ObjectReference {
-	return c.clusterRef.DeepCopy()
+func (c *clusterRegistrationImpl) ClusterReference(req reconcile.Request, additionalData ...any) (*commonapi.ObjectReference, error) {
+	if c.generateClusterRef == nil {
+		return nil, nil
+	}
+	return c.generateClusterRef(req, additionalData...)
 }
 
 // ClusterRequestReference implements ClusterRegistration.
-func (c *clusterRegistrationImpl) ClusterRequestReference() *commonapi.ObjectReference {
-	return c.clusterRequestRef.DeepCopy()
+func (c *clusterRegistrationImpl) ClusterRequestReference(req reconcile.Request, additionalData ...any) (*commonapi.ObjectReference, error) {
+	if c.generateClusterRequestRef == nil {
+		return nil, nil
+	}
+	return c.generateClusterRequestRef(req, additionalData...)
 }
 
 // ID implements ClusterRegistration.
@@ -223,11 +285,11 @@ func (c *clusterRegistrationImpl) Scheme() *runtime.Scheme {
 }
 
 // Namespace implements ClusterRegistration.
-func (c *clusterRegistrationImpl) Namespace(requestName, requestNamespace string) (string, error) {
-	if c.namespaceGenerator != nil {
-		return c.namespaceGenerator(requestName, requestNamespace)
+func (c *clusterRegistrationImpl) Namespace(req reconcile.Request, additionalData ...any) (string, error) {
+	if c.generateNamespace == nil {
+		return DefaultNamespaceGenerator(req, additionalData...)
 	}
-	return libutils.StableMCPNamespace(requestName, requestNamespace)
+	return c.generateNamespace(req, additionalData...)
 }
 
 //////////////////////////////////////////////////
@@ -247,13 +309,43 @@ func (c *clusterRegistrationBuilderImpl) Build() ClusterRegistration {
 
 // WithOIDCAccess implements ClusterRegistrationBuilder.
 func (c *clusterRegistrationBuilderImpl) WithOIDCAccess(cfg *clustersv1alpha1.OIDCConfig) ClusterRegistrationBuilder {
-	c.accessOIDCConfig = cfg.DeepCopy()
+	var f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.OIDCConfig, error)
+	if cfg != nil {
+		f = func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.OIDCConfig, error) {
+			return cfg.DeepCopy(), nil
+		}
+	}
+	return c.WithOIDCAccessGenerator(f)
+}
+
+// WithOIDCAccessGenerator implements ClusterRegistrationBuilder.
+func (c *clusterRegistrationBuilderImpl) WithOIDCAccessGenerator(f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.OIDCConfig, error)) ClusterRegistrationBuilder {
+	c.generateAccessOIDCConfig = f
+	if f != nil && c.generateAccessTokenConfig != nil {
+		// both access methods configured, disable token
+		c.generateAccessTokenConfig = nil
+	}
 	return c
 }
 
 // WithTokenAccess implements ClusterRegistrationBuilder.
 func (c *clusterRegistrationBuilderImpl) WithTokenAccess(cfg *clustersv1alpha1.TokenConfig) ClusterRegistrationBuilder {
-	c.accessTokenConfig = cfg.DeepCopy()
+	var f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)
+	if cfg != nil {
+		f = func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error) {
+			return cfg.DeepCopy(), nil
+		}
+	}
+	return c.WithTokenAccessGenerator(f)
+}
+
+// WithTokenAccessGenerator implements ClusterRegistrationBuilder.
+func (c *clusterRegistrationBuilderImpl) WithTokenAccessGenerator(f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)) ClusterRegistrationBuilder {
+	c.generateAccessTokenConfig = f
+	if f != nil && c.generateAccessOIDCConfig != nil {
+		// both access methods configured, disable OIDC
+		c.generateAccessOIDCConfig = nil
+	}
 	return c
 }
 
@@ -264,49 +356,60 @@ func (c *clusterRegistrationBuilderImpl) WithScheme(scheme *runtime.Scheme) Clus
 }
 
 // WithNamespaceGenerator implements ClusterRegistrationBuilder.
-func (c *clusterRegistrationBuilderImpl) WithNamespaceGenerator(f func(requestName, requestNamespace string) (string, error)) ClusterRegistrationBuilder {
-	c.namespaceGenerator = f
+func (c *clusterRegistrationBuilderImpl) WithNamespaceGenerator(f func(req reconcile.Request, additionalData ...any) (string, error)) ClusterRegistrationBuilder {
+	if f == nil {
+		f = DefaultNamespaceGenerator
+	}
+	c.generateNamespace = f
 	return c
 }
 
-// NewCluster instructs the Reconciler to create and manage a new ClusterRequest.
-func NewCluster(id, suffix, purpose string, waitForClusterDeletion bool) ClusterRegistrationBuilder {
+// StaticClusterRequestSpecGenerator is a helper function that just returns deep copies of the given spec.
+func StaticClusterRequestSpecGenerator(spec *clustersv1alpha1.ClusterRequestSpec) func(reconcile.Request, ...any) (*clustersv1alpha1.ClusterRequestSpec, error) {
+	return func(_ reconcile.Request, _ ...any) (*clustersv1alpha1.ClusterRequestSpec, error) {
+		return spec.DeepCopy(), nil
+	}
+}
+
+// NewClusterRequest instructs the Reconciler to create and manage a new ClusterRequest.
+func NewClusterRequest(id, suffix string, generateClusterRequestSpec func(reconcile.Request, ...any) (*clustersv1alpha1.ClusterRequestSpec, error)) ClusterRegistrationBuilder {
 	return &clusterRegistrationBuilderImpl{
 		clusterRegistrationImpl: clusterRegistrationImpl{
-			id:     id,
-			suffix: suffix,
-			clusterRequestSpec: &clustersv1alpha1.ClusterRequestSpec{
-				Purpose:                purpose,
-				WaitForClusterDeletion: &waitForClusterDeletion,
-			},
+			id:                         id,
+			suffix:                     suffix,
+			generateClusterRequestSpec: generateClusterRequestSpec,
+			generateNamespace:          DefaultNamespaceGenerator,
 		},
 	}
 }
 
+// StaticReferenceGenerator is a helper function that just returns a deep copy of the given reference.
+func StaticReferenceGenerator(ref *commonapi.ObjectReference) func(reconcile.Request, ...any) (*commonapi.ObjectReference, error) {
+	return func(_ reconcile.Request, _ ...any) (*commonapi.ObjectReference, error) {
+		return ref.DeepCopy(), nil
+	}
+}
+
 // ExistingCluster instructs the Reconciler to use an existing Cluster resource.
-func ExistingCluster(id, suffix, name, namespace string) ClusterRegistrationBuilder {
+func ExistingCluster(id, suffix string, generateClusterRef func(reconcile.Request, ...any) (*commonapi.ObjectReference, error)) ClusterRegistrationBuilder {
 	return &clusterRegistrationBuilderImpl{
 		clusterRegistrationImpl: clusterRegistrationImpl{
-			id:     id,
-			suffix: suffix,
-			clusterRef: &commonapi.ObjectReference{
-				Name:      name,
-				Namespace: namespace,
-			},
+			id:                 id,
+			suffix:             suffix,
+			generateClusterRef: generateClusterRef,
+			generateNamespace:  DefaultNamespaceGenerator,
 		},
 	}
 }
 
 // ExistingClusterRequest instructs the Reconciler to use an existing Cluster resource that is referenced by the given ClusterRequest.
-func ExistingClusterRequest(id, suffix, name, namespace string) ClusterRegistrationBuilder {
+func ExistingClusterRequest(id, suffix string, generateClusterRequestRef func(reconcile.Request, ...any) (*commonapi.ObjectReference, error)) ClusterRegistrationBuilder {
 	return &clusterRegistrationBuilderImpl{
 		clusterRegistrationImpl: clusterRegistrationImpl{
-			id:     id,
-			suffix: suffix,
-			clusterRequestRef: &commonapi.ObjectReference{
-				Name:      name,
-				Namespace: namespace,
-			},
+			id:                        id,
+			suffix:                    suffix,
+			generateClusterRequestRef: generateClusterRequestRef,
+			generateNamespace:         DefaultNamespaceGenerator,
 		},
 	}
 }
@@ -367,16 +470,16 @@ func (r *reconcilerImpl) AccessRequest(ctx context.Context, request reconcile.Re
 	if !ok {
 		return nil, fmt.Errorf("no registration found for request '%s' with id '%s'", request.String(), id)
 	}
-	if reg.AccessRequestOIDCConfig() == nil && reg.AccessRequestTokenConfig() == nil {
+	if !reg.AccessRequestAvailable() {
 		return nil, fmt.Errorf("no AccessRequest configured for request '%s' with id '%s'", request.String(), id)
 	}
 	suffix := reg.Suffix()
 	if suffix == "" {
 		suffix = reg.ID()
 	}
-	namespace, err := reg.Namespace(request.Name, request.Namespace)
+	namespace, err := reg.Namespace(request)
 	if err != nil {
-		return nil, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s/%s': %w", request.Namespace, request.Name, err)
+		return nil, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s': %w", request.String(), err)
 	}
 	ar := &clustersv1alpha1.AccessRequest{}
 	ar.Name = StableRequestName(r.controllerName, request, suffix)
@@ -393,10 +496,13 @@ func (r *reconcilerImpl) Cluster(ctx context.Context, request reconcile.Request,
 	if !ok {
 		return nil, fmt.Errorf("no registration found for request '%s' with id '%s'", request.String(), id)
 	}
-	clusterRef := reg.ClusterReference()
+	clusterRef, err := reg.ClusterReference(request)
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate Cluster reference from registration for request '%s' with id '%s': %w", request.String(), id, err)
+	}
 	if clusterRef == nil {
 		// if no ClusterReference is specified, try to get it from the ClusterRequest
-		if reg.ClusterRequestReference() != nil || reg.ClusterRequestSpec() != nil {
+		if reg.ClusterRequestAvailable() {
 			cr, err := r.ClusterRequest(ctx, request, id)
 			if err != nil {
 				return nil, fmt.Errorf("unable to fetch ClusterRequest for request '%s' with id '%s': %w", request.String(), id, err)
@@ -431,18 +537,25 @@ func (r *reconcilerImpl) ClusterRequest(ctx context.Context, request reconcile.R
 	if !ok {
 		return nil, fmt.Errorf("no registration found for request '%s' with id '%s'", request.String(), id)
 	}
-	crRef := reg.ClusterRequestReference()
+	crRef, err := reg.ClusterRequestReference(request)
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate ClusterRequest reference from registration for request '%s' with id '%s': %w", request.String(), id, err)
+	}
 	if crRef == nil {
 		// if the ClusterRequest is not referenced directly, check if was created or can be retrieved via an AccessRequest
-		if reg.ClusterRequestSpec() != nil {
+		crSpec, err := reg.ClusterRequestSpec(request)
+		if err != nil {
+			return nil, fmt.Errorf("unable to generate ClusterRequest spec from registration for request '%s' with id '%s': %w", request.String(), id, err)
+		}
+		if crSpec != nil {
 			// the ClusterRequest was created by this library
 			suffix := reg.Suffix()
 			if suffix == "" {
 				suffix = reg.ID()
 			}
-			namespace, err := reg.Namespace(request.Name, request.Namespace)
+			namespace, err := reg.Namespace(request)
 			if err != nil {
-				return nil, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s/%s': %w", request.Namespace, request.Name, err)
+				return nil, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s': %w", request.String(), err)
 			}
 			crRef = &commonapi.ObjectReference{
 				Name:      StableRequestName(r.controllerName, request, suffix),
@@ -469,8 +582,8 @@ func (r *reconcilerImpl) ClusterRequest(ctx context.Context, request reconcile.R
 }
 
 // Reconcile implements Reconciler.
-func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	log := logging.FromContextOrDiscard(ctx).WithName("ClusterAccess")
+func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error) {
+	log := logging.FromContextOrDiscard(ctx).WithName(caControllerName)
 	ctx = logging.NewContext(ctx, log)
 	log.Info("Reconciling cluster access")
 
@@ -482,15 +595,16 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 		if suffix == "" {
 			suffix = reg.ID()
 		}
-		managedBy, managedPurpose := r.managedBy(r.controllerName, request, reg)
+		managedBy, managedPurpose, additionalLabels := r.managedBy(r.controllerName, request, reg)
 		expectedLabels := map[string]string{}
 		expectedLabels[openmcpconst.ManagedByLabel] = managedBy
 		expectedLabels[openmcpconst.ManagedPurposeLabel] = managedPurpose
+		expectedLabels = maputils.Merge(additionalLabels, expectedLabels)
 
 		// ensure namespace exists
-		namespace, err := reg.Namespace(request.Name, request.Namespace)
+		namespace, err := reg.Namespace(request, additionalData...)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s/%s': %w", request.Namespace, request.Name, err)
+			return reconcile.Result{}, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s': %w", request.String(), err)
 		}
 		rlog.Debug("Ensuring platform cluster namespace exists", "namespaceName", namespace)
 		ns := &corev1.Namespace{}
@@ -507,7 +621,11 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 
 		// if a ClusterRequest is requested, ensure it exists and is ready
 		var cr *clustersv1alpha1.ClusterRequest
-		if reg.ClusterRequestSpec() != nil {
+		crSpec, err := reg.ClusterRequestSpec(request, additionalData...)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("unable to generate ClusterRequest spec from registration for request '%s' with id '%s': %w", request.String(), reg.ID(), err)
+		}
+		if crSpec != nil {
 			rlog.Debug("Ensuring ClusterRequest exists")
 			cr = &clustersv1alpha1.ClusterRequest{}
 			cr.Name = StableRequestName(r.controllerName, request, suffix)
@@ -524,7 +642,7 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				rlog.Info("Creating ClusterRequest", "crName", cr.Name, "crNamespace", cr.Namespace)
 				cr.Labels = map[string]string{}
 				maps.Copy(cr.Labels, expectedLabels)
-				cr.Spec = *reg.ClusterRequestSpec().DeepCopy()
+				cr.Spec = *crSpec
 				if err := r.platformClusterClient.Create(ctx, cr); err != nil {
 					return reconcile.Result{}, fmt.Errorf("unable to create ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
 				}
@@ -553,7 +671,7 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 
 		// if an AccessRequest is requested, ensure it exists and is ready
 		var ar *clustersv1alpha1.AccessRequest
-		if reg.AccessRequestOIDCConfig() != nil || reg.AccessRequestTokenConfig() != nil {
+		if reg.AccessRequestAvailable() {
 			rlog.Debug("Ensuring AccessRequest exists")
 			ar = &clustersv1alpha1.AccessRequest{}
 			ar.Name = StableRequestName(r.controllerName, request, suffix)
@@ -569,16 +687,35 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 			if !exists {
 				rlog.Info("Creating AccessRequest", "arName", ar.Name, "arNamespace", ar.Namespace)
 				// cluster and cluster request references are immutable, so set them only when creating new AccessRequests
+				referenced := false
 				if cr != nil {
 					ar.Spec.RequestRef = &commonapi.ObjectReference{
 						Name:      cr.Name,
 						Namespace: cr.Namespace,
 					}
-				} else if reg.ClusterReference() != nil {
-					ar.Spec.ClusterRef = reg.ClusterReference().DeepCopy()
-				} else if reg.ClusterRequestReference() != nil {
-					ar.Spec.RequestRef = reg.ClusterRequestReference().DeepCopy()
-				} else {
+					referenced = true
+				}
+				if !referenced {
+					cRef, err := reg.ClusterReference(request, additionalData...)
+					if err != nil {
+						return reconcile.Result{}, fmt.Errorf("unable to generate Cluster reference from registration for request '%s' with id '%s': %w", request.String(), reg.ID(), err)
+					}
+					if cRef != nil {
+						ar.Spec.ClusterRef = cRef
+						referenced = true
+					}
+				}
+				if !referenced {
+					crRef, err := reg.ClusterRequestReference(request, additionalData...)
+					if err != nil {
+						return reconcile.Result{}, fmt.Errorf("unable to generate ClusterRequest reference from registration for request '%s' with id '%s': %w", request.String(), reg.ID(), err)
+					}
+					if crRef != nil {
+						ar.Spec.RequestRef = crRef
+						referenced = true
+					}
+				}
+				if !referenced {
 					return reconcile.Result{}, fmt.Errorf("no ClusterRequestSpec, ClusterReference or ClusterRequestReference specified for registration with id '%s'", reg.ID())
 				}
 			} else {
@@ -594,8 +731,15 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 			}
 			if _, err := controllerutil.CreateOrUpdate(ctx, r.platformClusterClient, ar, func() error {
 				ar.Labels = maputils.Merge(ar.Labels, expectedLabels)
-				ar.Spec.Token = reg.AccessRequestTokenConfig()
-				ar.Spec.OIDC = reg.AccessRequestOIDCConfig()
+				var err error
+				ar.Spec.Token, err = reg.AccessRequestTokenConfig(request, additionalData...)
+				if err != nil {
+					return fmt.Errorf("unable to generate AccessRequest token config from registration: %w", err)
+				}
+				ar.Spec.OIDC, err = reg.AccessRequestOIDCConfig(request, additionalData...)
+				if err != nil {
+					return fmt.Errorf("unable to generate AccessRequest OIDC config from registration: %w", err)
+				}
 				return nil
 			}); err != nil {
 				return reconcile.Result{}, fmt.Errorf("unable to create or update AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
@@ -618,8 +762,8 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 }
 
 // ReconcileDelete implements Reconciler.
-func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	log := logging.FromContextOrDiscard(ctx).WithName("ClusterAccess")
+func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error) {
+	log := logging.FromContextOrDiscard(ctx).WithName(caControllerName)
 	ctx = logging.NewContext(ctx, log)
 	log.Info("Reconciling cluster access")
 
@@ -631,18 +775,19 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 		if suffix == "" {
 			suffix = reg.ID()
 		}
-		managedBy, managedPurpose := r.managedBy(r.controllerName, request, reg)
+		managedBy, managedPurpose, additionalLabels := r.managedBy(r.controllerName, request, reg)
 		expectedLabels := map[string]string{}
 		expectedLabels[openmcpconst.ManagedByLabel] = managedBy
 		expectedLabels[openmcpconst.ManagedPurposeLabel] = managedPurpose
+		expectedLabels = maputils.Merge(additionalLabels, expectedLabels)
 
-		namespace, err := reg.Namespace(request.Name, request.Namespace)
+		namespace, err := reg.Namespace(request, additionalData...)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s/%s': %w", request.Namespace, request.Name, err)
+			return reconcile.Result{}, fmt.Errorf("unable to generate name of platform cluster namespace for request '%s': %w", request.String(), err)
 		}
 
 		// if an AccessRequest is requested, ensure it is deleted
-		if reg.AccessRequestOIDCConfig() != nil || reg.AccessRequestTokenConfig() != nil { //nolint:dupl
+		if reg.AccessRequestAvailable() { //nolint:dupl
 			rlog.Debug("Ensuring AccessRequest is deleted")
 			ar := &clustersv1alpha1.AccessRequest{}
 			ar.Name = StableRequestName(r.controllerName, request, suffix)
@@ -684,7 +829,7 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 		}
 
 		// if a ClusterRequest is requested, ensure it is deleted
-		if reg.ClusterRequestSpec() != nil { //nolint:dupl
+		if reg.ClusterRequestAvailable() { //nolint:dupl
 			rlog.Debug("Ensuring ClusterRequest is deleted")
 			cr := &clustersv1alpha1.ClusterRequest{}
 			cr.Name = StableRequestName(r.controllerName, request, suffix)
@@ -734,6 +879,9 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 
 // Register implements Reconciler.
 func (r *reconcilerImpl) Register(reg ClusterRegistration) ClusterAccessReconciler {
+	if reg == nil {
+		return r
+	}
 	r.registrations[reg.ID()] = reg
 	return r
 }
