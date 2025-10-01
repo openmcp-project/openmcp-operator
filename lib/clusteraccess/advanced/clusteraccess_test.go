@@ -15,6 +15,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -25,7 +26,6 @@ import (
 	openmcpconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess/advanced"
-	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
 func TestAdvancedClusterAccess(t *testing.T) {
@@ -64,8 +64,14 @@ var _ = Describe("Advanced Cluster Access", func() {
 		env := defaultTestSetup("testdata", "test-01")
 		rec := defaultClusterAccessReconciler(env, "foo")
 		customNamespace := "custom-namespace"
-		rec.Register(advanced.NewCluster("foobar", "fb", "test", true).Build()) // example 1, without access request
-		rec.Register(advanced.NewCluster("foobaz", "fz", "test", false).WithNamespaceGenerator(func(requestName, requestNamespace string) (string, error) {
+		rec.Register(advanced.NewClusterRequest("foobar", "fb", advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+			Purpose:                "test",
+			WaitForClusterDeletion: ptr.To(true),
+		})).Build()) // example 1, without access request
+		rec.Register(advanced.NewClusterRequest("foobaz", "fz", advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+			Purpose:                "test",
+			WaitForClusterDeletion: ptr.To(false),
+		})).WithNamespaceGenerator(func(request reconcile.Request, _ ...any) (string, error) {
 			return customNamespace, nil
 		}).WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build()) // example 2, with access request
 		req := testutils.RequestFromStrings("bar", "baz")
@@ -74,7 +80,7 @@ var _ = Describe("Advanced Cluster Access", func() {
 
 		// EXAMPLE 1
 		// check namespace
-		namespace, err := libutils.StableMCPNamespace(req.Name, req.Namespace)
+		namespace, err := advanced.DefaultNamespaceGenerator(req)
 		Expect(err).ToNot(HaveOccurred())
 		ns := &corev1.Namespace{}
 		ns.Name = namespace
@@ -182,7 +188,10 @@ var _ = Describe("Advanced Cluster Access", func() {
 			Name: "cluster-admin",
 			Kind: "ClusterRole",
 		}
-		rec.Register(advanced.ExistingClusterRequest("foobar", "fb", "cr-01", "test").WithTokenAccess(&clustersv1alpha1.TokenConfig{
+		rec.Register(advanced.ExistingClusterRequest("foobar", "fb", advanced.StaticReferenceGenerator(&commonapi.ObjectReference{
+			Name:      "cr-01",
+			Namespace: "test",
+		})).WithTokenAccess(&clustersv1alpha1.TokenConfig{
 			Permissions: []clustersv1alpha1.PermissionsRequest{permission},
 			RoleRefs:    []commonapi.RoleRef{roleRef},
 		}).Build())
@@ -194,7 +203,7 @@ var _ = Describe("Advanced Cluster Access", func() {
 		ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
-		namespace, err := libutils.StableMCPNamespace(req.Name, req.Namespace)
+		namespace, err := advanced.DefaultNamespaceGenerator(req)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ar.Namespace).To(Equal(namespace))
 		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedByLabel, "foo"))
@@ -283,7 +292,10 @@ var _ = Describe("Advanced Cluster Access", func() {
 				},
 			},
 		}
-		rec.Register(advanced.ExistingCluster("foobar", "fb", "cluster-01", "test").WithOIDCAccess(oidc).Build())
+		rec.Register(advanced.ExistingCluster("foobar", "fb", advanced.StaticReferenceGenerator(&commonapi.ObjectReference{
+			Name:      "cluster-01",
+			Namespace: "test",
+		})).WithOIDCAccess(oidc).Build())
 		req := testutils.RequestFromStrings("bar", "baz")
 
 		Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
@@ -292,7 +304,7 @@ var _ = Describe("Advanced Cluster Access", func() {
 		ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
-		namespace, err := libutils.StableMCPNamespace(req.Name, req.Namespace)
+		namespace, err := advanced.DefaultNamespaceGenerator(req)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ar.Namespace).To(Equal(namespace))
 		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedByLabel, "foo"))
@@ -331,10 +343,13 @@ var _ = Describe("Advanced Cluster Access", func() {
 
 	It("should take overwritten labels into account", func() {
 		env := defaultTestSetup("testdata", "test-01")
-		rec := defaultClusterAccessReconciler(env, "foo").WithManagedLabels(func(controllerName string, req reconcile.Request, reg advanced.ClusterRegistration) (string, string) {
-			return "my-managed-by", "my-purpose"
+		rec := defaultClusterAccessReconciler(env, "foo").WithManagedLabels(func(controllerName string, req reconcile.Request, reg advanced.ClusterRegistration) (string, string, map[string]string) {
+			return "my-managed-by", "my-purpose", map[string]string{"custom-label": "custom-value"}
 		})
-		rec.Register(advanced.ExistingClusterRequest("foobar", "fb", "cr-01", "test").WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build())
+		rec.Register(advanced.ExistingClusterRequest("foobar", "fb", advanced.StaticReferenceGenerator(&commonapi.ObjectReference{
+			Name:      "cr-01",
+			Namespace: "test",
+		})).WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build())
 		req := testutils.RequestFromStrings("bar", "baz")
 
 		Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
@@ -343,17 +358,21 @@ var _ = Describe("Advanced Cluster Access", func() {
 		ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
-		namespace, err := libutils.StableMCPNamespace(req.Name, req.Namespace)
+		namespace, err := advanced.DefaultNamespaceGenerator(req)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(ar.Namespace).To(Equal(namespace))
 		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedByLabel, "my-managed-by"))
 		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, "my-purpose"))
+		Expect(ar.Labels).To(HaveKeyWithValue("custom-label", "custom-value"))
 	})
 
 	It("should requeue if the ClusterRequest or AccessRequest is not yet ready", func() {
 		env := defaultTestSetup("testdata", "test-01")
 		rec := defaultClusterAccessReconciler(env, "foo")
-		rec.Register(advanced.NewCluster("foobar", "fb", "test", true).WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build())
+		rec.Register(advanced.NewClusterRequest("foobar", "fb", advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+			Purpose:                "test",
+			WaitForClusterDeletion: ptr.To(true),
+		})).WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build())
 		req := testutils.RequestFromStrings("bar", "baz")
 
 		// first requeue due to ClusterRequest
@@ -374,11 +393,14 @@ var _ = Describe("Advanced Cluster Access", func() {
 		It("should correctly handle conflicts with existing ClusterRequests", func() {
 			env := defaultTestSetup("testdata", "test-02")
 			rec := defaultClusterAccessReconciler(env, "foo")
-			rec.Register(advanced.NewCluster("foobar", "fb", "test", true).Build())
+			rec.Register(advanced.NewClusterRequest("foobar", "fb", advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+				Purpose:                "test",
+				WaitForClusterDeletion: ptr.To(true),
+			})).Build())
 			req := testutils.RequestFromStrings("cr-conflict", "baz")
 
 			// ensure that the resource we are trying to conflict with actually exists
-			namespace, err := libutils.StableMCPNamespace(req.Name, req.Namespace)
+			namespace, err := advanced.DefaultNamespaceGenerator(req)
 			Expect(err).ToNot(HaveOccurred())
 			cr := &clustersv1alpha1.ClusterRequest{}
 			cr.Name = advanced.StableRequestName("foo", req, "fb")
@@ -395,11 +417,14 @@ var _ = Describe("Advanced Cluster Access", func() {
 		It("should correctly handle conflicts with existing AccessRequests", func() {
 			env := defaultTestSetup("testdata", "test-02")
 			rec := defaultClusterAccessReconciler(env, "foo")
-			rec.Register(advanced.NewCluster("foobar", "fb", "test", true).WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build())
+			rec.Register(advanced.NewClusterRequest("foobar", "fb", advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+				Purpose:                "test",
+				WaitForClusterDeletion: ptr.To(true),
+			})).WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build())
 			req := testutils.RequestFromStrings("ar-conflict", "baz")
 
 			// ensure that the resource we are trying to conflict with actually exists
-			namespace, err := libutils.StableMCPNamespace(req.Name, req.Namespace)
+			namespace, err := advanced.DefaultNamespaceGenerator(req)
 			Expect(err).ToNot(HaveOccurred())
 			ar := &clustersv1alpha1.AccessRequest{}
 			ar.Name = advanced.StableRequestName("foo", req, "fb")
@@ -420,8 +445,6 @@ var _ = Describe("Advanced Cluster Access", func() {
 // expectRequeue runs the reconciler's Reconcile method (or ReconcileDelete, if del is true) with the given request and expects a requeueAfter duration greater than zero in the returned result.
 // If match is non-empty, the first element is matched against the requeueAfter duration instead of just checking that it's greater than zero. Further elements are ignored.
 // It fails if the reconcile returns an error.
-//
-//nolint:unused
 func expectRequeue(ctx context.Context, rec advanced.ClusterAccessReconciler, req reconcile.Request, del bool, match ...types.GomegaMatcher) func(Gomega) {
 	return func(g Gomega) {
 		var res reconcile.Result
