@@ -38,7 +38,12 @@ const caControllerName = "ClusterAccess"
 // It can create ClusterRequests and/or AccessRequests for an amount of clusters.
 type ClusterAccessReconciler interface {
 	// Register registers a cluster to be managed by the reconciler.
+	// No-op if reg is nil.
+	// Overwrites any previous registration with the same ID.
 	Register(reg ClusterRegistration) ClusterAccessReconciler
+	// Unregister unregisters a cluster from being managed by the reconciler.
+	// No-op if no registration with the given ID exists.
+	Unregister(id string) ClusterAccessReconciler
 	// WithRetryInterval sets the retry interval.
 	WithRetryInterval(interval time.Duration) ClusterAccessReconciler
 	// WithManagedLabels allows to overwrite the managed-by and managed-purpose labels that are set on the created resources.
@@ -883,6 +888,12 @@ func (r *reconcilerImpl) Register(reg ClusterRegistration) ClusterAccessReconcil
 		return r
 	}
 	r.registrations[reg.ID()] = reg
+	return r
+}
+
+// Unregister implements Reconciler.
+func (r *reconcilerImpl) Unregister(id string) ClusterAccessReconciler {
+	delete(r.registrations, id)
 	return r
 }
 
