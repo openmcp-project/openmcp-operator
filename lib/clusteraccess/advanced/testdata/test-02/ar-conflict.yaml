@@ -2,5 +2,5 @@ apiVersion: clusters.openmcp.cloud/v1alpha1
 kind: AccessRequest
 metadata:
   name: foo--ar-conflict--fb
-  namespace: mcp--afb2bcb3-2889-85f2-88a6-ea4ac5f2dd68
+  namespace: afb2bcb3-2889-85f2-88a6-ea4ac5f2dd68
 spec: {}
