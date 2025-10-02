@@ -45,6 +45,7 @@ func defaultTestSetup(testDirPathSegments ...string) *testutils.Environment {
 	return env
 }
 
+//nolint:unparam
 func defaultClusterAccessReconciler(env *testutils.Environment, controllerName string) advanced.ClusterAccessReconciler {
 	return advanced.NewClusterAccessReconciler(env.Client(), controllerName).
 		WithRetryInterval(100*time.Millisecond).
@@ -445,6 +446,8 @@ var _ = Describe("Advanced Cluster Access", func() {
 // expectRequeue runs the reconciler's Reconcile method (or ReconcileDelete, if del is true) with the given request and expects a requeueAfter duration greater than zero in the returned result.
 // If match is non-empty, the first element is matched against the requeueAfter duration instead of just checking that it's greater than zero. Further elements are ignored.
 // It fails if the reconcile returns an error.
+//
+//nolint:unparam
 func expectRequeue(ctx context.Context, rec advanced.ClusterAccessReconciler, req reconcile.Request, del bool, match ...types.GomegaMatcher) func(Gomega) {
 	return func(g Gomega) {
 		var res reconcile.Result
