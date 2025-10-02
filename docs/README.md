@@ -8,6 +8,10 @@
 - [ManagedControlPlane v2](controller/managedcontrolplane.md)
 - [Cluster Scheduler](controller/scheduler.md)
 
+## Libraries
+
+- [The ClusterAccess Library](libraries/clusteraccess.md)
+
 ## Resources
 
 - [Cluster Provider: Gardener [Resource Example]](resources/cluster-provider-gardener.md)
