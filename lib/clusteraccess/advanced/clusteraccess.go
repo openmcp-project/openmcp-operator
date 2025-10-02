@@ -137,10 +137,10 @@ type ClusterRegistration interface {
 	// ClusterRequestAvailable returns true if a ClusterRequest can be retrieved from this registration.
 	ClusterRequestAvailable() bool
 	// Parameterize turns this ClusterRegistration into a ParamterizedClusterRegistration.
-	Parameterize(req reconcile.Request, additionalData ...any) ParamterizedClusterRegistration
+	Parameterize(req reconcile.Request, additionalData ...any) ParameterizedClusterRegistration
 }
 
-type ParamterizedClusterRegistration interface {
+type ParameterizedClusterRegistration interface {
 	ClusterRegistration
 
 	// AccessRequestTokenConfig is the token configuration for the AccessRequest to be created for the cluster.
@@ -219,7 +219,7 @@ type parameterizedClusterRegistrationImpl struct {
 }
 
 var _ ClusterRegistration = &clusterRegistrationImpl{}
-var _ ParamterizedClusterRegistration = &parameterizedClusterRegistrationImpl{}
+var _ ParameterizedClusterRegistration = &parameterizedClusterRegistrationImpl{}
 
 // ID implements ClusterRegistration.
 func (c *clusterRegistrationImpl) ID() string {
@@ -249,7 +249,7 @@ func (c *clusterRegistrationImpl) ClusterRequestAvailable() bool {
 	return c.generateClusterRequestSpec != nil || c.generateClusterRequestRef != nil
 }
 
-func (c *clusterRegistrationImpl) Parameterize(req reconcile.Request, additionalData ...any) ParamterizedClusterRegistration {
+func (c *clusterRegistrationImpl) Parameterize(req reconcile.Request, additionalData ...any) ParameterizedClusterRegistration {
 	return &parameterizedClusterRegistrationImpl{
 		clusterRegistrationImpl: *c,
 		req:                     req,
