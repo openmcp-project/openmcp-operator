@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	controllerName = "ClusterAccess"
 	idMCP          = "mcp"
 	suffixMCP      = "mcp"
 	idWorkload     = "workload"
@@ -88,17 +87,14 @@ type Reconciler interface {
 }
 
 type reconcilerImpl struct {
-	internal advanced.ClusterAccessReconciler
-	// platformClusterClient client.Client
-	controllerName string
-	// retryInterval         time.Duration
+	internal            advanced.ClusterAccessReconciler
+	controllerName      string
 	mcpPermissions      []clustersv1alpha1.PermissionsRequest
 	mcpRoleRefs         []commonapi.RoleRef
 	workloadPermissions []clustersv1alpha1.PermissionsRequest
 	workloadRoleRefs    []commonapi.RoleRef
 	mcpScheme           *runtime.Scheme
 	workloadScheme      *runtime.Scheme
-	// skipWorkloadCluster   bool
 }
 
 // NewClusterAccessReconciler creates a new ClusterAccessReconciler with the given parameters.
@@ -113,17 +109,14 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 		}
 	})
 	return &reconcilerImpl{
-		internal: rec,
-		// platformClusterClient: platformClusterClient,
-		controllerName: controllerName,
-		// retryInterval:         5 * time.Second,
+		internal:            rec,
+		controllerName:      controllerName,
 		mcpPermissions:      []clustersv1alpha1.PermissionsRequest{},
 		mcpRoleRefs:         []commonapi.RoleRef{},
 		workloadPermissions: []clustersv1alpha1.PermissionsRequest{},
 		workloadRoleRefs:    []commonapi.RoleRef{},
 		mcpScheme:           runtime.NewScheme(),
 		workloadScheme:      runtime.NewScheme(),
-		// skipWorkloadCluster:   false,
 	}
 }
 

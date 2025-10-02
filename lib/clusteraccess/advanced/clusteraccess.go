@@ -54,7 +54,7 @@ type ClusterAccessReconciler interface {
 
 	// Access returns an internal Cluster object granting access to the cluster for the specified request with the specified id.
 	// Will fail if the cluster is not registered or no AccessRequest is registered for the cluster, or if some other error occurs.
-	Access(ctx context.Context, request reconcile.Request, id string) (*clusters.Cluster, error)
+	Access(ctx context.Context, request reconcile.Request, id string, additionalData ...any) (*clusters.Cluster, error)
 	// AccessRequest fetches the AccessRequest object for the cluster for the specified request with the specified id.
 	// Will fail if the cluster is not registered or no AccessRequest is registered for the cluster, or if some other error occurs.
 	// The same additionalData must be passed into all methods of this ClusterAccessReconciler for the same request and id.
@@ -194,18 +194,6 @@ type ClusterRegistrationBuilder interface {
 	WithNamespaceGenerator(f func(req reconcile.Request, additionalData ...any) (string, error)) ClusterRegistrationBuilder
 	// Build builds the ClusterRegistration object.
 	Build() ClusterRegistration
-}
-
-// DefaultNamespaceGenerator is a default implementation of a namespace generator.
-// It computes a UUID-style hash from the given request.
-func DefaultNamespaceGenerator(req reconcile.Request, _ ...any) (string, error) {
-	return ctrlutils.K8sNameUUID(req.Namespace, req.Name)
-}
-
-// DefaultNamespaceGeneratorForMCP is a default implementation of a namespace generator for MCPs.
-// It computes a UUID-style hash from the given request and prefixes it with "mcp--".
-func DefaultNamespaceGeneratorForMCP(req reconcile.Request, _ ...any) (string, error) {
-	return libutils.StableMCPNamespace(req.Name, req.Namespace)
 }
 
 ///////////////////////////////////////////
@@ -389,13 +377,6 @@ func (c *clusterRegistrationBuilderImpl) WithNamespaceGenerator(f func(req recon
 	return c
 }
 
-// StaticClusterRequestSpecGenerator is a helper function that just returns deep copies of the given spec.
-func StaticClusterRequestSpecGenerator(spec *clustersv1alpha1.ClusterRequestSpec) func(reconcile.Request, ...any) (*clustersv1alpha1.ClusterRequestSpec, error) {
-	return func(_ reconcile.Request, _ ...any) (*clustersv1alpha1.ClusterRequestSpec, error) {
-		return spec.DeepCopy(), nil
-	}
-}
-
 // NewClusterRequest instructs the Reconciler to create and manage a new ClusterRequest.
 func NewClusterRequest(id, suffix string, generateClusterRequestSpec func(reconcile.Request, ...any) (*clustersv1alpha1.ClusterRequestSpec, error)) ClusterRegistrationBuilder {
 	return &clusterRegistrationBuilderImpl{
@@ -405,13 +386,6 @@ func NewClusterRequest(id, suffix string, generateClusterRequestSpec func(reconc
 			generateClusterRequestSpec: generateClusterRequestSpec,
 			generateNamespace:          DefaultNamespaceGenerator,
 		},
-	}
-}
-
-// StaticReferenceGenerator is a helper function that just returns a deep copy of the given reference.
-func StaticReferenceGenerator(ref *commonapi.ObjectReference) func(reconcile.Request, ...any) (*commonapi.ObjectReference, error) {
-	return func(_ reconcile.Request, _ ...any) (*commonapi.ObjectReference, error) {
-		return ref.DeepCopy(), nil
 	}
 }
 
@@ -470,12 +444,12 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 var _ ClusterAccessReconciler = &reconcilerImpl{}
 
 // Access implements Reconciler.
-func (r *reconcilerImpl) Access(ctx context.Context, request reconcile.Request, id string) (*clusters.Cluster, error) {
+func (r *reconcilerImpl) Access(ctx context.Context, request reconcile.Request, id string, additionalData ...any) (*clusters.Cluster, error) {
 	reg, ok := r.registrations[id]
 	if !ok {
 		return nil, fmt.Errorf("no registration found for request '%s' with id '%s'", request.String(), id)
 	}
-	ar, err := r.AccessRequest(ctx, request, id)
+	ar, err := r.AccessRequest(ctx, request, id, additionalData...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch AccessRequest for request '%s' with id '%s': %w", request.String(), id, err)
 	}
@@ -610,6 +584,8 @@ func (r *reconcilerImpl) ClusterRequest(ctx context.Context, request reconcile.R
 }
 
 // Reconcile implements Reconciler.
+//
+//nolint:gocyclo
 func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error) {
 	log := logging.FromContextOrDiscard(ctx).WithName(caControllerName)
 	ctx = logging.NewContext(ctx, log)
@@ -1017,6 +993,52 @@ func AccessFromAccessRequest(ctx context.Context, platformClusterClient client.C
 	}
 
 	return c, nil
+}
+
+// StaticNamespaceGenerator returns a namespace generator that always returns the same namespace.
+func StaticNamespaceGenerator(namespace string) func(reconcile.Request, ...any) (string, error) {
+	return func(_ reconcile.Request, _ ...any) (string, error) {
+		return namespace, nil
+	}
+}
+
+// RequestNamespaceGenerator is a namespace generator that returns the namespace of the request.
+func RequestNamespaceGenerator(req reconcile.Request, _ ...any) (string, error) {
+	return req.Namespace, nil
+}
+
+// DefaultNamespaceGenerator is a default implementation of a namespace generator.
+// It computes a UUID-style hash from the given request.
+func DefaultNamespaceGenerator(req reconcile.Request, _ ...any) (string, error) {
+	return ctrlutils.K8sNameUUID(req.Namespace, req.Name)
+}
+
+// DefaultNamespaceGeneratorForMCP is a default implementation of a namespace generator for MCPs.
+// It computes a UUID-style hash from the given request and prefixes it with "mcp--".
+func DefaultNamespaceGeneratorForMCP(req reconcile.Request, _ ...any) (string, error) {
+	return libutils.StableMCPNamespace(req.Name, req.Namespace)
+}
+
+// StaticClusterRequestSpecGenerator is a helper function that returns a ClusterRequestSpec generator which just returns deep copies of the given spec.
+func StaticClusterRequestSpecGenerator(spec *clustersv1alpha1.ClusterRequestSpec) func(reconcile.Request, ...any) (*clustersv1alpha1.ClusterRequestSpec, error) {
+	return func(_ reconcile.Request, _ ...any) (*clustersv1alpha1.ClusterRequestSpec, error) {
+		return spec.DeepCopy(), nil
+	}
+}
+
+// StaticReferenceGenerator is a helper function that returns an ObjectReference generator which just returns a deep copy of the given reference.
+func StaticReferenceGenerator(ref *commonapi.ObjectReference) func(reconcile.Request, ...any) (*commonapi.ObjectReference, error) {
+	return func(_ reconcile.Request, _ ...any) (*commonapi.ObjectReference, error) {
+		return ref.DeepCopy(), nil
+	}
+}
+
+// IdentityReferenceGenerator is an ObjectReference generator that returns a reference that is identical to the request (name and namespace).
+func IdentityReferenceGenerator(req reconcile.Request, _ ...any) (*commonapi.ObjectReference, error) {
+	return &commonapi.ObjectReference{
+		Name:      req.Name,
+		Namespace: req.Namespace,
+	}, nil
 }
 
 ////////////////////////////////
