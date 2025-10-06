@@ -23,7 +23,7 @@ The ClusterAccess Reconciler has the same purpose as the Manager - granting acce
 
 There are two variants of the ClusterAccess Reconciler: simple and advanced.
 
-The 'simple' ClusterAccess Reconciler lies in `lib/clusteraccess`. It is designed for service providers which reconcile resources belonging to MCPs and need access to the corresponding MCP clusters and additionally a workload cluster. It cannot be used to get access to clusters that are not related to an MCP.
+The 'simple' ClusterAccess Reconciler lies in `lib/clusteraccess`. It is designed for service providers which need acces to the Managed Control Plane cluster to deliver the service API and a Workload cluster which hosts the kubernets workload of a service instance.
 
 The 'advanced' ClusterAccess Reconciler is in `lib/clusteraccess/advanced`. It can be configured to grant access to arbitrary clusters, either static or depending on the reconciled object. It is possible to either create a new `ClusterRequest` or reference existing `ClusterRequest` or `Cluster` resources. Due to this flexibility, it is significantly more complex to configure than the simple variant, though.
 
