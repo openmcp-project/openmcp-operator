@@ -2,6 +2,16 @@
 
 The ClusterAccess library in `lib/clusteraccess` is all about getting access to k8s clusters represented by the `Cluster` resource. It can be used in a few different ways which are outlined in this document.
 
+## Background: MCP Clusters, Workload Clusters, and Service Providers
+
+For a better understanding of where this library comes from, let's do a quick recap of the openMCP architecture:
+
+Customers have access to a single, shared **onboarding cluster**. They can create `ManagedControlPlane` resources (MCPs) there and request services by creating *service resources* (e.g. for `Flux`, `Landscaper`, etc.) next to the MCPs. Each MCP results in an **MCP cluster** - the customer has access to the ones belonging to his own MCPs and the APIs for the services he requested (k8s CRDs) will be made available on this cluster. As this is a managed service, the customer should not have access to any managed controllers, therefore the service controllers (e.g. the Flux controller, the Landscaper controller, etc.) are usually running in so-called **workload clusters**. Workload clusters cannot be accessed by customers and controllers for multiple different MCPs can be hosted on the same workload cluster.
+
+The available services are determined by which **service providers** are deployed in the landscape. A service provider is responsible for watching the service resources and reacting on them. For example, the Landscaper service provider would watch the Landscaper service resource (which is named `Landscaper`) on the onboarding cluster, and if a new one is created next to an MCP, it would deploy a Landscaper instance (meaning the controllers required to run Landscaper) on any workload cluster and configure them to watch the MCP cluster belonging to the MCP the service resource was created next to. This makes the Landscaper resources (`Installation`, `Target`, etc.) available on the MCP cluster so that the customer can use the Landscaper without having to manage its lifecycle.
+
+As all service providers work similarly, they usually need access to the MCP cluster (to deploy CRDs, for example) and a workload cluster (to deploy the service controllers). As the process for getting access to both clusters is not too intuitive, we decided to build this library to make the development of new service providers easier, more efficient, and less error-prone.
+
 ## ClusterAccess Manager
 
 The `Manager` interface mainly specifies the `CreateAndWaitForCluster` and `WaitForClusterAccess` methods. They can be used to create a `ClusterRequest` and `AccessRequest` or just the latter one.
@@ -23,7 +33,7 @@ The ClusterAccess Reconciler has the same purpose as the Manager - granting acce
 
 There are two variants of the ClusterAccess Reconciler: simple and advanced.
 
-The 'simple' ClusterAccess Reconciler lies in `lib/clusteraccess`. It is designed for service providers which need acces to the Managed Control Plane cluster to deliver the service API and a Workload cluster which hosts the kubernets workload of a service instance.
+The 'simple' ClusterAccess Reconciler lies in `lib/clusteraccess`. It is designed for the original use-case: service providers which need acces to the Managed Control Plane cluster to deliver the service API and a Workload cluster which hosts the kubernets workload of a service instance.
 
 The 'advanced' ClusterAccess Reconciler is in `lib/clusteraccess/advanced`. It can be configured to grant access to arbitrary clusters, either static or depending on the reconciled object. It is possible to either create a new `ClusterRequest` or reference existing `ClusterRequest` or `Cluster` resources. Due to this flexibility, it is significantly more complex to configure than the simple variant, though.
 
