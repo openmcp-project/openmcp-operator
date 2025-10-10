@@ -377,8 +377,12 @@ func (c *clusterRegistrationBuilderImpl) WithNamespaceGenerator(f func(req recon
 	return c
 }
 
+// ClusterRequestSpecGenerator is a function that takes the reconcile.Request and arbitrary additional arguments and generates a ClusterRequestSpec.
+// Request and additional arguments depend on the arguments the ClusterAccessReconciler's Reconcile method is called with.
+type ClusterRequestSpecGenerator func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.ClusterRequestSpec, error)
+
 // NewClusterRequest instructs the Reconciler to create and manage a new ClusterRequest.
-func NewClusterRequest(id, suffix string, generateClusterRequestSpec func(reconcile.Request, ...any) (*clustersv1alpha1.ClusterRequestSpec, error)) ClusterRegistrationBuilder {
+func NewClusterRequest(id, suffix string, generateClusterRequestSpec ClusterRequestSpecGenerator) ClusterRegistrationBuilder {
 	return &clusterRegistrationBuilderImpl{
 		clusterRegistrationImpl: clusterRegistrationImpl{
 			id:                         id,
@@ -389,8 +393,14 @@ func NewClusterRequest(id, suffix string, generateClusterRequestSpec func(reconc
 	}
 }
 
+// ObjectReferenceGenerator is a function that takes the reconcile.Request and arbitrary additional arguments and generates an ObjectReference.
+// Request and additional arguments depend on the arguments the ClusterAccessReconciler's Reconcile method is called with.
+// The kind of the object the reference refers to depends on the method the function is passed into.
+type ObjectReferenceGenerator func(req reconcile.Request, additionalData ...any) (*commonapi.ObjectReference, error)
+
 // ExistingCluster instructs the Reconciler to use an existing Cluster resource.
-func ExistingCluster(id, suffix string, generateClusterRef func(reconcile.Request, ...any) (*commonapi.ObjectReference, error)) ClusterRegistrationBuilder {
+// The given generateClusterRef function is used to generate the reference to the Cluster resource.
+func ExistingCluster(id, suffix string, generateClusterRef ObjectReferenceGenerator) ClusterRegistrationBuilder {
 	return &clusterRegistrationBuilderImpl{
 		clusterRegistrationImpl: clusterRegistrationImpl{
 			id:                 id,
@@ -402,7 +412,8 @@ func ExistingCluster(id, suffix string, generateClusterRef func(reconcile.Reques
 }
 
 // ExistingClusterRequest instructs the Reconciler to use an existing Cluster resource that is referenced by the given ClusterRequest.
-func ExistingClusterRequest(id, suffix string, generateClusterRequestRef func(reconcile.Request, ...any) (*commonapi.ObjectReference, error)) ClusterRegistrationBuilder {
+// The given generateClusterRequestRef function is used to generate the reference to the ClusterRequest resource.
+func ExistingClusterRequest(id, suffix string, generateClusterRequestRef ObjectReferenceGenerator) ClusterRegistrationBuilder {
 	return &clusterRegistrationBuilderImpl{
 		clusterRegistrationImpl: clusterRegistrationImpl{
 			id:                        id,
