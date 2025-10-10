@@ -1,0 +1,7 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: foo--cr-conflict--fb
+  namespace: 3d95cbf8-d468-88c6-9ca8-a3be991689a8
+spec:
+  purpose: test

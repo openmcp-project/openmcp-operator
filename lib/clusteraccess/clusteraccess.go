@@ -3,11 +3,9 @@ package clusteraccess
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -18,19 +16,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
-	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	"github.com/openmcp-project/controller-utils/pkg/resources"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	constv1alpha1 "github.com/openmcp-project/openmcp-operator/api/constants"
+	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess/advanced"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
 const (
-	controllerName        = "ClusterAccess"
-	requestSuffixMCP      = "--mcp"
-	requestSuffixWorkload = "--wl"
+	idMCP          = "mcp"
+	suffixMCP      = "mcp"
+	idWorkload     = "workload"
+	suffixWorkload = "wl"
 )
 
 // Reconciler is an interface for reconciling access to openMCP clusters.
@@ -60,10 +59,14 @@ type Reconciler interface {
 	// This function will only be successful if the MCP AccessRequest is granted and Reconcile returned without an error
 	// and a reconcile.Result with no RequeueAfter value.
 	MCPCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error)
+	// MCPAccessRequest returns the AccessRequest for the MCP cluster.
+	MCPAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error)
 	// WorkloadCluster creates a Cluster for the Workload AccessRequest.
 	// This function will only be successful if the Workload AccessRequest is granted and Reconcile returned without an error
 	// and a reconcile.Result with no RequeueAfter value.
 	WorkloadCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error)
+	// WorkloadAccessRequest returns the AccessRequest for the Workload cluster.
+	WorkloadAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error)
 
 	// Reconcile creates the ClusterRequests and AccessRequests for the MCP and Workload clusters based on the reconciled object.
 	// This function should be called during all reconciliations of the reconciled object.
@@ -84,263 +87,142 @@ type Reconciler interface {
 }
 
 type reconcilerImpl struct {
-	platformClusterClient client.Client
-	controllerName        string
-	retryInterval         time.Duration
-	mcpPermissions        []clustersv1alpha1.PermissionsRequest
-	mcpRoleRefs           []commonapi.RoleRef
-	workloadPermissions   []clustersv1alpha1.PermissionsRequest
-	workloadRoleRefs      []commonapi.RoleRef
-	mcpScheme             *runtime.Scheme
-	workloadScheme        *runtime.Scheme
-	skipWorkloadCluster   bool
+	internal            advanced.ClusterAccessReconciler
+	controllerName      string
+	mcpPermissions      []clustersv1alpha1.PermissionsRequest
+	mcpRoleRefs         []commonapi.RoleRef
+	workloadPermissions []clustersv1alpha1.PermissionsRequest
+	workloadRoleRefs    []commonapi.RoleRef
+	mcpScheme           *runtime.Scheme
+	workloadScheme      *runtime.Scheme
 }
 
 // NewClusterAccessReconciler creates a new ClusterAccessReconciler with the given parameters.
 // platformClusterClient is the client to the platform cluster where the AccessRequests and ClusterRequests are created.
 // controllerName is the name of the Kubernetes controller, used to create stable request names.
 func NewClusterAccessReconciler(platformClusterClient client.Client, controllerName string) Reconciler {
+	rec := advanced.NewClusterAccessReconciler(platformClusterClient, controllerName).WithManagedLabels(func(controllerName string, req reconcile.Request, reg advanced.ClusterRegistration) (string, string, map[string]string) {
+		_, managedPurpose, _ := advanced.DefaultManagedLabelGenerator(controllerName, req, reg)
+		return controllerName, managedPurpose, map[string]string{
+			constv1alpha1.OnboardingNameLabel:      req.Name,
+			constv1alpha1.OnboardingNamespaceLabel: req.Namespace,
+		}
+	})
 	return &reconcilerImpl{
-		platformClusterClient: platformClusterClient,
-		controllerName:        controllerName,
-		retryInterval:         5 * time.Second,
-		mcpPermissions:        []clustersv1alpha1.PermissionsRequest{},
-		mcpRoleRefs:           []commonapi.RoleRef{},
-		workloadPermissions:   []clustersv1alpha1.PermissionsRequest{},
-		workloadRoleRefs:      []commonapi.RoleRef{},
-		mcpScheme:             runtime.NewScheme(),
-		workloadScheme:        runtime.NewScheme(),
-		skipWorkloadCluster:   false,
+		internal:            rec,
+		controllerName:      controllerName,
+		mcpPermissions:      []clustersv1alpha1.PermissionsRequest{},
+		mcpRoleRefs:         []commonapi.RoleRef{},
+		workloadPermissions: []clustersv1alpha1.PermissionsRequest{},
+		workloadRoleRefs:    []commonapi.RoleRef{},
+		mcpScheme:           runtime.NewScheme(),
+		workloadScheme:      runtime.NewScheme(),
 	}
 }
 
+func (r *reconcilerImpl) registerMCP() *reconcilerImpl {
+	token := &clustersv1alpha1.TokenConfig{
+		Permissions: make([]clustersv1alpha1.PermissionsRequest, len(r.mcpPermissions)),
+		RoleRefs:    make([]commonapi.RoleRef, len(r.mcpRoleRefs)),
+	}
+	copy(token.Permissions, r.mcpPermissions)
+	copy(token.RoleRefs, r.mcpRoleRefs)
+	r.internal.Register(advanced.ExistingClusterRequest(idMCP, suffixMCP, func(req reconcile.Request, _ ...any) (*commonapi.ObjectReference, error) {
+		namespace, err := libutils.StableMCPNamespace(req.Name, req.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		return &commonapi.ObjectReference{
+			Name:      req.Name,
+			Namespace: namespace,
+		}, nil
+	}).
+		WithNamespaceGenerator(advanced.DefaultNamespaceGeneratorForMCP).
+		WithTokenAccess(token).
+		WithScheme(r.mcpScheme).
+		Build())
+	return r
+}
+
+func (r *reconcilerImpl) registerWorkload() *reconcilerImpl {
+	token := &clustersv1alpha1.TokenConfig{
+		Permissions: make([]clustersv1alpha1.PermissionsRequest, len(r.workloadPermissions)),
+		RoleRefs:    make([]commonapi.RoleRef, len(r.workloadRoleRefs)),
+	}
+	copy(token.Permissions, r.workloadPermissions)
+	copy(token.RoleRefs, r.workloadRoleRefs)
+	r.internal.Register(advanced.NewClusterRequest(idWorkload, suffixWorkload, advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+		Purpose: clustersv1alpha1.PURPOSE_WORKLOAD,
+	})).
+		WithNamespaceGenerator(advanced.DefaultNamespaceGeneratorForMCP).
+		WithTokenAccess(token).
+		WithScheme(r.workloadScheme).
+		Build())
+	return r
+}
+
 func (r *reconcilerImpl) WithRetryInterval(interval time.Duration) Reconciler {
-	r.retryInterval = interval
+	r.internal.WithRetryInterval(interval)
 	return r
 }
 
 func (r *reconcilerImpl) WithMCPPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler {
 	r.mcpPermissions = permissions
-	return r
+	return r.registerMCP()
 }
 
 func (r *reconcilerImpl) WithMCPRoleRefs(roleRefs []commonapi.RoleRef) Reconciler {
 	r.mcpRoleRefs = roleRefs
-	return r
+	return r.registerMCP()
 }
 
 func (r *reconcilerImpl) WithWorkloadPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler {
 	r.workloadPermissions = permissions
-	return r
+	return r.registerWorkload()
 }
 
 func (r *reconcilerImpl) WithWorkloadRoleRefs(roleRefs []commonapi.RoleRef) Reconciler {
 	r.workloadRoleRefs = roleRefs
-	return r
+	return r.registerWorkload()
 }
 
 func (r *reconcilerImpl) WithMCPScheme(scheme *runtime.Scheme) Reconciler {
 	r.mcpScheme = scheme
-	return r
+	return r.registerMCP()
 }
 
 func (r *reconcilerImpl) WithWorkloadScheme(scheme *runtime.Scheme) Reconciler {
 	r.workloadScheme = scheme
-	return r
+	return r.registerWorkload()
 }
 
 func (r *reconcilerImpl) SkipWorkloadCluster() Reconciler {
-	r.skipWorkloadCluster = true
+	r.internal.Unregister(idWorkload)
 	return r
 }
 
 func (r *reconcilerImpl) MCPCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
-	platformNamespace, err := libutils.StableMCPNamespace(request.Name, request.Namespace)
-	if err != nil {
-		return nil, err
-	}
-	mcpAccessRequest := &clustersv1alpha1.AccessRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      StableRequestName(r.controllerName, request) + requestSuffixMCP,
-			Namespace: platformNamespace,
-		},
-	}
+	return r.internal.Access(ctx, request, idMCP)
+}
 
-	if err := r.platformClusterClient.Get(ctx, client.ObjectKeyFromObject(mcpAccessRequest), mcpAccessRequest); err != nil {
-		return nil, fmt.Errorf("failed to get MCP AccessRequest: %w", err)
-	}
-
-	mcpCluster, err := createClusterForAccessRequest(ctx, r.platformClusterClient, clustersv1alpha1.PURPOSE_MCP, r.mcpScheme, mcpAccessRequest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create MCP cluster for AccessRequest: %w", err)
-	}
-
-	return mcpCluster, nil
+func (r *reconcilerImpl) MCPAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error) {
+	return r.internal.AccessRequest(ctx, request, idMCP)
 }
 
 func (r *reconcilerImpl) WorkloadCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
-	platformNamespace, err := libutils.StableMCPNamespace(request.Name, request.Namespace)
-	if err != nil {
-		return nil, err
-	}
-	workloadAccessRequest := &clustersv1alpha1.AccessRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      StableRequestName(r.controllerName, request) + requestSuffixWorkload,
-			Namespace: platformNamespace,
-		},
-	}
+	return r.internal.Access(ctx, request, idWorkload)
+}
 
-	if err := r.platformClusterClient.Get(ctx, client.ObjectKeyFromObject(workloadAccessRequest), workloadAccessRequest); err != nil {
-		return nil, fmt.Errorf("failed to get Workload AccessRequest: %w", err)
-	}
-
-	workloadCluster, err := createClusterForAccessRequest(ctx, r.platformClusterClient, clustersv1alpha1.PURPOSE_WORKLOAD, r.workloadScheme, workloadAccessRequest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Workload cluster for AccessRequest: %w", err)
-	}
-
-	return workloadCluster, nil
+func (r *reconcilerImpl) WorkloadAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error) {
+	return r.internal.AccessRequest(ctx, request, idWorkload)
 }
 
 func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	log := logging.FromContextOrPanic(ctx).WithName(controllerName)
-
-	platformNamespace, err := libutils.StableMCPNamespace(request.Name, request.Namespace)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-	requestNamespace := platformNamespace
-	requestNameMCP := StableRequestName(r.controllerName, request) + requestSuffixMCP
-	requestNameWorkload := StableRequestName(r.controllerName, request) + requestSuffixWorkload
-
-	metadata := requestMetadata(r.controllerName, request)
-
-	// Check if the request namespace already exists.
-	// If it does not exist, wait until it is created.
-
-	log.Debug("Wait for request namespace to exist", "requestNamespace", requestNamespace)
-
-	requestNamespaceExists, err := namespaceExists(ctx, r.platformClusterClient, requestNamespace)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to check if request namespace exists: %w", err)
-	}
-
-	if !requestNamespaceExists {
-		log.Debug("Request namespace does not exist", "requestNamespace", requestNamespace)
-		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
-	}
-
-	// Create or update the MCP AccessRequest and wait until the MCP cluster is ready.
-	// This also prevents creating the Workload AccessRequest before there is even a MCP created on the onboarding cluster.
-
-	log.Debug("Create and wait for MCP cluster access request", "accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace)
-
-	mcpAccessRequest, err := ensureAccessRequest(ctx, r.platformClusterClient,
-		requestNameMCP, requestNamespace, &commonapi.ObjectReference{
-			Name:      request.Name,
-			Namespace: requestNamespace,
-		}, nil, r.mcpPermissions, r.mcpRoleRefs, metadata)
-
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to create or update MCP AccessRequest: %w", err)
-	}
-
-	if mcpAccessRequest.Status.IsDenied() {
-		return reconcile.Result{}, fmt.Errorf("MCP AccessRequest denied")
-	}
-
-	if !mcpAccessRequest.Status.IsGranted() {
-		log.Debug("MCP AccessRequest is not yet granted",
-			"accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace, "requestPhase", mcpAccessRequest.Status.Phase)
-		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
-	}
-
-	if !r.skipWorkloadCluster {
-		// Create or update the ClusterRequest for the Workload cluster and wait until it is ready.
-
-		log.Debug("Create and wait for Workload cluster request", "clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace)
-
-		workloadRequest, err := ensureClusterRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace, clustersv1alpha1.PURPOSE_WORKLOAD, metadata)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to create or update Workload ClusterRequest: %w", err)
-		}
-
-		if workloadRequest.Status.IsDenied() {
-			return reconcile.Result{}, fmt.Errorf("workload ClusterRequest denied")
-		}
-
-		if !workloadRequest.Status.IsGranted() {
-			log.Debug("Workload ClusterRequest is not yet granted",
-				"clusterRequestName", requestNameWorkload, "clusterRequestNamespace", requestNamespace, "requestPhase", workloadRequest.Status.Phase)
-			return reconcile.Result{RequeueAfter: r.retryInterval}, nil
-		}
-
-		// Create or update the AccessRequest for the Workload cluster.
-
-		log.Debug("Create and wait for Workload cluster access request", "accessRequestName", requestNameWorkload, "accessRequestNamespace", requestNamespace)
-
-		workloadAccessRequest, err := ensureAccessRequest(ctx, r.platformClusterClient,
-			requestNameWorkload, requestNamespace, &commonapi.ObjectReference{
-				Name:      requestNameWorkload,
-				Namespace: requestNamespace,
-			}, nil, r.workloadPermissions, r.workloadRoleRefs, metadata)
-
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to create or update Workload AccessRequest: %w", err)
-		}
-
-		if workloadAccessRequest.Status.IsDenied() {
-			return reconcile.Result{}, fmt.Errorf("workload AccessRequest denied")
-		}
-
-		if !workloadAccessRequest.Status.IsGranted() {
-			log.Debug("Workload AccessRequest is not yet granted",
-				"accessRequestName", requestNameMCP, "accessRequestNamespace", requestNamespace, "requestPhase", workloadAccessRequest.Status.Phase)
-			return reconcile.Result{RequeueAfter: r.retryInterval}, nil
-		}
-	}
-
-	return reconcile.Result{}, nil
+	return r.internal.Reconcile(ctx, request)
 }
 
 func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	platformNamespace, err := libutils.StableMCPNamespace(request.Name, request.Namespace)
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-	requestNamespace := platformNamespace
-	requestNameMCP := StableRequestName(r.controllerName, request) + requestSuffixMCP
-	requestNameWorkload := StableRequestName(r.controllerName, request) + requestSuffixWorkload
-
-	workloadAccessDeleted := true
-	workloadClusterDeleted := true
-
-	if !r.skipWorkloadCluster {
-		// Delete the Workload AccessRequest if it exists
-		workloadAccessDeleted, err = deleteAccessRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to delete Workload AccessRequest: %w", err)
-		}
-
-		// Delete the Workload ClusterRequest if it exists
-		workloadClusterDeleted, err = deleteClusterRequest(ctx, r.platformClusterClient, requestNameWorkload, requestNamespace)
-		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to delete Workload ClusterRequest: %w", err)
-		}
-
-	}
-
-	// Delete the MCP AccessRequest if it exists
-	mcpAccessDeleted, err := deleteAccessRequest(ctx, r.platformClusterClient, requestNameMCP, requestNamespace)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to delete MCP AccessRequest: %w", err)
-	}
-
-	if !workloadAccessDeleted || !workloadClusterDeleted || !mcpAccessDeleted {
-		return reconcile.Result{RequeueAfter: r.retryInterval}, nil
-	}
-
-	return reconcile.Result{}, nil
+	return r.internal.ReconcileDelete(ctx, request)
 }
 
 // Manager is an interface for managing cluster access.
@@ -513,129 +395,6 @@ func (m *managerImpl) wait(ctx context.Context, test func(ctx context.Context) (
 	defer cancel()
 
 	return wait.PollUntilContextTimeout(ctx, m.interval, m.timeout, true, test)
-}
-
-func requestMetadata(controllerName string, request reconcile.Request) resources.MetadataMutator {
-	metadata := resources.NewMetadataMutator()
-	metadata.WithLabels(map[string]string{
-		constv1alpha1.ManagedByLabel:           controllerName,
-		constv1alpha1.OnboardingNameLabel:      request.Name,
-		constv1alpha1.OnboardingNamespaceLabel: request.Namespace,
-	})
-
-	return metadata
-}
-
-func namespaceExists(ctx context.Context, platformClusterClient client.Client, namespace string) (bool, error) {
-	ns := &corev1.Namespace{}
-	if err := platformClusterClient.Get(ctx, client.ObjectKey{Name: namespace}, ns); err != nil {
-		if client.IgnoreNotFound(err) != nil {
-			return false, fmt.Errorf("failed to check if namespace exists: %w", err)
-		}
-		return false, nil // Namespace does not exist
-	}
-	return true, nil // Namespace exists
-}
-
-func ensureClusterRequest(ctx context.Context, platformClusterClient client.Client,
-	requestName, requestNamespace, purpose string, metadata resources.MetadataMutator) (*clustersv1alpha1.ClusterRequest, error) {
-
-	mutator := newClusterRequestMutator(requestName, requestNamespace, purpose)
-	mutator.WithMetadata(metadata)
-
-	if err := resources.CreateOrUpdateResource[*clustersv1alpha1.ClusterRequest](ctx, platformClusterClient, mutator); err != nil {
-		return nil, fmt.Errorf("failed to create or update ClusterRequest: %w", err)
-	}
-
-	cr := mutator.Empty()
-	if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(cr), cr); err != nil {
-		return nil, fmt.Errorf("failed to get ClusterRequest: %w", err)
-	}
-
-	return cr, nil
-}
-
-func ensureAccessRequest(ctx context.Context, platformClusterClient client.Client, requestName, requestNamespace string,
-	requestRef *commonapi.ObjectReference, clusterRef *commonapi.ObjectReference,
-	permissions []clustersv1alpha1.PermissionsRequest, roleRefs []commonapi.RoleRef, metadata resources.MetadataMutator) (*clustersv1alpha1.AccessRequest, error) {
-
-	mutator := newAccessRequestMutator(requestName, requestNamespace).
-		WithTokenPermissions(permissions).
-		WithTokenRoleRefs(roleRefs).
-		WithMetadata(metadata)
-
-	if requestRef != nil {
-		mutator = mutator.WithRequestRef(requestRef)
-	}
-
-	if clusterRef != nil {
-		mutator = mutator.WithClusterRef(clusterRef)
-	}
-
-	if err := resources.CreateOrUpdateResource[*clustersv1alpha1.AccessRequest](ctx, platformClusterClient, mutator); err != nil {
-		return nil, fmt.Errorf("failed to create or update AccessRequest: %w", err)
-	}
-
-	ar := mutator.Empty()
-	if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(ar), ar); err != nil {
-		return nil, fmt.Errorf("failed to get AccessRequest: %w", err)
-	}
-
-	return ar, nil
-}
-
-func deleteAccessRequest(ctx context.Context, platformClusterClient client.Client, requestName, requestNamespace string) (bool, error) {
-	ar := &clustersv1alpha1.AccessRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      requestName,
-			Namespace: requestNamespace,
-		},
-	}
-
-	if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(ar), ar); err != nil {
-		if errors.IsNotFound(err) {
-			return true, nil // AccessRequest already deleted
-		} else {
-			return false, fmt.Errorf("failed to get AccessRequest: %w", err)
-		}
-	}
-
-	if err := platformClusterClient.Delete(ctx, ar); err != nil {
-		if errors.IsNotFound(err) {
-			return true, nil // AccessRequest already deleted
-		} else {
-			return false, fmt.Errorf("failed to delete AccessRequest: %w", err)
-		}
-	}
-
-	return true, nil // AccessRequest deleted successfully
-}
-
-func deleteClusterRequest(ctx context.Context, platformClusterClient client.Client, requestName, requestNamespace string) (bool, error) {
-	cr := &clustersv1alpha1.ClusterRequest{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      requestName,
-			Namespace: requestNamespace,
-		},
-	}
-
-	if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(cr), cr); err != nil {
-		if errors.IsNotFound(err) {
-			return true, nil // ClusterRequest already deleted
-		} else {
-			return false, fmt.Errorf("failed to get ClusterRequest: %w", err)
-		}
-	}
-
-	if err := platformClusterClient.Delete(ctx, cr); err != nil {
-		if errors.IsNotFound(err) {
-			return true, nil // ClusterRequest already deleted
-		} else {
-			return false, fmt.Errorf("failed to delete ClusterRequest: %w", err)
-		}
-	}
-
-	return true, nil // ClusterRequest deleted successfully
 }
 
 func createClusterForAccessRequest(ctx context.Context, platformClusterClient client.Client,
@@ -860,11 +619,10 @@ func (m *accessRequestMutator) Mutate(accessRequest *clustersv1alpha1.AccessRequ
 // This basically results in '<lowercase_controller_name>--<request_name>'.
 // If the resulting string exceeds the Kubernetes name length limit of 63 characters, it will be truncated with the last characters replaced by a hash of what was removed.
 func StableRequestName(controllerName string, request reconcile.Request) string {
-	return StableRequestNameFromLocalName(controllerName, request.Name)
+	return advanced.StableRequestName(controllerName, request, "")
 }
 
 // StableRequestNameFromLocalName works like StableRequestName but takes a local name directly instead of a reconcile.Request.
 func StableRequestNameFromLocalName(controllerName, localName string) string {
-	controllerName = strings.ToLower(controllerName)
-	return ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s--%s", controllerName, localName), ctrlutils.K8sMaxNameLength)
+	return advanced.StableRequestNameFromLocalName(controllerName, localName, "")
 }
