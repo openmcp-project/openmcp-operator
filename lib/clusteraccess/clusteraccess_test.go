@@ -9,7 +9,6 @@ import (
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
-	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -171,20 +170,6 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			reconcileResult = env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 			Expect(reconcileResult.RequeueAfter).ToNot(BeZero(), "reconcile should requeue after a delay")
 
-			// reconcile now waits until the request namespace is being created
-			// the format if the request namespace is "ob-<onboarding-namespace>"
-			// create the expected request namespace
-			requestNamespace := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: expectedRequestNamespace,
-				},
-			}
-
-			Expect(env.Client().Create(env.Ctx, requestNamespace)).To(Succeed())
-
-			// reconcile again to process the request
-			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
-
 			// there should be an access request for the MCP cluster created
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestMCP), accessRequestMCP)).To(Succeed())
 
@@ -274,20 +259,6 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 			reconcileResult = env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 			Expect(reconcileResult.RequeueAfter).ToNot(BeZero(), "reconcile should requeue after a delay")
-
-			// reconcile now waits until the request namespace is being created
-			// the format if the request namespace is "ob-<onboarding-namespace>"
-			// create the expected request namespace
-			requestNamespace := &corev1.Namespace{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: expectedRequestNamespace,
-				},
-			}
-
-			Expect(env.Client().Create(env.Ctx, requestNamespace)).To(Succeed())
-
-			// reconcile again to process the request
-			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 
 			// there should be an access request for the MCP cluster created
 			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestMCP), accessRequestMCP)).To(Succeed())

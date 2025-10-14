@@ -1,0 +1,12 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: cr-01
+  namespace: test
+spec:
+  purpose: test
+status:
+  phase: Granted
+  cluster:
+    name: cluster-01
+    namespace: test
