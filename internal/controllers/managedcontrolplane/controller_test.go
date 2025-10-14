@@ -248,9 +248,8 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
-			ar.Status.SecretRef = &commonapi.ObjectReference{
-				Name:      ar.Name,
-				Namespace: ar.Namespace,
+			ar.Status.SecretRef = &commonapi.LocalObjectReference{
+				Name: ar.Name,
 			}
 			sec := &corev1.Secret{}
 			sec.SetName(ar.Status.SecretRef.Name)
@@ -270,9 +269,8 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			ar.SetNamespace(platformNamespace)
 			Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
 			ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
-			ar.Status.SecretRef = &commonapi.ObjectReference{
-				Name:      ar.Name,
-				Namespace: ar.Namespace,
+			ar.Status.SecretRef = &commonapi.LocalObjectReference{
+				Name: ar.Name,
 			}
 			sec := &corev1.Secret{}
 			sec.SetName(ar.Status.SecretRef.Name)

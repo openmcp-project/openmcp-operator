@@ -981,7 +981,7 @@ func AccessFromAccessRequest(ctx context.Context, platformClusterClient client.C
 
 	s := &corev1.Secret{}
 	s.Name = ar.Status.SecretRef.Name
-	s.Namespace = ar.Status.SecretRef.Namespace
+	s.Namespace = ar.Namespace
 
 	if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(s), s); err != nil {
 		return nil, fmt.Errorf("unable to get secret '%s/%s' for AccessRequest '%s/%s': %w", s.Namespace, s.Name, ar.Namespace, ar.Name, err)
@@ -1185,9 +1185,8 @@ func FakeAccessRequestReadiness(kcfgData []byte) FakingCallback {
 
 		// mock AccessRequest status
 		old := ar.DeepCopy()
-		ar.Status.SecretRef = &commonapi.ObjectReference{
-			Name:      s.Name,
-			Namespace: s.Namespace,
+		ar.Status.SecretRef = &commonapi.LocalObjectReference{
+			Name: s.Name,
 		}
 		ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
 		ar.Status.ObservedGeneration = ar.Generation
@@ -1279,7 +1278,7 @@ func FakeAccessRequestDeletion(finalizersToRemoveFromAccessRequest, finalizersTo
 		if ar.Status.SecretRef != nil {
 			s := &corev1.Secret{}
 			s.Name = ar.Status.SecretRef.Name
-			s.Namespace = ar.Status.SecretRef.Namespace
+			s.Namespace = ar.Namespace
 
 			if len(finalizersToRemoveFromSecret) > 0 {
 				// fetch secret to remove finalizers

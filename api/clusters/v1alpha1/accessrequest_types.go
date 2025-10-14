@@ -87,7 +87,9 @@ type AccessRequestStatus struct {
 	commonapi.Status `json:",inline"`
 
 	// SecretRef holds the reference to the secret that contains the actual credentials.
-	SecretRef *commonapi.ObjectReference `json:"secretRef,omitempty"`
+	// The secret is in the same namespace as the AccessRequest.
+	// +optional
+	SecretRef *commonapi.LocalObjectReference `json:"secretRef,omitempty"`
 }
 
 func (ars AccessRequestStatus) IsGranted() bool {
