@@ -1,0 +1,40 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  finalizers:
+  - clusters.openmcp.cloud/finalizer
+  labels:
+    clusters.openmcp.cloud/profile: kind
+    clusters.openmcp.cloud/provider: kind
+    core.openmcp.cloud/mcp-name: mcp-01
+    core.openmcp.cloud/mcp-namespace: test
+    core.openmcp.cloud/token-provider: viewer
+    openmcp.cloud/managed-by: ManagedControlPlane
+  name: c73jfgp2
+  namespace: mcp--ac6294ed-3227-8926-b364-f791fabdb843
+  uid: 5ebc81b8-8d5a-4e57-9d7e-7ea4b915fcaf
+spec:
+  clusterRef:
+    name: mcp-12345
+    namespace: mcp--ac6294ed-3227-8926-b364-f791fabdb843
+  requestRef:
+    name: mcp-01
+    namespace: mcp--ac6294ed-3227-8926-b364-f791fabdb843
+  token:
+    permissions:
+    - rules:
+      - apiGroups:
+        - ""
+        resources:
+        - pods
+        - services
+        verbs:
+        - get
+        - list
+        - watch
+status:
+  observedGeneration: 2
+  phase: Granted
+  secretRef:
+    name: c73jfgp2.kubeconfig
+    namespace: mcp--ac6294ed-3227-8926-b364-f791fabdb843

@@ -1,0 +1,19 @@
+apiVersion: core.openmcp.cloud/v2alpha1
+kind: ManagedControlPlaneV2
+metadata:
+  name: mcp-01
+  namespace: test
+  uid: 6aa4f8e1-a590-4fd7-b751-0b93f9f38bde
+spec:
+  iam:
+    tokens:
+      - name: viewer
+        permissions:
+          - rules:
+              - apiGroups: [ '' ]
+                resources: [ 'pods', 'services' ]
+                verbs: [ 'get', 'list', 'watch' ]
+status:
+  access:
+    token_viewer:
+      name: 6nilzexg

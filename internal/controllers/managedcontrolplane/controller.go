@@ -91,7 +91,13 @@ func (r *ManagedControlPlaneReconciler) Reconcile(ctx context.Context, req recon
 		}).
 		WithConditionUpdater(false).
 		WithConditionEvents(r.eventRecorder, conditions.EventPerChange).
-		WithSmartRequeue(r.sr).
+		WithSmartRequeue(r.sr, func(rr ReconcileResult) ctrlutils.SmartRequeueAction {
+			if rr.SmartRequeue == ctrlutils.SR_NO_REQUEUE && rr.Object.Status.Phase != commonapi.StatusPhaseReady {
+				// requeue if the phase is not 'Ready' if a requeue is not already planned
+				return ctrlutils.SR_BACKOFF
+			}
+			return rr.SmartRequeue
+		}).
 		Build().
 		UpdateStatus(ctx, r.OnboardingCluster.Client(), rr)
 }
