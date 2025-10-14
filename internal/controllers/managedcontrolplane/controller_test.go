@@ -284,6 +284,10 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			Expect(env.Client(platform).Create(env.Ctx, sec)).To(Succeed())
 		}
 
+		// remove non-ready cluster condition because it will prevent the MCP from becoming ready
+		cluster.Status.Conditions[1].Status = metav1.ConditionTrue
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+
 		// reconcile the MCP again
 		// expected outcome:
 		// - the mcp has conditions that reflect that all access requests are ready
@@ -865,6 +869,31 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
 
 		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+	})
+
+	It("should requeue the MCP if its phase is not 'Ready', even if all accesses are ready", func() {
+		_, env := defaultTestSetup("testdata", "test-02")
+
+		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp.SetName("mcp-01")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		res := env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType("Cluster.Ready").
+				WithStatus(metav1.ConditionFalse)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionAllAccessReady).
+				WithStatus(metav1.ConditionTrue)),
+			MatchCondition(TestCondition().
+				WithType("AccessReady.token_viewer").
+				WithStatus(metav1.ConditionTrue)),
+		))
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute), "MCP has not been requeued")
 	})
 
 })
