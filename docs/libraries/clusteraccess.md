@@ -206,6 +206,10 @@ For all of these keys, the package offers constants that are prefixed with `Faki
 
 While the signature of a callback function is always the same, any argument except for `ctx`, `platformClusterClient`, and `key` may be nil if not known at the point of execution.
 
+In addition to the callbacks, the ClusterAccess Reconciler also takes a `FakeClientGenerator` via its `WithFakeClientGenerator` method. If set to something other than `nil`, the reconciler's `Access` method will pass the raw kubeconfig bytes retrieved from the `AccessRequest`'s secret into this function, instead of creating a regular client from it.
+
+The combination of `WithFakingCallback` and `WithFakeClientGenerator` can enable unit tests for a controller which uses the advanced ClusterAccess library that do not require any test-specific logic in the controller's logic itself.
+
 ##### Convenience Implementations
 
 Because most controllers that use the faking callback feature will probably require a very similar logic for the aforementioned callback keys, the package provides a convenience implementation for each key:
@@ -213,7 +217,8 @@ Because most controllers that use the faking callback feature will probably requ
   - This mocks cluster scheduler behavior.
 - `FakeAccessRequestReadiness` generates a callback function for the `WaitingForAccessRequestReadiness` key. It creates a `Secret` containing a `kubeconfig` key, references the secret in the request's status and sets the `AccessRequest` to `Granted`.
   - This mocks ClusterProvider behavior.
-  - Note that the `Access` getter method currently cannot handle the default kubeconfig written into the secret (which is just `fake`) and will always return an error, unless the method has been provided with a more realistic kubeconfig.
+  - If name and namespace of the `Cluster` the `AccessRequest` is for can be identified (which should usually be the case), the fake kubeconfig's content will be `fake:cluster:<cluster-namespace>/<cluster-name>`. Otherwise, it will be `fake:request:<request-namespace>/<request-name>`.
+    - This information can be used by a `FakeClientGenerator` to return a fitting fake client implementation.
 - `FakeClusterRequestDeletion` generates a callback function for the `WaitingForClusterRequestDeletion` key. Depending on its arguments, the generated function can remove specific or all finalizers on `Cluster` and/or `ClusterRequest`, and potentially also delete the `Cluster` resource.
   - This mocks cluster scheduler behavior.
 - `FakeAccessRequestDeletion` generates a callback function for the `WaitingForAccessRequestDeletion` key. It deletes the `Secret`, potentially removing the specified finalizers from it before, and then removes the configured finalizers from the `AccessRequest`.

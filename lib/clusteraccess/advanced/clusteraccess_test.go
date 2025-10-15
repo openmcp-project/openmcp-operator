@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
@@ -56,7 +57,10 @@ func defaultClusterAccessReconciler(env *testutils.Environment, controllerName s
 			Purposes: []string{"test"},
 			Tenancy:  clustersv1alpha1.TENANCY_EXCLUSIVE,
 		})).
-		WithFakingCallback(advanced.FakingCallback_WaitingForAccessRequestReadiness, advanced.FakeAccessRequestReadiness(nil))
+		WithFakingCallback(advanced.FakingCallback_WaitingForAccessRequestReadiness, advanced.FakeAccessRequestReadiness()).
+		WithFakeClientGenerator(func(ctx context.Context, kcfgData []byte, scheme *runtime.Scheme, additionalData ...any) (client.Client, error) {
+			return fake.NewClientBuilder().WithScheme(scheme).Build(), nil
+		})
 }
 
 var _ = Describe("Advanced Cluster Access", func() {
@@ -115,7 +119,8 @@ var _ = Describe("Advanced Cluster Access", func() {
 		Expect(c).To(Equal(cCopy)) // the method should have returned the up-to-date object
 
 		// check cluster access
-		// cannot be tested at the moment, because the corresponding library expects 'real' kubeconfigs
+		_, err = rec.Access(env.Ctx, req, "foobar")
+		Expect(err).To(HaveOccurred()) // no access was requested, so this should fail
 
 		// EXAMPLE 2
 		// check namespace
@@ -159,7 +164,10 @@ var _ = Describe("Advanced Cluster Access", func() {
 		Expect(c2).To(Equal(c2Copy)) // the method should have returned the up-to-date object
 
 		// check cluster access
-		// cannot be tested at the moment, because the corresponding library expects 'real' kubeconfigs
+		access, err := rec.Access(env.Ctx, req, "foobaz")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(access.ID()).To(Equal("foobaz"))
+		Expect(access.Client()).ToNot(BeNil())
 
 		// delete everything again, except for namespaces
 		Eventually(expectNoRequeue(env.Ctx, rec, req, true)).Should(Succeed())
@@ -242,7 +250,10 @@ var _ = Describe("Advanced Cluster Access", func() {
 		Expect(c).To(Equal(cCopy)) // the method should have returned the up-to-date object
 
 		// check cluster access
-		// cannot be tested at the moment, because the corresponding library expects 'real' kubeconfigs
+		access, err := rec.Access(env.Ctx, req, "foobar")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(access.ID()).To(Equal("foobar"))
+		Expect(access.Client()).ToNot(BeNil())
 
 		// delete everything again
 		// ClusterRequest and Cluster were not created by this library, so they should not be deleted
@@ -333,7 +344,10 @@ var _ = Describe("Advanced Cluster Access", func() {
 		Expect(c).To(Equal(cCopy)) // the method should have returned the up-to-date object
 
 		// check cluster access
-		// cannot be tested at the moment, because the corresponding library expects 'real' kubeconfigs
+		access, err := rec.Access(env.Ctx, req, "foobar")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(access.ID()).To(Equal("foobar"))
+		Expect(access.Client()).ToNot(BeNil())
 
 		// delete everything again
 		// Cluster was not created by this library, so it should not be deleted
