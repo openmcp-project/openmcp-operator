@@ -92,6 +92,11 @@ type ClusterAccessReconciler interface {
 	// The key determines when the callback function is executed.
 	// This feature is meant for unit testing, where usually no ClusterProvider, which could answer ClusterRequests and AccessRequests, is running.
 	WithFakingCallback(key string, callback FakingCallback) ClusterAccessReconciler
+	// WithFakeClientGenerator sets a fake client generator function.
+	// If non-nil, the function will be called during the Access method with the kubeconfig data retrieved from the AccessRequest secret and the scheme configured for the corresponding cluster registration.
+	// This allows injecting custom behavior for generating the client from the kubeconfig data, e.g. returning a standard fake client if the kubeconfig data is just 'fake' or something similar.
+	// Note that this is unset by default and must be set explicitly.
+	WithFakeClientGenerator(f FakeClientGenerator) ClusterAccessReconciler
 }
 
 // FakingCallback is a function that allows to mock a desired state for unit testing.
@@ -121,6 +126,10 @@ type ManagedLabelGenerator func(controllerName string, req reconcile.Request, re
 func DefaultManagedLabelGenerator(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string, map[string]string) {
 	return controllerName, fmt.Sprintf("%s.%s.%s", req.Namespace, req.Name, reg.ID()), nil
 }
+
+// FakeClientGenerator is a function that generates a fake client.Client.
+// It is used as an argument for the ClusterAccessReconciler's WithFakeClientGenerator method.
+type FakeClientGenerator func(ctx context.Context, kcfgData []byte, scheme *runtime.Scheme, additionalData ...any) (client.Client, error)
 
 type ClusterRegistration interface {
 	// ID is the unique identifier for the cluster.
@@ -436,7 +445,8 @@ type reconcilerImpl struct {
 	registrations map[string]ClusterRegistration
 	managedBy     ManagedLabelGenerator
 
-	fakingCallbacks map[string]FakingCallback
+	fakingCallbacks    map[string]FakingCallback
+	generateFakeClient FakeClientGenerator
 }
 
 // NewClusterAccessReconciler creates a new Cluster Access Reconciler.
@@ -467,7 +477,7 @@ func (r *reconcilerImpl) Access(ctx context.Context, request reconcile.Request, 
 	if !ar.Status.IsGranted() {
 		return nil, fmt.Errorf("AccessRequest '%s/%s' for request '%s' with id '%s' is not granted", ar.Namespace, ar.Name, request.String(), id)
 	}
-	access, err := AccessFromAccessRequest(ctx, r.platformClusterClient, id, reg.Scheme(), ar)
+	access, err := accessFromAccessRequest(ctx, r.platformClusterClient, id, reg.Scheme(), ar, r.generateFakeClient, additionalData...)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get access for request '%s' with id '%s': %w", request.String(), id, err)
 	}
@@ -933,6 +943,12 @@ func (r *reconcilerImpl) WithFakingCallback(key string, callback FakingCallback)
 	return r
 }
 
+// WithFakeClientGenerator implements Reconciler.
+func (r *reconcilerImpl) WithFakeClientGenerator(gen FakeClientGenerator) ClusterAccessReconciler {
+	r.generateFakeClient = gen
+	return r
+}
+
 const (
 	// FakingCallback_WaitingForAccessRequestReadiness is a key for a faking callback that is called when the reconciler is waiting for the AccessRequest to be granted.
 	// Note that the execution happens directly before the return of the reconcile function (with a requeue). This means that the reconciliation needs to run a second time to pick up the changes made in the callback.
@@ -975,6 +991,10 @@ func StableRequestNameFromLocalName(controllerName, localName, suffix string) st
 
 // AccessFromAccessRequest provides access to a k8s cluster based on the given AccessRequest.
 func AccessFromAccessRequest(ctx context.Context, platformClusterClient client.Client, id string, scheme *runtime.Scheme, ar *clustersv1alpha1.AccessRequest) (*clusters.Cluster, error) {
+	return accessFromAccessRequest(ctx, platformClusterClient, id, scheme, ar, nil)
+}
+
+func accessFromAccessRequest(ctx context.Context, platformClusterClient client.Client, id string, scheme *runtime.Scheme, ar *clustersv1alpha1.AccessRequest, generateFakeClient FakeClientGenerator, additionalData ...any) (*clusters.Cluster, error) {
 	if ar.Status.SecretRef == nil {
 		return nil, fmt.Errorf("AccessRequest '%s/%s' has no secret reference in status", ar.Namespace, ar.Name)
 	}
@@ -992,15 +1012,24 @@ func AccessFromAccessRequest(ctx context.Context, platformClusterClient client.C
 		return nil, fmt.Errorf("kubeconfig key '%s' not found in AccessRequest secret '%s/%s'", clustersv1alpha1.SecretKeyKubeconfig, s.Namespace, s.Name)
 	}
 
-	config, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create rest config from kubeconfig bytes: %w", err)
-	}
+	var c *clusters.Cluster
+	if generateFakeClient != nil {
+		fc, err := generateFakeClient(ctx, kubeconfigBytes, scheme, additionalData...)
+		if err != nil {
+			return nil, fmt.Errorf("error creating fake client: %w", err)
+		}
+		c = clusters.NewTestClusterFromClient(id, fc)
+	} else {
+		config, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create rest config from kubeconfig bytes: %w", err)
+		}
 
-	c := clusters.New(id).WithRESTConfig(config)
+		c = clusters.New(id).WithRESTConfig(config)
 
-	if err = c.InitializeClient(scheme); err != nil {
-		return nil, fmt.Errorf("failed to initialize client: %w", err)
+		if err = c.InitializeClient(scheme); err != nil {
+			return nil, fmt.Errorf("failed to initialize client: %w", err)
+		}
 	}
 
 	return c, nil
@@ -1115,13 +1144,14 @@ func FakeClusterRequestReadiness(clusterSpec *clustersv1alpha1.ClusterSpec) Faki
 }
 
 // FakeAccessRequestReadiness returns a faking callback that sets the AccessRequest to 'Granted'.
-// If kcfgData is not nil or empty, it will be used as 'kubeconfig' data in the secret referenced by the AccessRequest.
-// Otherwise, the content of the kubeconfig key will just be 'fake'.
+// The content of the secret's 'kubeconfig' key will one of the following:
+// - 'fake:cluster:<cluster-namespace>/<cluster-name>' if the Cluster could be determined (should be the case most of the time)
+// - 'fake:request:<request-namespace>/<request-name>' if no Cluster could be determined
 // The callback is a no-op if the AccessRequest is already granted (Secret reference and existence are not checked in this case).
 // It returns an error if the AccessRequest is nil.
 //
 // The returned callback is meant to be used with the key stored in FakingCallback_WaitingForAccessRequestReadiness.
-func FakeAccessRequestReadiness(kcfgData []byte) FakingCallback {
+func FakeAccessRequestReadiness() FakingCallback {
 	return func(ctx context.Context, platformClusterClient client.Client, key string, req *reconcile.Request, cr *clustersv1alpha1.ClusterRequest, ar *clustersv1alpha1.AccessRequest, c *clustersv1alpha1.Cluster, access *clusters.Cluster) error {
 		if ar == nil {
 			return fmt.Errorf("AccessRequest is nil")
@@ -1164,14 +1194,17 @@ func FakeAccessRequestReadiness(kcfgData []byte) FakingCallback {
 		}
 
 		// create secret
-		if len(kcfgData) == 0 {
-			kcfgData = []byte("fake")
-		}
 		s := &corev1.Secret{}
 		s.Name = ar.Name
 		s.Namespace = ar.Namespace
+		var kcfgBytes []byte
+		if ar.Spec.ClusterRef != nil {
+			kcfgBytes = fmt.Appendf(nil, "fake:cluster:%s/%s", ar.Spec.ClusterRef.Namespace, ar.Spec.ClusterRef.Name)
+		} else {
+			kcfgBytes = fmt.Appendf(nil, "fake:request:%s/%s", req.Namespace, req.Name)
+		}
 		s.Data = map[string][]byte{
-			clustersv1alpha1.SecretKeyKubeconfig: kcfgData,
+			clustersv1alpha1.SecretKeyKubeconfig: kcfgBytes,
 		}
 		if err := platformClusterClient.Get(ctx, client.ObjectKeyFromObject(s), s); err != nil {
 			if !apierrors.IsNotFound(err) {
