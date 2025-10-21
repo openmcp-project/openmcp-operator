@@ -94,6 +94,16 @@ type DeploymentSpec struct {
 	// +listType=map
 	// +listMapKey=topologyKey
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty" patchStrategy:"merge" patchMergeKey:"topologyKey"`
+
+	// Webhook contains the webhook configuration for the provider, if any.
+	// +optional
+	Webhook *WebhookConfiguration `json:"webhook,omitempty"`
+}
+
+type WebhookConfiguration struct {
+	// Enabled indicates whether the webhook is enabled.
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled"`
 }
 
 // DeploymentStatus defines the observed state of a provider.
