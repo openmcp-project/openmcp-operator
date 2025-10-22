@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -22,6 +23,8 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/yaml"
+
+	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
@@ -261,14 +264,20 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		TLSOpts: o.WebhookTLSOpts,
 	})
 
+	podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
+	if podNamespace == "" {
+		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
+	}
+
 	mgr, err := ctrl.NewManager(o.PlatformCluster.RESTConfig(), ctrl.Options{
-		Scheme:                 install.InstallOperatorAPIsPlatform(runtime.NewScheme()),
-		Metrics:                o.MetricsServerOptions,
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: o.ProbeAddr,
-		PprofBindAddress:       o.PprofAddr,
-		LeaderElection:         o.EnableLeaderElection,
-		LeaderElectionID:       "github.com/openmcp-project/openmcp-operator",
+		Scheme:                  install.InstallOperatorAPIsPlatform(runtime.NewScheme()),
+		Metrics:                 o.MetricsServerOptions,
+		WebhookServer:           webhookServer,
+		HealthProbeBindAddress:  o.ProbeAddr,
+		PprofBindAddress:        o.PprofAddr,
+		LeaderElection:          o.EnableLeaderElection,
+		LeaderElectionID:        "github.com/openmcp-project/openmcp-operator",
+		LeaderElectionNamespace: podNamespace,
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly

@@ -64,8 +64,11 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 		"--verbosity="+m.values.Verbosity(),
 		"--provider-name="+m.values.provider.GetName(),
 	)
+	if m.values.deploymentSpec.RunReplicas > 1 {
+		runCmd = append(runCmd, "--leader-elect=true")
+	}
 	d.Spec = appsv1.DeploymentSpec{
-		Replicas: ptr.To[int32](1),
+		Replicas: ptr.To(m.values.deploymentSpec.RunReplicas),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: m.values.LabelsController(),
 		},
@@ -84,11 +87,20 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 						VolumeMounts:    m.values.deploymentSpec.ExtraVolumeMounts,
 					},
 				},
-				ImagePullSecrets:   m.values.ImagePullSecrets(),
-				ServiceAccountName: m.values.NamespacedDefaultResourceName(),
-				Volumes:            m.values.deploymentSpec.ExtraVolumes,
+				ImagePullSecrets:          m.values.ImagePullSecrets(),
+				ServiceAccountName:        m.values.NamespacedDefaultResourceName(),
+				Volumes:                   m.values.deploymentSpec.ExtraVolumes,
+				TopologySpreadConstraints: m.values.deploymentSpec.TopologySpreadConstraints,
 			},
 		},
+	}
+
+	if len(m.values.deploymentSpec.TopologySpreadConstraints) > 0 {
+		for _, c := range m.values.deploymentSpec.TopologySpreadConstraints {
+			for k, v := range c.LabelSelector.MatchLabels {
+				d.Spec.Template.Labels[k] = v
+			}
+		}
 	}
 
 	// Set the provider as owner of the deployment, so that the provider controller gets an event if the deployment changes.

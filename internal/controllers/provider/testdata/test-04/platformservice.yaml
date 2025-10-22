@@ -16,3 +16,4 @@ spec:
     - name: NAME
       value: "test-name"
   verbosity: DEBUG
+  runReplicas: 1
