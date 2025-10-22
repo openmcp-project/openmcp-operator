@@ -189,4 +189,32 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(provider2.Object).To(Equal(provider.Object))
 		})
 	})
+
+	Context("Copy field between unstructured", func() {
+
+		sliceCopy := []any{"c", "o", "p", "y"}
+		sliceKeep := []any{"k", "e", "e", "p"}
+		fieldPathCopy := []string{"status", "resourcesCopy"}
+		fieldPathKeep := []string{"status", "resourcesKeep"}
+
+		It("should copy a nested slice and keep another field", func() {
+			u1 := &unstructured.Unstructured{Object: map[string]any{}}
+			Expect(unstructured.SetNestedSlice(u1.Object, sliceCopy, fieldPathCopy...)).To(Succeed())
+
+			u2 := &unstructured.Unstructured{Object: map[string]any{}}
+			Expect(unstructured.SetNestedSlice(u2.Object, sliceKeep, fieldPathKeep...)).To(Succeed())
+
+			Expect(CopyNestedSlice(u1, u2, fieldPathCopy...)).To(Succeed())
+
+			value, found, err := unstructured.NestedSlice(u2.Object, fieldPathCopy...)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found).To(BeTrue())
+			Expect(value).To(Equal(sliceCopy))
+
+			value, found, err = unstructured.NestedSlice(u2.Object, fieldPathKeep...)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found).To(BeTrue())
+			Expect(value).To(Equal(sliceKeep))
+		})
+	})
 })
