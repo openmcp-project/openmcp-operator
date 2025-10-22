@@ -87,7 +87,7 @@ type DeploymentSpec struct {
 	// TopologySpreadConstraints describes how to spread the provider pods
 	// across your cluster among failure-domains such as zones, nodes, regions, etc.
 	// More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
-	// The matching labels from the TopologySpreadConstraints are automatically added to the pod template labels.
+	// The label selector for the topology spread constraints is automatically set to match the provider deployment pods.
 	// +optional
 	// +patchMergeKey=topologyKey
 	// +patchStrategy=merge

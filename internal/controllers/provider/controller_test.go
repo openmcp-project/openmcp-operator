@@ -11,6 +11,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/openmcp-project/openmcp-operator/api/constants"
+
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	apiinstall "github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
@@ -104,12 +106,16 @@ var _ = Describe("Deployment Controller", func() {
 			}
 
 			if len(deploymentSpec.TopologySpreadConstraints) > 0 {
-				Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints).To(Equal(deploymentSpec.TopologySpreadConstraints), "Deployment topology spread constraints should match the provider spec")
+				Expect(deploy.Spec.Template.Labels).To(HaveKeyWithValue(constants.TopologyLabel, deploy.Name), "Deployment pod template labels should contain the topology label")
+				Expect(deploy.Spec.Template.Labels).To(HaveKeyWithValue(constants.TopologyNamespaceLabel, deploy.Namespace), "Deployment pod template labels should contain the topology namespace label")
 
-				for _, tsc := range deploymentSpec.TopologySpreadConstraints {
-					for labelKey, labelValue := range tsc.LabelSelector.MatchLabels {
-						Expect(deploy.Spec.Template.Labels).To(HaveKeyWithValue(labelKey, labelValue), "Deployment pod template labels should contain the topology spread constraint labels")
-					}
+				Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(len(deploymentSpec.TopologySpreadConstraints)), "Deployment should have the correct number of topology spread constraints")
+
+				for i, c := range deploymentSpec.TopologySpreadConstraints {
+					Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints[i].MaxSkew).To(Equal(c.MaxSkew), "Deployment topology spread constraint MaxSkew should match the provider spec")
+					Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints[i].WhenUnsatisfiable).To(Equal(c.WhenUnsatisfiable), "Deployment topology spread constraint WhenUnsatisfiable should match the provider spec")
+					Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints[i].LabelSelector.MatchLabels).To(HaveKeyWithValue(constants.TopologyLabel, deploy.Name), "Deployment topology spread constraint LabelSelector should match the provider spec")
+					Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints[i].LabelSelector.MatchLabels).To(HaveKeyWithValue(constants.TopologyNamespaceLabel, deploy.Namespace), "Deployment topology spread constraint LabelSelector should match the provider spec")
 				}
 			}
 

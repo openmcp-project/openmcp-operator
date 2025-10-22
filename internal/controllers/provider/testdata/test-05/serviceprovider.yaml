@@ -10,21 +10,13 @@ spec:
     - name: NAME
       value: "test-name"
   verbosity: DEBUG
-  
+
   runReplicas: 3
 
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: topology.kubernetes.io/zone
       whenUnsatisfiable: ScheduleAnyway
-      labelSelector:
-        matchLabels:
-          openmcp.cloud/topology: service-provider-test-05
-          openmcp.cloud/topology-ns: openmcp-system
     - maxSkew: 1
       topologyKey: kubernetes.io/hostname
       whenUnsatisfiable: ScheduleAnyway
-      labelSelector:
-        matchLabels:
-          openmcp.cloud/topology: service-provider-test-05
-          openmcp.cloud/topology-ns: openmcp-system

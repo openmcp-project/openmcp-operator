@@ -11,6 +11,8 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/openmcp-project/openmcp-operator/api/constants"
+
 	"github.com/openmcp-project/controller-utils/pkg/resources"
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
@@ -96,11 +98,18 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 	}
 
 	if len(m.values.deploymentSpec.TopologySpreadConstraints) > 0 {
-		for _, c := range m.values.deploymentSpec.TopologySpreadConstraints {
-			for k, v := range c.LabelSelector.MatchLabels {
-				d.Spec.Template.Labels[k] = v
+		for i := range d.Spec.Template.Spec.TopologySpreadConstraints {
+			labelSelector := &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					constants.TopologyLabel:          m.values.NamespacedDefaultResourceName(),
+					constants.TopologyNamespaceLabel: m.values.Namespace(),
+				},
 			}
+			d.Spec.Template.Spec.TopologySpreadConstraints[i].LabelSelector = labelSelector
 		}
+
+		d.Spec.Template.Labels[constants.TopologyLabel] = m.values.NamespacedDefaultResourceName()
+		d.Spec.Template.Labels[constants.TopologyNamespaceLabel] = m.values.Namespace()
 	}
 
 	// Set the provider as owner of the deployment, so that the provider controller gets an event if the deployment changes.
