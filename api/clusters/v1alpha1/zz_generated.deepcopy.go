@@ -111,7 +111,7 @@ func (in *AccessRequestStatus) DeepCopyInto(out *AccessRequestStatus) {
 	in.Status.DeepCopyInto(&out.Status)
 	if in.SecretRef != nil {
 		in, out := &in.SecretRef, &out.SecretRef
-		*out = new(common.ObjectReference)
+		*out = new(common.LocalObjectReference)
 		**out = **in
 	}
 }

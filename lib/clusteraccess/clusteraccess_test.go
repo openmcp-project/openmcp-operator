@@ -210,15 +210,13 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
 
 			// set the secret reference for the MCP access request and the workload access request
-			accessRequestMCP.Status.SecretRef = &commonapi.ObjectReference{
-				Name:      "mcp-access",
-				Namespace: expectedRequestNamespace,
+			accessRequestMCP.Status.SecretRef = &commonapi.LocalObjectReference{
+				Name: "mcp-access",
 			}
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
 
-			accessRequestWorkload.Status.SecretRef = &commonapi.ObjectReference{
-				Name:      "workload-access",
-				Namespace: expectedRequestNamespace,
+			accessRequestWorkload.Status.SecretRef = &commonapi.LocalObjectReference{
+				Name: "workload-access",
 			}
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
 
@@ -275,9 +273,8 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 
 			// set the secret reference for the MCP access request
-			accessRequestMCP.Status.SecretRef = &commonapi.ObjectReference{
-				Name:      "mcp-access",
-				Namespace: expectedRequestNamespace,
+			accessRequestMCP.Status.SecretRef = &commonapi.LocalObjectReference{
+				Name: "mcp-access",
 			}
 			Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
 
@@ -441,7 +438,7 @@ var _ = Describe("ClusterAccessManager", func() {
 		}()
 
 		Eventually(func() bool {
-			// read rhe cluster request
+			// read the cluster request
 			if err := env.Client().Get(ctx, client.ObjectKeyFromObject(clusterRequest), clusterRequest); err != nil {
 				return false
 			}
@@ -464,9 +461,8 @@ var _ = Describe("ClusterAccessManager", func() {
 			if accessRequest.Status.Phase != clustersv1alpha1.REQUEST_GRANTED {
 				accessRequest.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
 
-				accessRequest.Status.SecretRef = &commonapi.ObjectReference{
-					Name:      "access",
-					Namespace: "default",
+				accessRequest.Status.SecretRef = &commonapi.LocalObjectReference{
+					Name: "access",
 				}
 
 				if err := env.Client().Status().Update(ctx, accessRequest); err != nil {

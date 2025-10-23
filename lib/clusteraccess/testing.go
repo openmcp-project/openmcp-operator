@@ -109,16 +109,15 @@ func (m *testManagerImpl) WaitForClusterAccess(ctx context.Context, localName st
 	}
 	old := ar.DeepCopy()
 	ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
-	ar.Status.SecretRef = &commonapi.ObjectReference{
-		Name:      ar.Name,
-		Namespace: ar.Namespace,
+	ar.Status.SecretRef = &commonapi.LocalObjectReference{
+		Name: ar.Name,
 	}
 	if err := m.platformClusterClient.Status().Patch(ctx, ar, client.MergeFrom(old)); err != nil {
 		return nil, nil, fmt.Errorf("failed to update AccessRequest status: %w", err)
 	}
 	sec := &corev1.Secret{}
 	sec.Name = ar.Status.SecretRef.Name
-	sec.Namespace = ar.Status.SecretRef.Namespace
+	sec.Namespace = ar.Namespace
 	if _, err := controllerutil.CreateOrUpdate(ctx, m.platformClusterClient, sec, func() error {
 		sec.Data = map[string][]byte{
 			clustersv1alpha1.SecretKeyKubeconfig: []byte("fake:" + localName),

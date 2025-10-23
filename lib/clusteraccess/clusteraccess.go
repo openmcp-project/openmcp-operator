@@ -407,7 +407,7 @@ func createClusterForAccessRequest(ctx context.Context, platformClusterClient cl
 	accessSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      accessRequest.Status.SecretRef.Name,
-			Namespace: accessRequest.Status.SecretRef.Namespace,
+			Namespace: accessRequest.Namespace,
 		},
 	}
 
