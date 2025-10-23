@@ -79,7 +79,12 @@ func (r *ProviderReconciler) Reconcile(ctx context.Context, req ctrl.Request) (r
 		}
 	}
 
-	// patch the status
+	// Patch the status - but exclude field status.resources as it is set by the provider.
+	if copyErr := CopyNestedSlice(providerOrig, provider, "status", "resources"); copyErr != nil {
+		err = errors.Join(err, copyErr)
+		return res, err
+	}
+
 	updateErr := r.PlatformClient.Status().Patch(ctx, provider, client.MergeFrom(providerOrig))
 	err = errors.Join(err, updateErr)
 	return res, err
@@ -230,6 +235,19 @@ func (r *ProviderReconciler) removeFinalizer(ctx context.Context, provider *unst
 			log := logging.FromContextOrPanic(ctx)
 			log.Error(err, "failed to remove finalizer from provider")
 			return fmt.Errorf("failed to remove finalizer from provider %s: %w", provider.GetName(), err)
+		}
+	}
+	return nil
+}
+
+func CopyNestedSlice(source, target *unstructured.Unstructured, fieldPath ...string) error {
+	value, found, err := unstructured.NestedSlice(source.Object, fieldPath...)
+	if err != nil {
+		return fmt.Errorf("failed to get nested slice: %w", err)
+	}
+	if found {
+		if err := unstructured.SetNestedSlice(target.Object, value, fieldPath...); err != nil {
+			return fmt.Errorf("failed to set nested slice: %w", err)
 		}
 	}
 	return nil
