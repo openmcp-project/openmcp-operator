@@ -75,6 +75,25 @@ type DeploymentSpec struct {
 	// +listType=map
 	// +listMapKey=mountPath
 	ExtraVolumeMounts []corev1.VolumeMount `json:"extraVolumeMounts,omitempty" patchStrategy:"merge" patchMergeKey:"mountPath"`
+
+	// RunReplicas is the number of replicas for the provider controller.
+	// Defaults to 1.
+	// If greater thant 1, automatically sets the `--leader-elect=true` flag in the RunCommand.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=1
+	// +optional
+	RunReplicas int32 `json:"runReplicas,omitempty"`
+
+	// TopologySpreadConstraints describes how to spread the provider pods
+	// across your cluster among failure-domains such as zones, nodes, regions, etc.
+	// More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/
+	// The label selector for the topology spread constraints is automatically set to match the provider deployment pods.
+	// +optional
+	// +patchMergeKey=topologyKey
+	// +patchStrategy=merge
+	// +listType=map
+	// +listMapKey=topologyKey
+	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty" patchStrategy:"merge" patchMergeKey:"topologyKey"`
 }
 
 // DeploymentStatus defines the observed state of a provider.

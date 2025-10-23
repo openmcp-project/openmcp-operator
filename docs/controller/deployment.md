@@ -59,9 +59,21 @@ spec:
     - name: <environment-variable-name>
       value: <environment-variable-value>
   verbosity: <DEBUG|INFO|ERROR>
+  runReplicas: 3
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway
 ```
 
 - The `image` field specifies the container image to use for the init job and deployment of the provider. 
 - The `imagePullSecrets` field specifies a list of secrets that contain the credentials to pull the image from a registry. 
 - The `env` field specifies a list of name-value pairs that are passed as environment variables to the init job and deployment of the provider.
 - The `verbosity` field specifies the logging level. Supported values are DEBUG, INFO, and ERROR. The default is INFO.
+- The `runReplicas` field specifies the number of replicas for the deployment of the provider. The default is `1`.
+  If set to greater than `1`, the `--leader-elect=true` argument is automatically added to the provider's command line to enable leader election among the replicas.
+- The `topologySpreadConstraints` field specifies a list of topology spread constraints for the deployment of the provider. For more information, see the [Kubernetes documentation](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/).
+  The label selectors for the topology spread constraints are automatically set to match the pods of the deployment.

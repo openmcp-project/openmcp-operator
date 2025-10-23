@@ -24,6 +24,11 @@ const (
 	// OnboardingNamespaceLabel is used to store the namespace on the onboarding cluster of a resource.
 	OnboardingNamespaceLabel = OpenMCPGroupName + "/onboarding-namespace"
 
+	// TopologyLabel is used to indicate the topology name of the resource.
+	TopologyLabel = OpenMCPGroupName + "/topology"
+	// TopologyNamespaceLabel is used to indicate the topology namespace of the resource.
+	TopologyNamespaceLabel = TopologyLabel + "-ns"
+
 	// EnvVariablePodName is the name of an environment variable passed to providers.
 	// Its value is the name of the pod in which the provider is running.
 	EnvVariablePodName = "POD_NAME"

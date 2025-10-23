@@ -1,0 +1,22 @@
+apiVersion: openmcp.cloud/v1alpha1
+kind: ServiceProvider
+metadata:
+  name: service-provider-test-05
+  generation: 1
+spec:
+  image: "test-image:v0.1.0"
+  imagePullSecrets: []
+  env:
+    - name: NAME
+      value: "test-name"
+  verbosity: DEBUG
+
+  runReplicas: 3
+
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: ScheduleAnyway

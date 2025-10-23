@@ -11,6 +11,8 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/openmcp-project/openmcp-operator/api/constants"
+
 	"github.com/openmcp-project/controller-utils/pkg/resources"
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
@@ -64,8 +66,11 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 		"--verbosity="+m.values.Verbosity(),
 		"--provider-name="+m.values.provider.GetName(),
 	)
+	if m.values.deploymentSpec.RunReplicas > 1 {
+		runCmd = append(runCmd, "--leader-elect=true")
+	}
 	d.Spec = appsv1.DeploymentSpec{
-		Replicas: ptr.To[int32](1),
+		Replicas: ptr.To(m.values.deploymentSpec.RunReplicas),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: m.values.LabelsController(),
 		},
@@ -84,11 +89,27 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 						VolumeMounts:    m.values.deploymentSpec.ExtraVolumeMounts,
 					},
 				},
-				ImagePullSecrets:   m.values.ImagePullSecrets(),
-				ServiceAccountName: m.values.NamespacedDefaultResourceName(),
-				Volumes:            m.values.deploymentSpec.ExtraVolumes,
+				ImagePullSecrets:          m.values.ImagePullSecrets(),
+				ServiceAccountName:        m.values.NamespacedDefaultResourceName(),
+				Volumes:                   m.values.deploymentSpec.ExtraVolumes,
+				TopologySpreadConstraints: m.values.deploymentSpec.TopologySpreadConstraints,
 			},
 		},
+	}
+
+	if len(m.values.deploymentSpec.TopologySpreadConstraints) > 0 {
+		for i := range d.Spec.Template.Spec.TopologySpreadConstraints {
+			labelSelector := &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					constants.TopologyLabel:          m.values.NamespacedDefaultResourceName(),
+					constants.TopologyNamespaceLabel: m.values.Namespace(),
+				},
+			}
+			d.Spec.Template.Spec.TopologySpreadConstraints[i].LabelSelector = labelSelector
+		}
+
+		d.Spec.Template.Labels[constants.TopologyLabel] = m.values.NamespacedDefaultResourceName()
+		d.Spec.Template.Labels[constants.TopologyNamespaceLabel] = m.values.Namespace()
 	}
 
 	// Set the provider as owner of the deployment, so that the provider controller gets an event if the deployment changes.

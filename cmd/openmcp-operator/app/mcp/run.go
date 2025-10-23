@@ -269,14 +269,20 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		TLSOpts: o.WebhookTLSOpts,
 	})
 
+	podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
+	if podNamespace == "" {
+		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
+	}
+
 	mgr, err := ctrl.NewManager(onboardingCluster.RESTConfig(), ctrl.Options{
-		Scheme:                 onboardingCluster.Scheme(),
-		Metrics:                o.MetricsServerOptions,
-		WebhookServer:          webhookServer,
-		HealthProbeBindAddress: o.ProbeAddr,
-		PprofBindAddress:       o.PprofAddr,
-		LeaderElection:         o.EnableLeaderElection,
-		LeaderElectionID:       "github.com/openmcp-project/openmcp-operator--mcp-controller",
+		Scheme:                  onboardingCluster.Scheme(),
+		Metrics:                 o.MetricsServerOptions,
+		WebhookServer:           webhookServer,
+		HealthProbeBindAddress:  o.ProbeAddr,
+		PprofBindAddress:        o.PprofAddr,
+		LeaderElection:          o.EnableLeaderElection,
+		LeaderElectionID:        "github.com/openmcp-project/openmcp-operator--mcp-controller",
+		LeaderElectionNamespace: podNamespace,
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly

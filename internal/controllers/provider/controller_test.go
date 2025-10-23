@@ -11,6 +11,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/openmcp-project/openmcp-operator/api/constants"
+
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	apiinstall "github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
@@ -97,11 +99,30 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(deploy.Spec.Template.Spec.Containers[0].Env).To(HaveLen(5), "Deployment container should have an environment variables")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Env[0].Name).To(Equal("NAME"), "Deployment container environment variable name should match the provider spec")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Env[0].Value).To(Equal("test-name"), "Deployment container environment variable value should match the provider spec")
+			Expect(deploy.Spec.Replicas).To(Equal(&deploymentSpec.RunReplicas), "Deployment replicas should match the provider spec")
+
+			if deploymentSpec.RunReplicas > 1 {
+				Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--leader-elect=true"), "Deployment container args should contain the leader-elect flag")
+			}
+
+			if len(deploymentSpec.TopologySpreadConstraints) > 0 {
+				Expect(deploy.Spec.Template.Labels).To(HaveKeyWithValue(constants.TopologyLabel, deploy.Name), "Deployment pod template labels should contain the topology label")
+				Expect(deploy.Spec.Template.Labels).To(HaveKeyWithValue(constants.TopologyNamespaceLabel, deploy.Namespace), "Deployment pod template labels should contain the topology namespace label")
+
+				Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(len(deploymentSpec.TopologySpreadConstraints)), "Deployment should have the correct number of topology spread constraints")
+
+				for i, c := range deploymentSpec.TopologySpreadConstraints {
+					Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints[i].MaxSkew).To(Equal(c.MaxSkew), "Deployment topology spread constraint MaxSkew should match the provider spec")
+					Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints[i].WhenUnsatisfiable).To(Equal(c.WhenUnsatisfiable), "Deployment topology spread constraint WhenUnsatisfiable should match the provider spec")
+					Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints[i].LabelSelector.MatchLabels).To(HaveKeyWithValue(constants.TopologyLabel, deploy.Name), "Deployment topology spread constraint LabelSelector should match the provider spec")
+					Expect(deploy.Spec.Template.Spec.TopologySpreadConstraints[i].LabelSelector.MatchLabels).To(HaveKeyWithValue(constants.TopologyNamespaceLabel, deploy.Namespace), "Deployment topology spread constraint LabelSelector should match the provider spec")
+				}
+			}
 
 			// 3rd reconcile (after deployment is ready)
-			deploy.Status.Replicas = 1
-			deploy.Status.UpdatedReplicas = 1
-			deploy.Status.AvailableReplicas = 1
+			deploy.Status.Replicas = *deploy.Spec.Replicas
+			deploy.Status.UpdatedReplicas = *deploy.Spec.Replicas
+			deploy.Status.AvailableReplicas = *deploy.Spec.Replicas
 			Expect(env.Client().Status().Update(env.Ctx, deploy)).To(Succeed(), "Status update of deployment should succeed")
 			env.ShouldReconcile(req, "3rd reconcile should not return an error")
 			_, deploymentStatus = getProvider(env, provider)
@@ -139,6 +160,14 @@ var _ = Describe("Deployment Controller", func() {
 			deploymentSpec := reconcileProvider(env, req, v1alpha1.PlatformServiceGKV())
 			Expect(deploymentSpec.InitCommand).To(HaveLen(2))
 			Expect(deploymentSpec.RunCommand).To(HaveLen(2))
+		})
+
+		It("should reconcile a service providers with multiple run replicas and topology spread constraints", func() {
+			env := buildTestEnvironment("test-05", v1alpha1.ServiceProviderGKV())
+			req := testutils.RequestFromStrings("service-provider-test-05")
+			deploymentSpec := reconcileProvider(env, req, v1alpha1.ServiceProviderGKV())
+			Expect(deploymentSpec.RunReplicas).To(Equal(int32(3)))
+			Expect(deploymentSpec.TopologySpreadConstraints).To(HaveLen(2))
 		})
 
 	})
