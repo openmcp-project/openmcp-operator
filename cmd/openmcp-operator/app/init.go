@@ -218,6 +218,8 @@ func (o *InitOptions) Run(ctx context.Context) error {
 				ps.Spec.RunCommand = append(ps.Spec.RunCommand, "--config="+cp)
 			}
 			ps.Spec.Verbosity = verbosity
+			ps.Spec.RunReplicas = *o.Config.ManagedControlPlane.PlatformService.Replicas
+			ps.Spec.TopologySpreadConstraints = o.Config.ManagedControlPlane.PlatformService.TopologySpreadConstraints
 			return nil
 		}); err != nil {
 			return fmt.Errorf("error creating/updating PlatformService %s: %w", ps.Name, err)
