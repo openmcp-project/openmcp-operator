@@ -360,7 +360,7 @@ func (r *ManagedControlPlaneReconciler) syncAccessSecrets(ctx context.Context, m
 				return false, rerr
 			}
 			mcpSecret := &corev1.Secret{}
-			mcpSecret.Name = ctrlutils.NameHashSHAKE128Base32(mcp.Name, providerName)
+			mcpSecret.Name = secretName(providerName, mcp.Name)
 			mcpSecret.Namespace = mcp.Namespace
 			if _, err := controllerutil.CreateOrUpdate(ctx, r.OnboardingCluster.Client(), mcpSecret, func() error {
 				mcpSecret.Data = arSecret.Data
@@ -396,4 +396,15 @@ func (r *ManagedControlPlaneReconciler) syncAccessSecrets(ctx context.Context, m
 	}
 
 	return allAccessReady, nil
+}
+
+// secretName generates the following secret name format: '<provider-name>.<mcp-name>.kubeconfig'.
+// The '<provider-name>.<mcp-name>' part will be truncated and partially replaced with a hash if the
+// resulting name exceeds the Kubernetes name length limit of 63 characters.
+func secretName(providerName string, mcpName string) string {
+	// adjust oidc and token prefix in provider name to conform RFC 1123
+	providerPrefix := strings.ReplaceAll(providerName, "_", "-")
+	compositeName := fmt.Sprintf("%s.%s", providerPrefix, mcpName)
+	suffix := ".kubeconfig"
+	return fmt.Sprintf("%s%s", ctrlutils.ShortenToXCharactersUnsafe(compositeName, ctrlutils.K8sMaxNameLength-len(suffix)), suffix)
 }
