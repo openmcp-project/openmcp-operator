@@ -48,10 +48,6 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 		return false, err
 	}
 
-	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
-		return false, err
-	}
-
 	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
 		return false, err
 	}
@@ -156,10 +152,6 @@ func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err er
 	}
 
 	if err := resources.DeleteResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
-		return false, err
-	}
-
-	if err := resources.DeleteResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
 		return false, err
 	}
 

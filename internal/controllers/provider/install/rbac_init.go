@@ -23,37 +23,7 @@ func newInitClusterRoleBindingMutator(values *Values) resources.Mutator[*rbac.Cl
 				Namespace: values.Namespace(),
 			},
 		},
-		resources.NewClusterRoleRef(clusterRoleName),
-	)
-	res.MetadataMutator().WithLabels(values.LabelsInitJob())
-	return res
-}
-
-func newInitClusterRoleMutator(values *Values) resources.Mutator[*rbac.ClusterRole] {
-	res := resources.NewClusterRoleMutator(
-		values.ClusterScopedResourceName(initPrefix),
-		[]rbac.PolicyRule{
-			{
-				APIGroups: []string{"apiextensions.k8s.io"},
-				Resources: []string{"customresourcedefinitions"},
-				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"secrets"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"configmaps"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				APIGroups: []string{"clusters.openmcp.cloud"},
-				Resources: []string{"accessrequests", "clusterrequests", "clusterprofiles"},
-				Verbs:     []string{"get", "list", "watch", "create", "update", "patch", "delete"},
-			},
-		},
+		resources.NewClusterRoleRef("cluster-admin"),
 	)
 	res.MetadataMutator().WithLabels(values.LabelsInitJob())
 	return res
