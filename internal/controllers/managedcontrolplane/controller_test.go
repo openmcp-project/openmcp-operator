@@ -325,6 +325,8 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			sec.SetNamespace(mcp.Namespace)
 			Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(sec), sec)).To(Succeed())
 			Expect(sec.Data).To(HaveKeyWithValue(clustersv1alpha1.SecretKeyKubeconfig, []byte(providerName)))
+			providerPrefix := strings.ReplaceAll(providerName, "_", "-")
+			Expect(sec.Name).To(Equal(strings.Join([]string{providerPrefix, mcp.Name, "kubeconfig"}, ".")))
 		}
 
 		By("=== UPDATE ===")
