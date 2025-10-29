@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -73,16 +74,20 @@ type ClusterAccessReconciler interface {
 	// Reconcile creates the ClusterRequests and/or AccessRequests for the registered clusters.
 	// This function should be called during all reconciliations of the reconciled object.
 	// ctx is the context for the reconciliation.
-	// request is the object that is being reconciled
+	// request is the object that is being reconciled.
 	// It returns a reconcile.Result and an error if the reconciliation failed.
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
 	// Any additional arguments provided are passed into all methods of the ClusterRegistration objects that are called.
+	//
+	// Note that Reconcile will not create any new resources if the current request is in deletion.
+	// A request is considered to be in deletion if ReconcileDelete has been called for it at least once and not successfully finished (= with RequeueAfter == 0 and no error) since then.
+	// This means that Reconcile can safely be called at the beginning of a deletion reconciliation without having to worry about re-creating already deleted resources.
 	Reconcile(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error)
 	// ReconcileDelete deletes the ClusterRequests and/or AccessRequests for the registered clusters.
 	// This function should be called during the deletion of the reconciled object.
 	// ctx is the context for the reconciliation.
-	// request is the object that is being reconciled
+	// request is the object that is being reconciled.
 	// It returns a reconcile.Result and an error if the reconciliation failed.
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
@@ -442,6 +447,8 @@ func ExistingClusterRequest(id, suffix string, generateClusterRequestRef ObjectR
 type reconcilerImpl struct {
 	controllerName        string
 	platformClusterClient client.Client
+	requestsInDeletion    sets.Set[reconcile.Request]
+	ridLock               *sync.RWMutex
 
 	interval      time.Duration
 	registrations map[string]ClusterRegistration
@@ -458,6 +465,8 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 	return &reconcilerImpl{
 		controllerName:        controllerName,
 		platformClusterClient: platformClusterClient,
+		requestsInDeletion:    sets.New[reconcile.Request](),
+		ridLock:               &sync.RWMutex{},
 		interval:              5 * time.Second,
 		registrations:         map[string]ClusterRegistration{},
 		managedBy:             DefaultManagedLabelGenerator,
@@ -613,6 +622,10 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 	log := logging.FromContextOrDiscard(ctx).WithName(caControllerName)
 	ctx = logging.NewContext(ctx, log)
 	log.Info("Reconciling cluster access")
+	inDeletion := r.isInDeletion(request)
+	if inDeletion {
+		log.Info("Request is in deletion, missing resources will not be created")
+	}
 
 	// iterate over registrations and ensure that the corresponding resources are ready
 	for _, rawReg := range r.registrations {
@@ -641,6 +654,10 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 			if !apierrors.IsNotFound(err) {
 				return reconcile.Result{}, fmt.Errorf("unable to get platform cluster namespace '%s': %w", ns.Name, err)
 			}
+			if inDeletion {
+				rlog.Debug("Skipping platform cluster namespace creation because this request is in deletion")
+				continue
+			}
 			rlog.Info("Creating platform cluster namespace", "namespaceName", ns.Name)
 			if err := r.platformClusterClient.Create(ctx, ns); err != nil {
 				return reconcile.Result{}, fmt.Errorf("unable to create platform cluster namespace '%s': %w", ns.Name, err)
@@ -667,6 +684,10 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				exists = false
 			}
 			if !exists {
+				if inDeletion {
+					rlog.Debug("Skipping ClusterRequest creation because this request is in deletion", "crName", cr.Name, "crNamespace", cr.Namespace)
+					continue
+				}
 				rlog.Info("Creating ClusterRequest", "crName", cr.Name, "crNamespace", cr.Namespace)
 				cr.Labels = map[string]string{}
 				maps.Copy(cr.Labels, expectedLabels)
@@ -714,6 +735,10 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				exists = false
 			}
 			if !exists {
+				if inDeletion {
+					rlog.Debug("Skipping AccessRequest creation because this request is in deletion", "arName", ar.Name, "arNamespace", ar.Namespace)
+					continue
+				}
 				rlog.Info("Creating AccessRequest", "arName", ar.Name, "arNamespace", ar.Namespace)
 				// cluster and cluster request references are immutable, so set them only when creating new AccessRequests
 				referenced := false
@@ -802,6 +827,7 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 	log := logging.FromContextOrDiscard(ctx).WithName(caControllerName)
 	ctx = logging.NewContext(ctx, log)
 	log.Info("Reconciling cluster access")
+	r.setInDeletion(request)
 
 	// iterate over registrations and ensure that the corresponding resources are being deleted
 	res := reconcile.Result{}
@@ -929,6 +955,9 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 		// don't delete the namespace, because it might contain other resources
 	}
 	log.Info("Successfully reconciled cluster access", "requeueAfter", res.RequeueAfter)
+	if res.RequeueAfter == 0 {
+		r.unsetInDeletion(request)
+	}
 
 	return res, nil
 }
@@ -992,6 +1021,24 @@ const (
 	// Note that the execution happens directly before the return of the reconcile function (with a requeue). This means that the reconciliation needs to run a second time to pick up the changes made in the callback.
 	FakingCallback_WaitingForClusterRequestDeletion = "WaitingForClusterRequestDeletion"
 )
+
+func (r *reconcilerImpl) isInDeletion(req reconcile.Request) bool {
+	r.ridLock.RLock()
+	defer r.ridLock.RUnlock()
+	return r.requestsInDeletion.Has(req)
+}
+
+func (r *reconcilerImpl) setInDeletion(req reconcile.Request) {
+	r.ridLock.Lock()
+	defer r.ridLock.Unlock()
+	r.requestsInDeletion.Insert(req)
+}
+
+func (r *reconcilerImpl) unsetInDeletion(req reconcile.Request) {
+	r.ridLock.Lock()
+	defer r.ridLock.Unlock()
+	r.requestsInDeletion.Delete(req)
+}
 
 ///////////////////////////
 /// AUXILIARY FUNCTIONS ///

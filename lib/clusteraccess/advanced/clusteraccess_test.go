@@ -403,7 +403,7 @@ var _ = Describe("Advanced Cluster Access", func() {
 		expectNoRequeue(env.Ctx, rec, req, true) // now everything should be deleted
 	})
 
-	It("should handle deletion in the correct order", func() {
+	It("should handle deletion in the correct order and not recreate resources that are in deletion", func() {
 		env := defaultTestSetup("testdata", "test-01")
 		rec := advanced.NewClusterAccessReconciler(env.Client(), "foo").
 			WithRetryInterval(100*time.Millisecond).
@@ -451,7 +451,7 @@ var _ = Describe("Advanced Cluster Access", func() {
 		// trigger deletion
 		res, err := rec.ReconcileDelete(env.Ctx, req)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).ToNot(BeZero())
 
 		// AccessRequests should have a deletion timestamp, but still exist with the special finalizer
 		// ClusterRequests should not have a deletion timestamp yet
@@ -476,7 +476,7 @@ var _ = Describe("Advanced Cluster Access", func() {
 		// deleting should requeue
 		res, err = rec.ReconcileDelete(env.Ctx, req)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).ToNot(BeZero())
 
 		// AccessRequest 1 should be gone, ClusterRequest 1 should have a deletion timestamp now
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
@@ -492,6 +492,12 @@ var _ = Describe("Advanced Cluster Access", func() {
 		Expect(cr2.DeletionTimestamp.IsZero()).To(BeTrue())
 		Expect(cr2.Finalizers).To(ContainElement(advanced.Finalizer))
 
+		// reconciling should not recreate the already deleted AccessRequest 1
+		res, err = rec.Reconcile(env.Ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(res.RequeueAfter).To(BeZero())
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+
 		// remove all foreign finalizers from ClusterRequest 1 and AccessRequest 2
 		cr.Finalizers = []string{advanced.Finalizer}
 		Expect(env.Client().Update(env.Ctx, cr)).To(Succeed())
@@ -501,7 +507,7 @@ var _ = Describe("Advanced Cluster Access", func() {
 		// deleting should requeue
 		res, err = rec.ReconcileDelete(env.Ctx, req)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).ToNot(BeZero())
 
 		// ClusterRequest 1 should be gone, AccessRequest 2 should be gone, ClusterRequest 2 should have a deletion timestamp now
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
