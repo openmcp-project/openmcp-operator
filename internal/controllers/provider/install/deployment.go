@@ -16,7 +16,6 @@ import (
 	"github.com/openmcp-project/controller-utils/pkg/resources"
 
 	"github.com/openmcp-project/openmcp-operator/api/install"
-	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
 type deploymentMutator struct {
@@ -60,16 +59,12 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 
 	volumes := m.values.deploymentSpec.ExtraVolumes
 	volumeMounts := m.values.deploymentSpec.ExtraVolumeMounts
-	if m.values.deploymentSpec.Webhook != nil && m.values.deploymentSpec.Webhook.Enabled {
-		whSecretName, err := libutils.WebhookSecretName(m.values.provider.GetName())
-		if err != nil {
-			return err
-		}
+	if m.values.webhookTLSSecretName != "" {
 		volumes = append(volumes, corev1.Volume{
 			Name: "webhook-tls",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: whSecretName,
+					SecretName: m.values.webhookTLSSecretName,
 				},
 			},
 		})

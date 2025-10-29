@@ -2265,17 +2265,6 @@ spec:
                 - info
                 - error
                 type: string
-              webhook:
-                description: Webhook contains the webhook configuration for the provider,
-                  if any.
-                properties:
-                  enabled:
-                    default: false
-                    description: Enabled indicates whether the webhook is enabled.
-                    type: boolean
-                required:
-                - enabled
-                type: object
             required:
             - image
             type: object

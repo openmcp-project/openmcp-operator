@@ -27,11 +27,12 @@ func NewValues(provider *unstructured.Unstructured, deploymentSpec *v1alpha1.Dep
 }
 
 type Values struct {
-	provider       *unstructured.Unstructured
-	deploymentSpec *v1alpha1.DeploymentSpec
-	environment    string
-	namespace      string
-	providerPrefix string
+	provider             *unstructured.Unstructured
+	deploymentSpec       *v1alpha1.DeploymentSpec
+	environment          string
+	namespace            string
+	providerPrefix       string
+	webhookTLSSecretName string
 }
 
 func (v *Values) Environment() string {
