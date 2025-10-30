@@ -403,6 +403,120 @@ var _ = Describe("Advanced Cluster Access", func() {
 		expectNoRequeue(env.Ctx, rec, req, true) // now everything should be deleted
 	})
 
+	It("should handle deletion in the correct order and not recreate resources that are in deletion", func() {
+		env := defaultTestSetup("testdata", "test-01")
+		rec := advanced.NewClusterAccessReconciler(env.Client(), "foo").
+			WithRetryInterval(100*time.Millisecond).
+			WithFakingCallback(advanced.FakingCallback_WaitingForClusterRequestReadiness, advanced.FakeClusterRequestReadiness(&clustersv1alpha1.ClusterSpec{
+				Profile:  "my-profile",
+				Purposes: []string{"test"},
+				Tenancy:  clustersv1alpha1.TENANCY_EXCLUSIVE,
+			})).
+			WithFakingCallback(advanced.FakingCallback_WaitingForAccessRequestReadiness, advanced.FakeAccessRequestReadiness()).
+			WithFakeClientGenerator(func(ctx context.Context, kcfgData []byte, scheme *runtime.Scheme, additionalData ...any) (client.Client, error) {
+				return fake.NewClientBuilder().WithScheme(scheme).Build(), nil
+			})
+		roleRef := commonapi.RoleRef{
+			Name: "cluster-admin",
+			Kind: "ClusterRole",
+		}
+		rec.Register(advanced.NewClusterRequest("foobar", "fb", advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+			Purpose:                "test",
+			WaitForClusterDeletion: ptr.To(true),
+		})).WithTokenAccess(&clustersv1alpha1.TokenConfig{RoleRefs: []commonapi.RoleRef{roleRef}}).Build())
+		rec.Register(advanced.NewClusterRequest("foobaz", "fz", advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+			Purpose:                "test",
+			WaitForClusterDeletion: ptr.To(false),
+		})).WithTokenAccess(&clustersv1alpha1.TokenConfig{RoleRefs: []commonapi.RoleRef{roleRef}}).Build())
+		req := testutils.RequestFromStrings("bar", "baz")
+
+		Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
+
+		// check AccessRequest 1
+		ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
+		Expect(err).ToNot(HaveOccurred())
+
+		// check ClusterRequest 1
+		cr, err := rec.ClusterRequest(env.Ctx, req, "foobar")
+		Expect(err).ToNot(HaveOccurred())
+
+		// check AccessRequest 2
+		ar2, err := rec.AccessRequest(env.Ctx, req, "foobaz")
+		Expect(err).ToNot(HaveOccurred())
+
+		// check ClusterRequest 2
+		cr2, err := rec.ClusterRequest(env.Ctx, req, "foobaz")
+		Expect(err).ToNot(HaveOccurred())
+
+		// trigger deletion
+		res, err := rec.ReconcileDelete(env.Ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(res.RequeueAfter).ToNot(BeZero())
+
+		// AccessRequests should have a deletion timestamp, but still exist with the special finalizer
+		// ClusterRequests should not have a deletion timestamp yet
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+		Expect(ar.DeletionTimestamp.IsZero()).To(BeFalse())
+		Expect(ar.Finalizers).To(ContainElement(advanced.Finalizer))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+		Expect(cr.DeletionTimestamp.IsZero()).To(BeTrue())
+		Expect(cr.Finalizers).To(ContainElement(advanced.Finalizer))
+
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar2), ar2)).To(Succeed())
+		Expect(ar2.DeletionTimestamp.IsZero()).To(BeFalse())
+		Expect(ar2.Finalizers).To(ContainElement(advanced.Finalizer))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr2), cr2)).To(Succeed())
+		Expect(cr2.DeletionTimestamp.IsZero()).To(BeTrue())
+		Expect(cr2.Finalizers).To(ContainElement(advanced.Finalizer))
+
+		// remove all foreign finalizers from AccessRequest 1
+		ar.Finalizers = []string{advanced.Finalizer}
+		Expect(env.Client().Update(env.Ctx, ar)).To(Succeed())
+
+		// deleting should requeue
+		res, err = rec.ReconcileDelete(env.Ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(res.RequeueAfter).ToNot(BeZero())
+
+		// AccessRequest 1 should be gone, ClusterRequest 1 should have a deletion timestamp now
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+		Expect(cr.DeletionTimestamp.IsZero()).To(BeFalse())
+		Expect(cr.Finalizers).To(ContainElement(advanced.Finalizer))
+
+		// AccessRequest 2 should still exist with deletion timestamp, ClusterRequest 2 should not have a deletion timestamp yet
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar2), ar2)).To(Succeed())
+		Expect(ar2.DeletionTimestamp.IsZero()).To(BeFalse())
+		Expect(ar2.Finalizers).To(ContainElement(advanced.Finalizer))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr2), cr2)).To(Succeed())
+		Expect(cr2.DeletionTimestamp.IsZero()).To(BeTrue())
+		Expect(cr2.Finalizers).To(ContainElement(advanced.Finalizer))
+
+		// reconciling should not recreate the already deleted AccessRequest 1
+		res, err = rec.Reconcile(env.Ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(res.RequeueAfter).To(BeZero())
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+
+		// remove all foreign finalizers from ClusterRequest 1 and AccessRequest 2
+		cr.Finalizers = []string{advanced.Finalizer}
+		Expect(env.Client().Update(env.Ctx, cr)).To(Succeed())
+		ar2.Finalizers = []string{advanced.Finalizer}
+		Expect(env.Client().Update(env.Ctx, ar2)).To(Succeed())
+
+		// deleting should requeue
+		res, err = rec.ReconcileDelete(env.Ctx, req)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(res.RequeueAfter).ToNot(BeZero())
+
+		// ClusterRequest 1 should be gone, AccessRequest 2 should be gone, ClusterRequest 2 should have a deletion timestamp now
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar2), ar2)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cr2), cr2)).To(Succeed())
+		Expect(cr2.DeletionTimestamp.IsZero()).To(BeFalse())
+		Expect(cr2.Finalizers).To(ContainElement(advanced.Finalizer))
+	})
+
 	Context("Conflict Detection", func() {
 
 		It("should correctly handle conflicts with existing ClusterRequests", func() {

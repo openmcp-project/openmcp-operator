@@ -88,6 +88,9 @@ func (c *MyController) Reconcile(ctx context.Context, req reconcile.Request) (re
 The ClusterAccess Reconciler's `SkipWorkloadCluster` method can be used during initialization to disable creation of a `ClusterRequest` for a workload cluster.
 If for some reason the `AccessRequest` resources are required, they can be retrieved via `MCPAccessRequest` and `WorkloadAccessRequest`.
 
+The ClusterAccess Reconciler remembers requests that are in deletion and won't create new resources for them. This means that `Reconcile` can safely be called at the beginning of a reconciliation that is going to delete resources and `ReconcileDelete` at the end of it, without the former one recreating resources the latter one has already removed.
+A request is considered to be 'in deletion' when `ReconcileDelete` is called for it and it stops being 'in deletion' when `ReconcileDelete` returns with a `RequeueAfter` value of zero and no error.
+
 ### ClusterAccess Reconciler - Advanced
 
 Instantiate the ClusterAccess Reconciler during controller setup and store the instance in the controller's struct.
@@ -183,6 +186,9 @@ There are four getter methods that can be called after the cluster access has be
 - `Cluster` returns the `Cluster` for the specified cluster registration.
 
 Note that not all of these methods will always return something. For example, a registration created via `ExistingCluster(...)` references a `Cluster` directly and can therefore not return a `ClusterRequest`. `Access` and `AccessRequest` will only work if either token-based access or OIDC-based access has been configured during the registration, otherwise there won't be any `AccessRequest`. Any method which cannot return the expected value due to the resource not being configured will simply return `nil` instead, without an error. The error is only returned if something goes wrong during retrieval of the resource.
+
+The ClusterAccess Reconciler remembers requests that are in deletion and won't create new resources for them. This means that `Reconcile` can safely be called at the beginning of a reconciliation that is going to delete resources and `ReconcileDelete` at the end of it, without the former one recreating resources the latter one has already removed.
+A request is considered to be 'in deletion' when `ReconcileDelete` is called for it and it stops being 'in deletion' when `ReconcileDelete` returns with a `RequeueAfter` value of zero and no error.
 
 #### Additional Data
 

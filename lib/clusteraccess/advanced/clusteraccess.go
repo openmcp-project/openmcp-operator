@@ -5,13 +5,15 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -29,6 +31,7 @@ import (
 )
 
 const caControllerName = "ClusterAccess"
+const Finalizer = clustersv1alpha1.GroupName + "/clusteraccess"
 
 //////////////////
 /// INTERFACES ///
@@ -71,16 +74,20 @@ type ClusterAccessReconciler interface {
 	// Reconcile creates the ClusterRequests and/or AccessRequests for the registered clusters.
 	// This function should be called during all reconciliations of the reconciled object.
 	// ctx is the context for the reconciliation.
-	// request is the object that is being reconciled
+	// request is the object that is being reconciled.
 	// It returns a reconcile.Result and an error if the reconciliation failed.
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
 	// Any additional arguments provided are passed into all methods of the ClusterRegistration objects that are called.
+	//
+	// Note that Reconcile will not create any new resources if the current request is in deletion.
+	// A request is considered to be in deletion if ReconcileDelete has been called for it at least once and not successfully finished (= with RequeueAfter == 0 and no error) since then.
+	// This means that Reconcile can safely be called at the beginning of a deletion reconciliation without having to worry about re-creating already deleted resources.
 	Reconcile(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error)
 	// ReconcileDelete deletes the ClusterRequests and/or AccessRequests for the registered clusters.
 	// This function should be called during the deletion of the reconciled object.
 	// ctx is the context for the reconciliation.
-	// request is the object that is being reconciled
+	// request is the object that is being reconciled.
 	// It returns a reconcile.Result and an error if the reconciliation failed.
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
@@ -440,6 +447,8 @@ func ExistingClusterRequest(id, suffix string, generateClusterRequestRef ObjectR
 type reconcilerImpl struct {
 	controllerName        string
 	platformClusterClient client.Client
+	requestsInDeletion    sets.Set[reconcile.Request]
+	ridLock               *sync.RWMutex
 
 	interval      time.Duration
 	registrations map[string]ClusterRegistration
@@ -456,6 +465,8 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 	return &reconcilerImpl{
 		controllerName:        controllerName,
 		platformClusterClient: platformClusterClient,
+		requestsInDeletion:    sets.New[reconcile.Request](),
+		ridLock:               &sync.RWMutex{},
 		interval:              5 * time.Second,
 		registrations:         map[string]ClusterRegistration{},
 		managedBy:             DefaultManagedLabelGenerator,
@@ -611,6 +622,10 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 	log := logging.FromContextOrDiscard(ctx).WithName(caControllerName)
 	ctx = logging.NewContext(ctx, log)
 	log.Info("Reconciling cluster access")
+	inDeletion := r.isInDeletion(request)
+	if inDeletion {
+		log.Info("Request is in deletion, missing resources will not be created")
+	}
 
 	// iterate over registrations and ensure that the corresponding resources are ready
 	for _, rawReg := range r.registrations {
@@ -639,6 +654,10 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 			if !apierrors.IsNotFound(err) {
 				return reconcile.Result{}, fmt.Errorf("unable to get platform cluster namespace '%s': %w", ns.Name, err)
 			}
+			if inDeletion {
+				rlog.Debug("Skipping platform cluster namespace creation because this request is in deletion")
+				continue
+			}
 			rlog.Info("Creating platform cluster namespace", "namespaceName", ns.Name)
 			if err := r.platformClusterClient.Create(ctx, ns); err != nil {
 				return reconcile.Result{}, fmt.Errorf("unable to create platform cluster namespace '%s': %w", ns.Name, err)
@@ -665,9 +684,14 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				exists = false
 			}
 			if !exists {
+				if inDeletion {
+					rlog.Debug("Skipping ClusterRequest creation because this request is in deletion", "crName", cr.Name, "crNamespace", cr.Namespace)
+					continue
+				}
 				rlog.Info("Creating ClusterRequest", "crName", cr.Name, "crNamespace", cr.Namespace)
 				cr.Labels = map[string]string{}
 				maps.Copy(cr.Labels, expectedLabels)
+				controllerutil.AddFinalizer(cr, Finalizer)
 				cr.Spec = *crSpec
 				if err := r.platformClusterClient.Create(ctx, cr); err != nil {
 					return reconcile.Result{}, fmt.Errorf("unable to create ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
@@ -711,6 +735,10 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				exists = false
 			}
 			if !exists {
+				if inDeletion {
+					rlog.Debug("Skipping AccessRequest creation because this request is in deletion", "arName", ar.Name, "arNamespace", ar.Namespace)
+					continue
+				}
 				rlog.Info("Creating AccessRequest", "arName", ar.Name, "arNamespace", ar.Namespace)
 				// cluster and cluster request references are immutable, so set them only when creating new AccessRequests
 				referenced := false
@@ -755,30 +783,35 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				}
 				rlog.Debug("Updating AccessRequest", "arName", ar.Name, "arNamespace", ar.Namespace)
 			}
-			if _, err := controllerutil.CreateOrUpdate(ctx, r.platformClusterClient, ar, func() error {
-				ar.Labels = maputils.Merge(ar.Labels, expectedLabels)
-				var err error
-				ar.Spec.Token, err = reg.AccessRequestTokenConfig()
-				if err != nil {
-					return fmt.Errorf("unable to generate AccessRequest token config from registration: %w", err)
-				}
-				ar.Spec.OIDC, err = reg.AccessRequestOIDCConfig()
-				if err != nil {
-					return fmt.Errorf("unable to generate AccessRequest OIDC config from registration: %w", err)
-				}
-				return nil
-			}); err != nil {
-				return reconcile.Result{}, fmt.Errorf("unable to create or update AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
-			}
-			if !ar.Status.IsGranted() {
-				rlog.Info("Waiting for AccessRequest to be granted", "arName", ar.Name, "arNamespace", ar.Namespace)
-				if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestReadiness]; fc != nil {
-					rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestReadiness)
-					if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestReadiness, &request, cr, ar, nil, nil); err != nil {
-						return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForAccessRequestReadiness, err)
+			if exists && !ar.DeletionTimestamp.IsZero() {
+				rlog.Info("Not updating AccessRequest because it is being deleted", "arName", ar.Name, "arNamespace", ar.Namespace)
+			} else {
+				if _, err := controllerutil.CreateOrUpdate(ctx, r.platformClusterClient, ar, func() error {
+					ar.Labels = maputils.Merge(ar.Labels, expectedLabels)
+					controllerutil.AddFinalizer(ar, Finalizer)
+					var err error
+					ar.Spec.Token, err = reg.AccessRequestTokenConfig()
+					if err != nil {
+						return fmt.Errorf("unable to generate AccessRequest token config from registration: %w", err)
 					}
+					ar.Spec.OIDC, err = reg.AccessRequestOIDCConfig()
+					if err != nil {
+						return fmt.Errorf("unable to generate AccessRequest OIDC config from registration: %w", err)
+					}
+					return nil
+				}); err != nil {
+					return reconcile.Result{}, fmt.Errorf("unable to create or update AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
 				}
-				return reconcile.Result{RequeueAfter: r.interval}, nil
+				if !ar.Status.IsGranted() {
+					rlog.Info("Waiting for AccessRequest to be granted", "arName", ar.Name, "arNamespace", ar.Namespace)
+					if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestReadiness]; fc != nil {
+						rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestReadiness)
+						if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestReadiness, &request, cr, ar, nil, nil); err != nil {
+							return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForAccessRequestReadiness, err)
+						}
+					}
+					return reconcile.Result{RequeueAfter: r.interval}, nil
+				}
 			}
 		}
 	}
@@ -788,12 +821,16 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 }
 
 // ReconcileDelete implements Reconciler.
+//
+//nolint:gocyclo
 func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error) {
 	log := logging.FromContextOrDiscard(ctx).WithName(caControllerName)
 	ctx = logging.NewContext(ctx, log)
 	log.Info("Reconciling cluster access")
+	r.setInDeletion(request)
 
-	// iterate over registrations and ensure that the corresponding resources are ready
+	// iterate over registrations and ensure that the corresponding resources are being deleted
+	res := reconcile.Result{}
 	for _, rawReg := range r.registrations {
 		rlog := log.WithValues("id", rawReg.ID())
 		rlog.Debug("Processing registration")
@@ -842,15 +879,24 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 							return reconcile.Result{}, fmt.Errorf("unable to delete AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
 						}
 					} else {
-						rlog.Info("Waiting for AccessRequest to be deleted", "arName", ar.Name, "arNamespace", ar.Namespace)
-					}
-					if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestDeletion]; fc != nil {
-						rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestDeletion)
-						if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestDeletion, &request, nil, ar, nil, nil); err != nil {
-							return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForAccessRequestDeletion, err)
+						if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestDeletion]; fc != nil {
+							rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestDeletion)
+							if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestDeletion, &request, nil, ar, nil, nil); err != nil {
+								return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForAccessRequestDeletion, err)
+							}
 						}
 					}
-					return reconcile.Result{RequeueAfter: r.interval}, nil
+					if len(ar.Finalizers) == 1 && ar.Finalizers[0] == Finalizer {
+						// remove finalizer to allow deletion
+						rlog.Info("Removing clusteraccess finalizer from AccessRequest to allow deletion", "arName", ar.Name, "arNamespace", ar.Namespace, "finalizer", Finalizer)
+						if err := r.platformClusterClient.Patch(ctx, ar, client.RawPatch(types.JSONPatchType, []byte(`[{"op": "remove", "path": "/metadata/finalizers"}]`))); err != nil {
+							return reconcile.Result{}, fmt.Errorf("error removing finalizer from AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+						}
+					} else {
+						rlog.Info("Waiting for finalizers to be removed from AccessRequest", "arName", ar.Name, "arNamespace", ar.Namespace, "finalizers", ar.Finalizers)
+						res.RequeueAfter = r.interval
+						continue
+					}
 				}
 			}
 		}
@@ -884,24 +930,36 @@ func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.
 							return reconcile.Result{}, fmt.Errorf("unable to delete ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
 						}
 					} else {
-						rlog.Info("Waiting for ClusterRequest to be deleted", "crName", cr.Name, "crNamespace", cr.Namespace)
-					}
-					if fc := r.fakingCallbacks[FakingCallback_WaitingForClusterRequestDeletion]; fc != nil {
-						rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForClusterRequestDeletion)
-						if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForClusterRequestDeletion, &request, cr, nil, nil, nil); err != nil {
-							return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForClusterRequestDeletion, err)
+						if fc := r.fakingCallbacks[FakingCallback_WaitingForClusterRequestDeletion]; fc != nil {
+							rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForClusterRequestDeletion)
+							if err := fc(ctx, r.platformClusterClient, FakingCallback_WaitingForClusterRequestDeletion, &request, cr, nil, nil, nil); err != nil {
+								return reconcile.Result{}, fmt.Errorf("faking callback for key '%s' failed: %w", FakingCallback_WaitingForClusterRequestDeletion, err)
+							}
 						}
 					}
-					return reconcile.Result{RequeueAfter: r.interval}, nil
+					if len(cr.Finalizers) == 1 && cr.Finalizers[0] == Finalizer {
+						// remove finalizer to allow deletion
+						rlog.Info("Removing clusteraccess finalizer from ClusterRequest to allow deletion", "crName", cr.Name, "crNamespace", cr.Namespace, "finalizer", Finalizer)
+						if err := r.platformClusterClient.Patch(ctx, cr, client.RawPatch(types.JSONPatchType, []byte(`[{"op": "remove", "path": "/metadata/finalizers"}]`))); err != nil {
+							return reconcile.Result{}, fmt.Errorf("error removing finalizer from ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
+						}
+					} else {
+						rlog.Info("Waiting for finalizers to be removed from ClusterRequest", "crName", cr.Name, "crNamespace", cr.Namespace, "finalizers", cr.Finalizers)
+						res.RequeueAfter = r.interval
+						continue
+					}
 				}
 			}
 		}
 
 		// don't delete the namespace, because it might contain other resources
 	}
-	log.Info("Successfully reconciled cluster access")
+	log.Info("Successfully reconciled cluster access", "requeueAfter", res.RequeueAfter)
+	if res.RequeueAfter == 0 {
+		r.unsetInDeletion(request)
+	}
 
-	return reconcile.Result{}, nil
+	return res, nil
 }
 
 // Register implements Reconciler.
@@ -963,6 +1021,24 @@ const (
 	// Note that the execution happens directly before the return of the reconcile function (with a requeue). This means that the reconciliation needs to run a second time to pick up the changes made in the callback.
 	FakingCallback_WaitingForClusterRequestDeletion = "WaitingForClusterRequestDeletion"
 )
+
+func (r *reconcilerImpl) isInDeletion(req reconcile.Request) bool {
+	r.ridLock.RLock()
+	defer r.ridLock.RUnlock()
+	return r.requestsInDeletion.Has(req)
+}
+
+func (r *reconcilerImpl) setInDeletion(req reconcile.Request) {
+	r.ridLock.Lock()
+	defer r.ridLock.Unlock()
+	r.requestsInDeletion.Insert(req)
+}
+
+func (r *reconcilerImpl) unsetInDeletion(req reconcile.Request) {
+	r.ridLock.Lock()
+	defer r.ridLock.Unlock()
+	r.requestsInDeletion.Delete(req)
+}
 
 ///////////////////////////
 /// AUXILIARY FUNCTIONS ///
@@ -1086,6 +1162,7 @@ func IdentityReferenceGenerator(req reconcile.Request, _ ...any) (*commonapi.Obj
 ////////////////////////////////
 
 // FakeClusterRequestReadiness returns a faking callback that sets the ClusterRequest to 'Granted'.
+// Adds a 'clusterprovider' finalizer to the ClusterRequest, if not already present.
 // If the given ClusterSpec is not nil, it creates a corresponding Cluster next to the ClusterRequest, if it doesn't exist yet.
 // If during the callback, the Cluster is non-nil, with a non-empty name and namespace, but doesn't exist yet, it will be created with the data from the Cluster, ignoring the given ClusterSpec.
 // Otherwise, only the ClusterRequest's status is modified.
@@ -1101,6 +1178,14 @@ func FakeClusterRequestReadiness(clusterSpec *clustersv1alpha1.ClusterSpec) Faki
 		if cr.Status.IsGranted() {
 			// already granted, nothing to do
 			return nil
+		}
+
+		// add finalizer, if not present
+		old := cr.DeepCopy()
+		if controllerutil.AddFinalizer(cr, "clusterprovider") {
+			if err := platformClusterClient.Patch(ctx, cr, client.MergeFrom(old)); err != nil {
+				return fmt.Errorf("unable to patch ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err)
+			}
 		}
 
 		// create cluster, if desired
@@ -1129,7 +1214,7 @@ func FakeClusterRequestReadiness(clusterSpec *clustersv1alpha1.ClusterSpec) Faki
 		}
 
 		// mock ClusterRequest status
-		old := cr.DeepCopy()
+		old = cr.DeepCopy()
 		cr.Status.Cluster = &commonapi.ObjectReference{
 			Name:      c.Name,
 			Namespace: c.Namespace,
@@ -1147,6 +1232,7 @@ func FakeClusterRequestReadiness(clusterSpec *clustersv1alpha1.ClusterSpec) Faki
 // The content of the secret's 'kubeconfig' key will one of the following:
 // - 'fake:cluster:<cluster-namespace>/<cluster-name>' if the Cluster could be determined (should be the case most of the time)
 // - 'fake:request:<request-namespace>/<request-name>' if no Cluster could be determined
+// This function also adds a 'clusterprovider' finalizer to the AccessRequest, if not already present.
 // The callback is a no-op if the AccessRequest is already granted (Secret reference and existence are not checked in this case).
 // It returns an error if the AccessRequest is nil.
 //
@@ -1161,22 +1247,28 @@ func FakeAccessRequestReadiness() FakingCallback {
 			return nil
 		}
 
+		old := ar.DeepCopy()
+		applied := false
+		// add finalizer, if not present
+		changed := controllerutil.AddFinalizer(ar, "clusterprovider")
+
 		// if a ClusterRequest is referenced, but no Cluster, try to identify the Cluster
 		if ar.Spec.ClusterRef == nil {
-			old := ar.DeepCopy()
 			if c != nil {
 				ar.Spec.ClusterRef = &commonapi.ObjectReference{
 					Name:      c.Name,
 					Namespace: c.Namespace,
 				}
 				if err := platformClusterClient.Patch(ctx, ar, client.MergeFrom(old)); err != nil {
-					return fmt.Errorf("unable to update spec of AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+					return fmt.Errorf("unable to patch AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
 				}
+				applied = true
 			} else if cr != nil && cr.Status.Cluster != nil {
 				ar.Spec.ClusterRef = cr.Status.Cluster.DeepCopy()
 				if err := platformClusterClient.Patch(ctx, ar, client.MergeFrom(old)); err != nil {
-					return fmt.Errorf("unable to update spec of AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+					return fmt.Errorf("unable to patch AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
 				}
+				applied = true
 			} else if ar.Spec.RequestRef != nil {
 				cr2 := &clustersv1alpha1.ClusterRequest{}
 				cr2.Name = ar.Spec.RequestRef.Name
@@ -1186,10 +1278,17 @@ func FakeAccessRequestReadiness() FakingCallback {
 						old := ar.DeepCopy()
 						ar.Spec.ClusterRef = cr2.Status.Cluster.DeepCopy()
 						if err := platformClusterClient.Patch(ctx, ar, client.MergeFrom(old)); err != nil {
-							return fmt.Errorf("unable to update spec of AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
+							return fmt.Errorf("unable to patch AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
 						}
+						applied = true
 					}
 				}
+			}
+		}
+
+		if changed && !applied {
+			if err := platformClusterClient.Patch(ctx, ar, client.MergeFrom(old)); err != nil {
+				return fmt.Errorf("unable to patch AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
 			}
 		}
 
@@ -1217,7 +1316,7 @@ func FakeAccessRequestReadiness() FakingCallback {
 		}
 
 		// mock AccessRequest status
-		old := ar.DeepCopy()
+		old = ar.DeepCopy()
 		ar.Status.SecretRef = &commonapi.LocalObjectReference{
 			Name: s.Name,
 		}
@@ -1353,6 +1452,7 @@ func FakeAccessRequestDeletion(finalizersToRemoveFromAccessRequest, finalizersTo
 }
 
 // removeFinalizers takes an object and a list of finalizers to remove from that object.
+// The special finalizer defined in 'Finalizer' will never be removed.
 // If the list contains "*", all finalizers will be removed.
 // It updates the object in-place and returns an indicator whether any finalizers were removed.
 func removeFinalizers(obj client.Object, finalizersToRemove ...string) bool {
@@ -1361,15 +1461,19 @@ func removeFinalizers(obj client.Object, finalizersToRemove ...string) bool {
 	}
 
 	changed := false
-	if slices.Contains(finalizersToRemove, "*") {
-		obj.SetFinalizers(nil)
-		changed = true
-	} else {
-		for _, ftr := range finalizersToRemove {
-			if controllerutil.RemoveFinalizer(obj, ftr) {
-				changed = true
-			}
+	finsToRemove := sets.New(finalizersToRemove...)
+	fins := obj.GetFinalizers()
+	for i := 0; i < len(fins); i++ {
+		// keep the special finalizer
+		if fins[i] == Finalizer {
+			continue
+		}
+		if finsToRemove.Has("*") || finsToRemove.Has(fins[i]) {
+			fins = append(fins[:i], fins[i+1:]...)
+			changed = true
+			i--
 		}
 	}
+	obj.SetFinalizers(fins)
 	return changed
 }
