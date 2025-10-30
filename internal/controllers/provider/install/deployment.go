@@ -57,6 +57,24 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 		return err
 	}
 
+	volumes := m.values.deploymentSpec.ExtraVolumes
+	volumeMounts := m.values.deploymentSpec.ExtraVolumeMounts
+	if m.values.webhookTLSSecretName != "" {
+		volumes = append(volumes, corev1.Volume{
+			Name: "webhook-tls",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: m.values.webhookTLSSecretName,
+				},
+			},
+		})
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "webhook-tls",
+			MountPath: "/tmp/k8s-webhook-server/serving-certs",
+			ReadOnly:  true,
+		})
+	}
+
 	runCmd := slices.Clone(m.values.deploymentSpec.RunCommand)
 	if len(runCmd) == 0 {
 		runCmd = []string{"run"}
@@ -86,12 +104,12 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Args:            runCmd,
 						Env:             env,
-						VolumeMounts:    m.values.deploymentSpec.ExtraVolumeMounts,
+						VolumeMounts:    volumeMounts,
 					},
 				},
 				ImagePullSecrets:          m.values.ImagePullSecrets(),
 				ServiceAccountName:        m.values.NamespacedDefaultResourceName(),
-				Volumes:                   m.values.deploymentSpec.ExtraVolumes,
+				Volumes:                   volumes,
 				TopologySpreadConstraints: m.values.deploymentSpec.TopologySpreadConstraints,
 			},
 		},

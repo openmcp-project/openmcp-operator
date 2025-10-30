@@ -70,3 +70,13 @@ func StableMCPIdentifier(onboardingName, onboardingNamespace string) (string, er
 	}
 	return res, nil
 }
+
+// WebhookSecretName computes the name the secret containing the webhook TLS certificate is expected to have, based on the provider's name.
+func WebhookSecretName(providerName string) (string, error) {
+	suffix := "-webhook-tls"
+	base, err := controller.ShortenToXCharacters(providerName, controller.K8sMaxNameLength-len(suffix))
+	if err != nil {
+		return "", fmt.Errorf("error computing webhook secret name: %w", err)
+	}
+	return base + suffix, nil
+}

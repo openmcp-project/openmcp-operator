@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
+	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
 const (
@@ -45,10 +46,6 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 	}
 
 	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitServiceAccountMutator(values)); err != nil {
-		return false, err
-	}
-
-	if err = resources.CreateOrUpdateResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
 		return false, err
 	}
 
@@ -116,6 +113,17 @@ func (a *Installer) InstallProvider(ctx context.Context) error {
 		return err
 	}
 
+	// check if webhook TLS secret exists
+	whSecretName, err := libutils.WebhookSecretName(values.provider.GetName())
+	if err != nil {
+		return err
+	}
+	if err := a.PlatformClient.Get(ctx, client.ObjectKey{Name: whSecretName, Namespace: values.Namespace()}, &core.Secret{}); err == nil {
+		values.webhookTLSSecretName = whSecretName
+	} else if !apierrors.IsNotFound(err) {
+		return fmt.Errorf("unable to check for webhook TLS secret existence: %w", err)
+	}
+
 	if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, NewDeploymentMutator(values)); err != nil {
 		return err
 	}
@@ -156,10 +164,6 @@ func (a *Installer) UninstallProvider(ctx context.Context) (deleted bool, err er
 	}
 
 	if err := resources.DeleteResource(ctx, a.PlatformClient, newInitClusterRoleBindingMutator(values)); err != nil {
-		return false, err
-	}
-
-	if err := resources.DeleteResource(ctx, a.PlatformClient, newInitClusterRoleMutator(values)); err != nil {
 		return false, err
 	}
 
