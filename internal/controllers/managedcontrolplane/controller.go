@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openmcp-project/controller-utils/pkg/resources"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -19,7 +20,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/openmcp-project/controller-utils/pkg/clusteraccess"
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/controller-utils/pkg/collections"
 	"github.com/openmcp-project/controller-utils/pkg/collections/filters"
@@ -197,7 +197,15 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 		createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
 		return rr
 	}
-	_, err = clusteraccess.EnsureNamespace(ctx, r.PlatformCluster.Client(), platformNamespace, pairs.MapToPairs(mcpLabels)...)
+	// TODO: changed from clusteraccess.EnsureNamespace to a namespace mutator
+	// because the MCP namespace might be created by another controller first (e.g. another service provider).
+	// Failing in this case is not desired as the MCP reconciliation would be stuck.
+	// Instead, we ensure that the labels are correct on the namespace.gi
+	// In the future, we might want to refactor this further to have a more generic way of ensuring that the namespace exists with the correct labels,
+	// regardless of which controller created it first.
+	nsMutator := resources.NewNamespaceMutator(platformNamespace)
+	nsMutator.MetadataMutator().WithLabels(mcpLabels)
+	err = resources.CreateOrUpdateResource(ctx, r.PlatformCluster.Client(), nsMutator)
 	if err != nil {
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error ensuring namespace '%s' on platform cluster: %w", platformNamespace, err), cconst.ReasonPlatformClusterInteractionProblem)
 		createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
