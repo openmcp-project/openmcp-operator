@@ -658,9 +658,13 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				rlog.Debug("Skipping platform cluster namespace creation because this request is in deletion")
 				continue
 			}
-			rlog.Info("Creating platform cluster namespace", "namespaceName", ns.Name)
-			if err := r.platformClusterClient.Create(ctx, ns); err != nil {
-				return reconcile.Result{}, fmt.Errorf("unable to create platform cluster namespace '%s': %w", ns.Name, err)
+
+			if apierrors.IsNotFound(err) {
+				// namespace does not exist
+				// the namespace must be created by platform service mcp
+				// therefore wait until it exists
+				rlog.Info("Waiting for platform cluster namespace to be created", "namespaceName", ns.Name)
+				return reconcile.Result{RequeueAfter: r.interval}, nil
 			}
 		}
 
