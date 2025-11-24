@@ -21,8 +21,6 @@ const (
 
 	MCPFinalizer = GroupName + "/mcp"
 
-	// ServiceDependencyFinalizerPrefix is the prefix for the dependency finalizers that are added to MCP resources by associated services.
-	ServiceDependencyFinalizerPrefix = "services.openmcp.cloud/"
 	// ClusterRequestFinalizerPrefix is the prefix for the finalizers that are added to MCP resources for cluster requests.
 	ClusterRequestFinalizerPrefix = "request.clusters.openmcp.cloud/"
 )

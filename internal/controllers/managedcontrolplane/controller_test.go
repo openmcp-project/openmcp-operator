@@ -588,22 +588,14 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			Expect(obj.GetDeletionTimestamp().IsZero()).To(BeTrue())
 		}
 
-		// remove service finalizers
-		By("fake: removing service finalizers")
+		// remove service resource finalizers
+		By("fake: removing service resource finalizers")
 		for _, obj := range serviceResources {
 			By("fake: removing finalizer from service resource: " + obj.GetObjectKind().GroupVersionKind().Kind)
 			Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(obj), obj)).To(Succeed())
 			controllerutil.RemoveFinalizer(obj, "dummy")
 			Expect(env.Client(onboarding).Update(env.Ctx, obj)).To(Succeed())
 		}
-		newFins := []string{}
-		for _, fin := range mcp.Finalizers {
-			if !strings.HasPrefix(fin, corev2alpha1.ServiceDependencyFinalizerPrefix) {
-				newFins = append(newFins, fin)
-			}
-		}
-		mcp.Finalizers = newFins
-		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
 
 		// reconcile the MCP again
 		// expected outcome:
