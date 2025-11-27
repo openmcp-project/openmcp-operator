@@ -17,6 +17,7 @@ import (
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/controller-utils/pkg/collections/filters"
+	maputils "github.com/openmcp-project/controller-utils/pkg/collections/maps"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
@@ -237,15 +238,82 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 			}
 		}
 	} else {
-		cluster = r.initializeNewCluster(ctx, cr, cDef)
+		var err error
+		cluster, err = r.initializeNewCluster(ctx, cr, cDef)
+		if err != nil {
+			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error initializing new cluster: %w", err), cconst.ReasonInternalError)
+			return rr
+		}
 
-		// create Cluster resource
-		if err := r.PlatformCluster.Client().Create(ctx, cluster); err != nil {
-			if apierrors.IsAlreadyExists(err) {
-				rr.ReconcileError = errutils.WithReason(fmt.Errorf("cluster '%s/%s' already exists, this is not supposed to happen", cluster.Namespace, cluster.Name), cconst.ReasonInternalError)
-				return rr
+		// check for conflicts
+		// A conflict occurs if
+		// - a cluster with the same name and namespace already exists
+		// - and it does not have a finalizer referencing this ClusterRequest
+		// - but it has a finalizer referencing another ClusterRequest
+		// - and this other ClusterRequest still exists
+		conflict := false
+		fin := cr.FinalizerForCluster()
+		existingCluster := &clustersv1alpha1.Cluster{}
+		existingCluster.Namespace = cluster.Namespace
+		existingCluster.Name = cluster.Name
+		finalizersToRemove := sets.New[string]()
+		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(existingCluster), existingCluster); err == nil {
+			var crs *clustersv1alpha1.ClusterRequestList
+			for _, cfin := range existingCluster.Finalizers {
+				if cfin == fin {
+					conflict = false
+					break
+				}
+				// if we have not already found a conflict, check if the cluster contains a finalizer from another request which still exists
+				if !conflict && strings.HasPrefix(cfin, clustersv1alpha1.RequestFinalizerOnClusterPrefix) {
+					// check if the other request still exists
+					if crs == nil {
+						// fetch existing ClusterRequests if not done already
+						crs = &clustersv1alpha1.ClusterRequestList{}
+						if err := r.PlatformCluster.Client().List(ctx, crs); err != nil {
+							rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing ClusterRequests to check for conflicts: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+							return rr
+						}
+						found := false
+						for _, ecr := range crs.Items {
+							if cfin == ecr.FinalizerForCluster() {
+								conflict = true
+								break
+							}
+						}
+						if !found {
+							// the finalizer does not belong to any existing ClusterRequest, let's remove it
+							finalizersToRemove.Insert(cfin)
+						}
+					}
+				}
 			}
-			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+		} else if !apierrors.IsNotFound(err) {
+			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error checking whether cluster '%s/%s' exists: %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+			return rr
+		}
+
+		if conflict {
+			rr.ReconcileError = errutils.WithReason(fmt.Errorf("cluster '%s/%s' already exists and is used by a different ClusterRequest (the '%s' label with value 'true' can be set on the ClusterRequest to randomize the cluster name and avoid this conflict)", cluster.Namespace, cluster.Name, clustersv1alpha1.RandomizeClusterNameLabel), cconst.ReasonClusterConflict)
+			return rr
+		}
+
+		// create/update Cluster resource
+		// Note that clusters are usually not updated. This should only happen if the status of a ClusterRequest was lost and an existing cluster is recovered.
+		if _, err := controllerutil.CreateOrUpdate(ctx, r.PlatformCluster.Client(), existingCluster, func() error {
+			// merge finalizers, labels, and annotations from initialized cluster into existing one
+			finSet := sets.New(existingCluster.Finalizers...)
+			finSet.Delete(finalizersToRemove.UnsortedList()...)
+			finSet.Insert(cluster.Finalizers...)
+			existingCluster.Finalizers = sets.List(finSet)
+			existingCluster.Labels = maputils.Merge(existingCluster.Labels, cluster.Labels)
+			existingCluster.Annotations = maputils.Merge(existingCluster.Annotations, cluster.Annotations)
+			// copy spec from initialized cluster
+			existingCluster.Spec = cluster.Spec
+
+			return nil
+		}); err != nil {
+			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating/updating cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
 			return rr
 		}
 	}
@@ -377,23 +445,34 @@ func (r *ClusterScheduler) fetchRelevantClusters(ctx context.Context, cr *cluste
 }
 
 // initializeNewCluster creates a new Cluster resource based on the given ClusterRequest and ClusterDefinition.
-func (r *ClusterScheduler) initializeNewCluster(ctx context.Context, cr *clustersv1alpha1.ClusterRequest, cDef *config.ClusterDefinition) *clustersv1alpha1.Cluster {
+func (r *ClusterScheduler) initializeNewCluster(ctx context.Context, cr *clustersv1alpha1.ClusterRequest, cDef *config.ClusterDefinition) (*clustersv1alpha1.Cluster, error) {
 	log := logging.FromContextOrPanic(ctx)
 	purpose := cr.Spec.Purpose
 	cluster := &clustersv1alpha1.Cluster{}
 	// choose a name for the cluster
 	// priority as follows:
 	// - for singleton clusters (shared unlimited):
-	//  1. generateName of template
+	//  1. generateName of template (1)
 	//  2. name of template
 	//  3. purpose
 	// - for exclusive clusters or shared limited:
-	//  1. generateName of template
-	//  2. purpose used as generateName
+	//  1. generateName of template (1)
+	//  2. purpose used as generateName (1)
+	//
+	// (1) Note that the kubernetes 'generateName' field will only be used if the ClusterRequest has the 'clusters.openmcp.cloud/randomize-cluster-name' label set to 'true'.
+	//     Otherwise, a random-looking but deterministic name based on a hash of name and namespace of the ClusterRequest will be used.
 	if cDef.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_SHARED && cDef.TenancyCount == 0 {
 		// there will only be one instance of this cluster
 		if cDef.Template.GenerateName != "" {
-			cluster.SetGenerateName(cDef.Template.GenerateName)
+			if ctrlutils.HasLabelWithValue(cr, clustersv1alpha1.RandomizeClusterNameLabel, "true") {
+				cluster.SetGenerateName(cDef.Template.GenerateName)
+			} else {
+				name, err := GenerateClusterName(cDef.Template.GenerateName, cr)
+				if err != nil {
+					return nil, fmt.Errorf("error generating cluster name: %w", err)
+				}
+				cluster.SetName(name)
+			}
 		} else if cDef.Template.Name != "" {
 			cluster.SetName(cDef.Template.Name)
 		} else {
@@ -401,10 +480,18 @@ func (r *ClusterScheduler) initializeNewCluster(ctx context.Context, cr *cluster
 		}
 	} else {
 		// there might be multiple instances of this cluster
+		prefix := purpose + "-"
 		if cDef.Template.GenerateName != "" {
-			cluster.SetGenerateName(cDef.Template.GenerateName)
+			prefix = cDef.Template.GenerateName
+		}
+		if ctrlutils.HasLabelWithValue(cr, clustersv1alpha1.RandomizeClusterNameLabel, "true") {
+			cluster.SetGenerateName(prefix)
 		} else {
-			cluster.SetGenerateName(purpose + "-")
+			name, err := GenerateClusterName(prefix, cr)
+			if err != nil {
+				return nil, fmt.Errorf("error generating cluster name: %w", err)
+			}
+			cluster.SetName(name)
 		}
 	}
 	// choose a namespace for the cluster
@@ -428,7 +515,7 @@ func (r *ClusterScheduler) initializeNewCluster(ctx context.Context, cr *cluster
 		}
 	}
 	cluster.SetAnnotations(cDef.Template.Annotations)
-	cluster.Spec = cDef.Template.Spec
+	cluster.Spec = *cDef.Template.Spec.DeepCopy()
 
 	// set purpose, if not set
 	if len(cluster.Spec.Purposes) == 0 {
@@ -439,5 +526,15 @@ func (r *ClusterScheduler) initializeNewCluster(ctx context.Context, cr *cluster
 		}
 	}
 
-	return cluster
+	return cluster, nil
+}
+
+// GenerateClusterName generates a deterministic name for a new Cluster based on a prefix and the corresponding ClusterRequest.
+// The name will always contain the prefix, followed by a hash of the ClusterRequest's namespace and name.
+func GenerateClusterName(prefix string, cr *clustersv1alpha1.ClusterRequest) (string, error) {
+	suffix, err := ctrlutils.ShortenToXCharacters(ctrlutils.NameHashSHAKE128Base32(cr.Namespace, cr.Name), ctrlutils.K8sMaxNameLength-len(prefix))
+	if err != nil {
+		return "", err
+	}
+	return prefix + suffix, nil
 }
