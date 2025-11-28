@@ -1,3 +1,4 @@
+//nolint:goconst
 package scheduler_test
 
 import (
@@ -530,6 +531,7 @@ var _ = Describe("Scheduler", func() {
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req2), req2)).To(Succeed())
 		Expect(req2.Status.Cluster).ToNot(BeNil())
 		expectedName2, err := scheduler.GenerateClusterName(req2.Spec.Purpose+"-", req2)
+		Expect(err).ToNot(HaveOccurred())
 		Expect(req2.Status.Cluster.Name).ToNot(Equal(expectedName2))
 		Expect(strings.HasPrefix(req2.Status.Cluster.Name, req2.Spec.Purpose+"-")).To(BeTrue())
 
