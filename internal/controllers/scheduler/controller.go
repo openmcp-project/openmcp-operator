@@ -288,7 +288,9 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 					}
 				}
 			}
-		} else if !apierrors.IsNotFound(err) {
+		} else if apierrors.IsNotFound(err) {
+			existingCluster = nil
+		} else {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error checking whether cluster '%s/%s' exists: %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
 			return rr
 		}
@@ -300,7 +302,14 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 
 		// create/update Cluster resource
 		// Note that clusters are usually not updated. This should only happen if the status of a ClusterRequest was lost and an existing cluster is recovered.
-		if _, err := controllerutil.CreateOrUpdate(ctx, r.PlatformCluster.Client(), existingCluster, func() error {
+		if existingCluster == nil {
+			log.Info("Creating new cluster for request", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
+			if err := r.PlatformCluster.Client().Create(ctx, cluster); err != nil {
+				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+				return rr
+			}
+		} else {
+			log.Info("Recovering existing cluster for request", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
 			// merge finalizers, labels, and annotations from initialized cluster into existing one
 			finSet := sets.New(existingCluster.Finalizers...)
 			finSet.Delete(finalizersToRemove.UnsortedList()...)
@@ -311,10 +320,10 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 			// copy spec from initialized cluster
 			existingCluster.Spec = cluster.Spec
 
-			return nil
-		}); err != nil {
-			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating/updating cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-			return rr
+			if err := r.PlatformCluster.Client().Update(ctx, existingCluster); err != nil {
+				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error updating existing cluster '%s/%s': %w", existingCluster.Namespace, existingCluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+				return rr
+			}
 		}
 	}
 

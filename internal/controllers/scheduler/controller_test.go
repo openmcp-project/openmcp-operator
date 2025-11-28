@@ -3,6 +3,7 @@ package scheduler_test
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -489,7 +490,97 @@ var _ = Describe("Scheduler", func() {
 		Expect(cr.Status.Cluster).ToNot(BeNil())
 		Expect(cr.Status.Cluster.Name).ToNot(Equal(c.Name), "Cluster is in deletion and should not be considered for scheduling")
 		Expect(cr.Status.Cluster.Namespace).To(Equal(c.Namespace))
+	})
 
+	It("should choose the Cluster name correctly", func() {
+		clusterNamespace := "exclusive"
+		sc, env := defaultTestSetup("testdata", "test-01")
+		Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+		Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
+		existingClusters := &clustersv1alpha1.ClusterList{}
+		Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
+		Expect(existingClusters.Items).To(BeEmpty())
+
+		req := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
+		Expect(req.Status.Cluster).To(BeNil())
+
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Status.Cluster).ToNot(BeNil())
+
+		Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
+		Expect(existingClusters.Items).To(HaveLen(1))
+		cluster := existingClusters.Items[0]
+		Expect(cluster.Name).To(Equal(req.Status.Cluster.Name))
+		expectedName, err := scheduler.GenerateClusterName(req.Spec.Purpose+"-", req)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cluster.Name).To(Equal(expectedName))
+
+		req2 := &clustersv1alpha1.ClusterRequest{}
+		req2.SetName("exclusive-2")
+		req2.SetNamespace("foo")
+		req2.Spec.Purpose = "exclusive"
+		req2.Labels = map[string]string{
+			clustersv1alpha1.RandomizeClusterNameLabel: "true",
+		}
+		Expect(env.Client().Create(env.Ctx, req2)).To(Succeed())
+
+		env.ShouldReconcile(testutils.RequestFromObject(req2))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req2), req2)).To(Succeed())
+		Expect(req2.Status.Cluster).ToNot(BeNil())
+		expectedName2, err := scheduler.GenerateClusterName(req2.Spec.Purpose+"-", req2)
+		Expect(req2.Status.Cluster.Name).ToNot(Equal(expectedName2))
+		Expect(strings.HasPrefix(req2.Status.Cluster.Name, req2.Spec.Purpose+"-")).To(BeTrue())
+
+		cluster2 := &clustersv1alpha1.Cluster{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(req2.Status.Cluster.Name, req2.Status.Cluster.Namespace), cluster2)).To(Succeed())
+		Expect(cluster2.GenerateName).To(Equal(req2.Spec.Purpose + "-"))
+	})
+
+	It("should recreate a deleted cluster for an existing request", func() {
+		clusterNamespace := "exclusive"
+		sc, env := defaultTestSetup("testdata", "test-01")
+		Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+		Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
+		existingClusters := &clustersv1alpha1.ClusterList{}
+		Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
+		Expect(existingClusters.Items).To(BeEmpty())
+
+		req := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
+		Expect(req.Status.Cluster).To(BeNil())
+
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Status.Cluster).ToNot(BeNil())
+
+		Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
+		Expect(existingClusters.Items).To(HaveLen(1))
+		cluster := existingClusters.Items[0]
+		Expect(cluster.Name).To(Equal(req.Status.Cluster.Name))
+		Expect(cluster.Namespace).To(Equal(clusterNamespace))
+
+		// remove all finalizers and delete the cluster
+		cluster.Finalizers = []string{}
+		Expect(env.Client().Update(env.Ctx, &cluster)).To(Succeed())
+		Expect(env.Client().Delete(env.Ctx, &cluster)).To(Succeed())
+		Eventually(func() bool {
+			err := env.Client().Get(env.Ctx, client.ObjectKeyFromObject(&cluster), &cluster)
+			return apierrors.IsNotFound(err)
+		}, 3).Should(BeTrue(), "Cluster should be deleted")
+
+		// reconcile again, this should recreate the cluster
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Status.Cluster).ToNot(BeNil())
+
+		Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
+		Expect(existingClusters.Items).To(HaveLen(1))
+		newCluster := existingClusters.Items[0]
+		Expect(newCluster.Name).To(Equal(req.Status.Cluster.Name))
+		Expect(newCluster.Namespace).To(Equal(clusterNamespace))
+		Expect(newCluster.Name).To(Equal(cluster.Name), "Recreated cluster should have the same name")
 	})
 
 })
