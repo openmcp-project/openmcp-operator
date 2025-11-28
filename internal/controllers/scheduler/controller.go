@@ -116,6 +116,7 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, req reconcile.Request)
 	return rr
 }
 
+//nolint:gocyclo
 func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconcile.Request, cr *clustersv1alpha1.ClusterRequest) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	rr := ReconcileResult{
