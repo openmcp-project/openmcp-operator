@@ -136,10 +136,35 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 
 	// check if request is already granted
 	if cr.Status.Cluster != nil {
-		log.Info("Request already contains a cluster reference, nothing to do", "clusterName", cr.Status.Cluster.Name, "clusterNamespace", cr.Status.Cluster.Namespace)
-		return rr
+		// verify that the referenced cluster still exists
+		existingCluster := &clustersv1alpha1.Cluster{}
+		existingCluster.Namespace = cr.Status.Cluster.Namespace
+		existingCluster.Name = cr.Status.Cluster.Name
+		if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(existingCluster), existingCluster); err == nil {
+			fin := cr.FinalizerForCluster()
+			if !controllerutil.ContainsFinalizer(existingCluster, fin) {
+				log.Info("Referenced cluster does not contain expected finalizer, adding it", "clusterName", existingCluster.Name, "clusterNamespace", existingCluster.Namespace, "finalizer", fin)
+				oldCluster := existingCluster.DeepCopy()
+				controllerutil.AddFinalizer(existingCluster, fin)
+				if err := r.PlatformCluster.Client().Patch(ctx, existingCluster, client.MergeFrom(oldCluster)); err != nil {
+					rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching finalizer '%s' on cluster '%s/%s': %w", fin, existingCluster.Namespace, existingCluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+					return rr
+				}
+			}
+			log.Info("Request already contains a reference to an existing cluster, nothing to do", "clusterName", cr.Status.Cluster.Name, "clusterNamespace", cr.Status.Cluster.Namespace)
+			return rr
+		} else if !apierrors.IsNotFound(err) {
+			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error checking whether cluster '%s/%s' exists: %w", existingCluster.Namespace, existingCluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+			return rr
+		} else {
+			log.Info("Referenced cluster does not exist, resetting request status to recreate it", "clusterName", existingCluster.Name, "clusterNamespace", existingCluster.Namespace)
+			rr.Object.Status.Cluster = nil
+			rr.Result.RequeueAfter = 1
+			return rr
+		}
+	} else {
+		log.Debug("Request status does not contain a cluster reference, checking for existing clusters with referencing finalizers")
 	}
-	log.Debug("Request status does not contain a cluster reference, checking for existing clusters with referencing finalizers")
 
 	// fetch cluster definition
 	purpose := cr.Spec.Purpose

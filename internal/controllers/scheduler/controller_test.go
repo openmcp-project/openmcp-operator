@@ -538,7 +538,7 @@ var _ = Describe("Scheduler", func() {
 		Expect(cluster2.GenerateName).To(Equal(req2.Spec.Purpose + "-"))
 	})
 
-	It("should recreate a deleted cluster for an existing request", func() {
+	It("should restore a missing finalizer and recreate a deleted cluster for an existing request", func() {
 		clusterNamespace := "exclusive"
 		sc, env := defaultTestSetup("testdata", "test-01")
 		Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
@@ -561,6 +561,14 @@ var _ = Describe("Scheduler", func() {
 		Expect(cluster.Name).To(Equal(req.Status.Cluster.Name))
 		Expect(cluster.Namespace).To(Equal(clusterNamespace))
 
+		// remove finalizer from cluster and reconcile, which should add it again
+		cluster.Finalizers = []string{}
+		Expect(env.Client().Update(env.Ctx, &cluster)).To(Succeed())
+		Expect(cluster.Finalizers).To(BeEmpty())
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(&cluster), &cluster)).To(Succeed())
+		Expect(cluster.Finalizers).To(ContainElements(req.FinalizerForCluster()), "Finalizer should be restored on cluster")
+
 		// remove all finalizers and delete the cluster
 		cluster.Finalizers = []string{}
 		Expect(env.Client().Update(env.Ctx, &cluster)).To(Succeed())
@@ -570,7 +578,14 @@ var _ = Describe("Scheduler", func() {
 			return apierrors.IsNotFound(err)
 		}, 3).Should(BeTrue(), "Cluster should be deleted")
 
-		// reconcile again, this should recreate the cluster
+		// reconciliation should remove the request status and set it to pending
+		rr := env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Status.Cluster).To(BeNil())
+		Expect(req.Status.Phase).To(Equal(clustersv1alpha1.REQUEST_PENDING))
+		Expect(rr.RequeueAfter).ToNot(BeZero(), "RequeueAfter should be set")
+
+		// reconcile again, this should re-create the cluster
 		env.ShouldReconcile(testutils.RequestFromObject(req))
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
 		Expect(req.Status.Cluster).ToNot(BeNil())
