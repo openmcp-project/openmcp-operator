@@ -400,6 +400,13 @@ spec:
                       type: object
                     type: array
                 type: object
+              ttl:
+                description: |-
+                  TTL is the desired time-to-live for the granted access.
+                  The AccessRequest will be automatically deleted after the TTL has expired.
+                  Note that this value refers to the creation time of the AccessRequest, not the time the access was granted.
+                  Leave nil for unlimited TTL.
+                type: string
             type: object
             x-kubernetes-validations:
             - message: clusterRef may not be removed once set

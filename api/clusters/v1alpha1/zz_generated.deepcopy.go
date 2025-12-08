@@ -5,7 +5,8 @@
 package v1alpha1
 
 import (
-	v1 "k8s.io/api/rbac/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/openmcp-project/openmcp-operator/api/common"
@@ -92,6 +93,11 @@ func (in *AccessRequestSpec) DeepCopyInto(out *AccessRequestSpec) {
 		in, out := &in.OIDC, &out.OIDC
 		*out = new(OIDCConfig)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.TTL != nil {
+		in, out := &in.TTL, &out.TTL
+		*out = new(v1.Duration)
+		**out = **in
 	}
 }
 
@@ -455,7 +461,7 @@ func (in *PermissionsRequest) DeepCopyInto(out *PermissionsRequest) {
 	*out = *in
 	if in.Rules != nil {
 		in, out := &in.Rules, &out.Rules
-		*out = make([]v1.PolicyRule, len(*in))
+		*out = make([]rbacv1.PolicyRule, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

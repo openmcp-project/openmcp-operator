@@ -41,6 +41,13 @@ type AccessRequestSpec struct {
 	// Exactly one of Token or OIDC must be set.
 	// +optional
 	OIDC *OIDCConfig `json:"oidc,omitempty"`
+
+	// TTL is the desired time-to-live for the granted access.
+	// The AccessRequest will be automatically deleted after the TTL has expired.
+	// Note that this value refers to the creation time of the AccessRequest, not the time the access was granted.
+	// Leave nil for unlimited TTL.
+	// +optional
+	TTL *metav1.Duration `json:"ttl,omitempty"`
 }
 
 type TokenConfig struct {
