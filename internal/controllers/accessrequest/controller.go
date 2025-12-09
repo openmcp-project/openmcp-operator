@@ -3,10 +3,12 @@ package accessrequest
 import (
 	"context"
 	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -60,6 +62,7 @@ func (r *AccessRequestReconciler) Reconcile(ctx context.Context, req reconcile.R
 		UpdateStatus(ctx, r.PlatformCluster.Client(), rr)
 }
 
+//nolint:gocyclo
 func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.Request) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	// get AccessRequest resource
@@ -89,8 +92,38 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 		}
 	}
 
+	// ignore AccessRequests that are in deletion
+	if !ar.GetDeletionTimestamp().IsZero() {
+		log.Info("Ignoring AccessRequest, because it is in deletion")
+		return ReconcileResult{}
+	}
+
 	rr := ReconcileResult{
 		Object: ar,
+	}
+
+	// check if TTL is set and has expired
+	if ar.Spec.TTL != nil {
+		isExpired, expirationTime := hasExpiredTTL(ar)
+		if isExpired {
+			log.Info("AccessRequest TTL has expired, deleting AccessRequest", "expirationTime", expirationTime, "creationTime", ar.GetCreationTimestamp(), "ttl", ar.Spec.TTL.Duration)
+			if err := r.PlatformCluster.Client().Delete(ctx, ar); err != nil {
+				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error deleting AccessRequest after TTL expiration: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+				return rr
+			}
+			// don't update the status after deletion, could become a race condition
+			rr.Object = nil
+			return rr
+		}
+		log.Debug("AccessRequest TTL not yet expired", "expirationTime", expirationTime)
+		// compute requeue after duration, which is the remaining time until expiration plus one second
+		rr.Result.RequeueAfter = time.Until(expirationTime) + time.Second
+	}
+
+	// check if this reconciliation was just a TTL check and no further action is required
+	if ctrlutils.HasLabel(ar, clustersv1alpha1.ProviderLabel) && ctrlutils.HasLabel(ar, clustersv1alpha1.ProfileLabel) && ar.Spec.ClusterRef != nil {
+		log.Info("AccessRequest already has provider and profile labels and a clusterRef, no further action required")
+		return rr
 	}
 
 	// get Cluster that the request refers to
@@ -190,10 +223,14 @@ func (r *AccessRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&clustersv1alpha1.AccessRequest{}).
 		WithEventFilter(predicate.And(
 			// ignore resources that already have the provider AND profile label set
-			predicate.Not(predicate.And(
-				ctrlutils.HasLabelPredicate(clustersv1alpha1.ProviderLabel, ""),
-				ctrlutils.HasLabelPredicate(clustersv1alpha1.ProfileLabel, ""),
-			)),
+			// unless the TTL is set, in which case we need to check for expiration
+			predicate.Or(
+				predicate.Not(predicate.And(
+					ctrlutils.HasLabelPredicate(clustersv1alpha1.ProviderLabel, ""),
+					ctrlutils.HasLabelPredicate(clustersv1alpha1.ProfileLabel, ""),
+				)),
+				hasTTLPredicate(),
+			),
 			ctrlutils.LabelSelectorPredicate(r.Config.Selector.Completed()),
 			predicate.Or(
 				ctrlutils.GotAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueReconcile),
@@ -202,4 +239,45 @@ func (r *AccessRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			predicate.Not(ctrlutils.HasAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore)),
 		)).
 		Complete(r)
+}
+
+// hasTTLPredicate returns true if the AccessRequest is not in deletion and has a TTL set.
+func hasTTLPredicate() predicate.Predicate {
+	hasTTL := func(obj client.Object) bool {
+		ar, ok := obj.(*clustersv1alpha1.AccessRequest)
+		if !ok {
+			return false
+		}
+		if !ar.DeletionTimestamp.IsZero() {
+			return false // no need to reconcile already deleted objects here
+		}
+		return ar.Spec.TTL != nil
+	}
+	return predicate.Funcs{
+		UpdateFunc: func(tue event.TypedUpdateEvent[client.Object]) bool {
+			return hasTTL(tue.ObjectNew)
+		},
+		CreateFunc: func(tce event.TypedCreateEvent[client.Object]) bool {
+			return hasTTL(tce.Object)
+		},
+		DeleteFunc: func(tde event.TypedDeleteEvent[client.Object]) bool {
+			return false
+		},
+		GenericFunc: func(tge event.TypedGenericEvent[client.Object]) bool {
+			return hasTTL(tge.Object)
+		},
+	}
+}
+
+// hasExpiredTTL returns true if the AccessRequest has a TTL set and the TTL has expired.
+// If the AccessRequest has a TTL set, the second return value is the expiration time, otherwise it is the zero time.
+func hasExpiredTTL(ar *clustersv1alpha1.AccessRequest) (bool, time.Time) {
+	if ar == nil {
+		return false, time.Time{}
+	}
+	if ar.Spec.TTL == nil {
+		return false, time.Time{}
+	}
+	expirationTime := ar.GetCreationTimestamp().Add(ar.Spec.TTL.Duration)
+	return time.Now().After(expirationTime), expirationTime
 }

@@ -1,0 +1,24 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: mc-access-ttl
+  namespace: bar
+  labels:
+    clusters.openmcp.cloud/profile: default
+    clusters.openmcp.cloud/provider: asdf
+  creationTimestamp: "2025-01-01T00:00:00Z"
+spec:
+  ttl: "1h"
+  clusterRef:
+    name: my-cluster
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"
+status:
+  phase: Pending
