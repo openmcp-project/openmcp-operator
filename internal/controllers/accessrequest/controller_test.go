@@ -1,9 +1,13 @@
 package accessrequest_test
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -143,6 +147,55 @@ var _ = Describe("AccessRequest Controller", func() {
 		Expect(ar.Labels).ToNot(HaveKey(clustersv1alpha1.ProviderLabel))
 		Expect(ar.Labels).ToNot(HaveKeyWithValue(clustersv1alpha1.ProfileLabel, "default"))
 		Expect(ar.Spec.ClusterRef).To(BeNil())
+	})
+
+	Context("TTL", func() {
+
+		It("should not delete an AccessRequest without TTL", func() {
+			env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-06").WithReconcilerConstructor(arReconciler).Build()
+			ar := &clustersv1alpha1.AccessRequest{}
+			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mc-access-no-ttl", "bar"), ar)).To(Succeed())
+			arCopy := ar.DeepCopy()
+			env.ShouldReconcile(testutils.RequestFromObject(ar))
+			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			Expect(ar.Labels).To(Equal(arCopy.Labels))
+			Expect(ar.Annotations).To(Equal(arCopy.Annotations))
+			Expect(ar.DeletionTimestamp.IsZero()).To(BeTrue())
+			Expect(ar.Spec).To(Equal(arCopy.Spec))
+			Expect(ar.Status).To(Equal(arCopy.Status))
+		})
+
+		It("should delete an AccessRequest with expired TTL", func() {
+			env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-06").WithReconcilerConstructor(arReconciler).Build()
+			ar := &clustersv1alpha1.AccessRequest{}
+			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mc-access-ttl", "bar"), ar)).To(Succeed())
+			env.ShouldReconcile(testutils.RequestFromObject(ar))
+			Eventually(func() error {
+				return env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)
+			}).Should(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		})
+
+		It("should not delete an AccessRequest with non-expired TTL", func() {
+			env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-06").WithReconcilerConstructor(arReconciler).Build()
+			ar := &clustersv1alpha1.AccessRequest{}
+			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mc-access-ttl", "bar"), ar)).To(Succeed())
+
+			// modify creation timestamp to be recent so that TTL is not expired yet
+			now := metav1.Now()
+			ar.SetCreationTimestamp(now)
+			Expect(env.Client().Update(env.Ctx, ar)).To(Succeed())
+
+			arCopy := ar.DeepCopy()
+			rr := env.ShouldReconcile(testutils.RequestFromObject(ar))
+			Expect(rr.RequeueAfter).To(BeNumerically("~", time.Hour+time.Second, time.Second))
+			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			Expect(ar.Labels).To(Equal(arCopy.Labels))
+			Expect(ar.Annotations).To(Equal(arCopy.Annotations))
+			Expect(ar.DeletionTimestamp.IsZero()).To(BeTrue())
+			Expect(ar.Spec).To(Equal(arCopy.Spec))
+			Expect(ar.Status).To(Equal(arCopy.Status))
+		})
+
 	})
 
 })
