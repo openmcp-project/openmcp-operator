@@ -66,6 +66,9 @@ const (
 	DeleteWithoutRequestsLabel = GroupName + "/delete-without-requests"
 	// ProfileLabel is used to make the profile information easily accessible on AccessRequests.
 	ProfileLabel = GroupName + "/profile"
+	// RandomizeClusterNameLabel can be set to "true" on ClusterRequests to have the corresponding Cluster get a randomized name.
+	// This is meant as a tool for operators to resolve conflicts, which itself should be rare.
+	RandomizeClusterNameLabel = GroupName + "/randomize-cluster-name"
 )
 
 const (

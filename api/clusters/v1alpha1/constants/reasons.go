@@ -25,4 +25,6 @@ const (
 	ReasonWaitingForServices = "WaitingForServices"
 	// ReasonWaitingForServiceDeletion indicates that something is waiting for a service to be deleted.
 	ReasonWaitingForServiceDeletion = "WaitingForServiceDeletion"
+	// ReasonClusterConflict indicates that another cluster with the same name and namespace conflicts with the desired one.
+	ReasonClusterConflict = "ClusterConflict"
 )
