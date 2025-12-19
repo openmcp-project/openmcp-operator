@@ -196,6 +196,16 @@ While probably not required for most cases, there might be some situations in wh
 
 **Important:** To ensure consistent behavior, different calls of `Reconcile`/`ReconcileDelete` for the same request must always be called with the same additional arguments and any call to one of the getter methods for this request must also be given the same additional arguments.
 
+#### Updating AccessRequests
+
+In most scenarios, the permissions that are required for a specific cluster are static and don't need to be updated dynamically. There are some cases where this is required, though. To achieve this, an `Update` method is available at the `ClusterReconciler`. It can be passed in one (or more, but that is rarely useful) updates to apply to an existing registration. This will cause the corresponding `AccessRequest` to be modified during the next `Reconcile` of the reconciler.
+
+```go
+err := rec.Update("foobar", advanced.UpdateTokenAccess(myNewTokenConfig))
+```
+
+Note that this mechanism can also cause the `AccessRequest` to be deleted, if all access variants (token/oidc) are set to `nil`.
+
 #### Testing Environments
 
 The resources created by the ClusterAccess Reconciler rely on other parts of the openmcp architecture, especially the scheduler (for `ClusterRequest`s) and a ClusterProvider (for `Cluster`s from `ClusterRequest`s and for `AccessRequest`s) which are not always present when testing a controller that uses this library, especially for unit tests. To avoid having multiple code paths in the controller, the ClusterAccess Reconciler offers some form of extension hook mechanism that allows to mock the actions that are usually taken over by other controllers.
