@@ -503,8 +503,8 @@ func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Reques
 				}); err != nil {
 					return reconcile.Result{}, fmt.Errorf("unable to create or update AccessRequest '%s/%s': %w", ar.Namespace, ar.Name, err)
 				}
-				if !ar.Status.IsGranted() {
-					rlog.Info("Waiting for AccessRequest to be granted", "arName", ar.Name, "arNamespace", ar.Namespace)
+				if !ar.Status.IsGranted() || ar.Status.ObservedGeneration != ar.Generation {
+					rlog.Info("Waiting for AccessRequest to be granted and up-to-date", "arName", ar.Name, "arNamespace", ar.Namespace)
 					if fc := r.fakingCallbacks[FakingCallback_WaitingForAccessRequestReadiness]; fc != nil {
 						rlog.Info("Executing faking callback, this message should only appear in unit tests", "key", FakingCallback_WaitingForAccessRequestReadiness)
 						if err := fc(rctx, r.platformClusterClient, FakingCallback_WaitingForAccessRequestReadiness, &request, cr, ar, nil, nil); err != nil {
