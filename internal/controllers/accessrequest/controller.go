@@ -21,6 +21,7 @@ import (
 	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
+	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
@@ -75,6 +76,19 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 		return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("unable to get resource '%s' from cluster: %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)}
 	}
 
+	// don't act on AccessRequest if the ClusterProvider is responsible for it
+	ttlCheckOnly := false
+
+	if libutils.IsClusterProviderResponsibleForAccessRequest(ar, "") {
+		if ar.Spec.TTL != nil {
+			log.Debug("Controller is not responsible for reconciling this AccessRequest, just checking TTL expiration")
+			ttlCheckOnly = true
+		} else {
+			log.Info("ClusterProvider is responsible for AccessRequest, skipping reconciliation")
+			return ReconcileResult{}
+		}
+	}
+
 	// handle operation annotation
 	if ar.GetAnnotations() != nil {
 		op, ok := ar.GetAnnotations()[apiconst.OperationAnnotation]
@@ -84,6 +98,10 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 				log.Info("Ignoring resource due to ignore operation annotation")
 				return ReconcileResult{}
 			case apiconst.OperationAnnotationValueReconcile:
+				// ignore reconcile annotation if this is only a TTL check
+				if ttlCheckOnly {
+					break
+				}
 				log.Debug("Removing reconcile operation annotation from resource")
 				if err := ctrlutils.EnsureAnnotation(ctx, r.PlatformCluster.Client(), ar, apiconst.OperationAnnotation, "", true, ctrlutils.DELETE); err != nil {
 					return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("error removing operation annotation: %w", err), cconst.ReasonPlatformClusterInteractionProblem)}
@@ -92,14 +110,16 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 		}
 	}
 
+	rr := ReconcileResult{}
+	if !ttlCheckOnly {
+		// avoid updating the status if this reconciliation is only a TTL check
+		rr.Object = ar
+	}
+
 	// ignore AccessRequests that are in deletion
 	if !ar.GetDeletionTimestamp().IsZero() {
 		log.Info("Ignoring AccessRequest, because it is in deletion")
 		return ReconcileResult{}
-	}
-
-	rr := ReconcileResult{
-		Object: ar,
 	}
 
 	// check if TTL is set and has expired
@@ -121,6 +141,10 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 	}
 
 	// check if this reconciliation was just a TTL check and no further action is required
+	if ttlCheckOnly {
+		log.Debug("Finished TTL check reconciliation, skipping further processing")
+		return rr
+	}
 	if ctrlutils.HasLabel(ar, clustersv1alpha1.ProviderLabel) && ctrlutils.HasLabel(ar, clustersv1alpha1.ProfileLabel) && ar.Spec.ClusterRef != nil {
 		log.Info("AccessRequest already has provider and profile labels and a clusterRef, no further action required")
 		return rr
@@ -225,10 +249,9 @@ func (r *AccessRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			// ignore resources that already have the provider AND profile label set
 			// unless the TTL is set, in which case we need to check for expiration
 			predicate.Or(
-				predicate.Not(predicate.And(
-					ctrlutils.HasLabelPredicate(clustersv1alpha1.ProviderLabel, ""),
-					ctrlutils.HasLabelPredicate(clustersv1alpha1.ProfileLabel, ""),
-				)),
+				predicate.NewPredicateFuncs(func(obj client.Object) bool {
+					return !libutils.IsClusterProviderResponsibleForAccessRequest(obj.(*clustersv1alpha1.AccessRequest), "")
+				}),
 				hasTTLPredicate(),
 			),
 			ctrlutils.LabelSelectorPredicate(r.Config.Selector.Completed()),
