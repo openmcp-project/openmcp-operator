@@ -149,6 +149,29 @@ var _ = Describe("AccessRequest Controller", func() {
 		Expect(ar.Spec.ClusterRef).To(BeNil())
 	})
 
+	It("should set an already granted AccessRequest to Pending if its generation changed", func() {
+		env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-06").WithReconcilerConstructor(arReconciler).Build()
+		ar := &clustersv1alpha1.AccessRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("mc-access-granted", "bar"), ar)).To(Succeed())
+		arCopy := ar.DeepCopy()
+		env.ShouldReconcile(testutils.RequestFromObject(ar))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+		Expect(ar).To(Equal(arCopy)) // nothing should have changed, because the request was granted and the generation did not change
+
+		// modify the generation to simulate a spec change
+		ar.Generation += 1
+		Expect(env.Client().Update(env.Ctx, ar)).To(Succeed())
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+		Expect(ar.Status.Phase).To(Equal(clustersv1alpha1.REQUEST_GRANTED))
+		Expect(ar.Status.ObservedGeneration).ToNot(Equal(ar.Generation))
+
+		// reconciliation should update the observed generation and set the phase to Pending
+		env.ShouldReconcile(testutils.RequestFromObject(ar))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+		Expect(ar.Status.Phase).To(Equal(clustersv1alpha1.REQUEST_PENDING))
+		Expect(ar.Status.ObservedGeneration).To(Equal(ar.Generation))
+	})
+
 	Context("TTL", func() {
 
 		It("should not delete an AccessRequest without TTL", func() {
