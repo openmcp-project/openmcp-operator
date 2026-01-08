@@ -216,7 +216,7 @@ func FakeClusterRequestReadiness(clusterSpec *clustersv1alpha1.ClusterSpec) Faki
 // - 'fake:cluster:<cluster-namespace>/<cluster-name>' if the Cluster could be determined (should be the case most of the time)
 // - 'fake:request:<request-namespace>/<request-name>' if no Cluster could be determined
 // This function also adds a 'clusterprovider' finalizer to the AccessRequest, if not already present.
-// The callback is a no-op if the AccessRequest is already granted (Secret reference and existence are not checked in this case).
+// The callback is a no-op if the AccessRequest is already granted and its generation has not changed (Secret reference and existence are not checked in this case).
 // It returns an error if the AccessRequest is nil.
 //
 // The returned callback is meant to be used with the key stored in FakingCallback_WaitingForAccessRequestReadiness.
@@ -225,7 +225,7 @@ func FakeAccessRequestReadiness() FakingCallback {
 		if ar == nil {
 			return fmt.Errorf("AccessRequest is nil")
 		}
-		if ar.Status.IsGranted() {
+		if ar.Status.IsGranted() && ar.Status.ObservedGeneration == ar.Generation {
 			// already granted, nothing to do
 			return nil
 		}

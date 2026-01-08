@@ -3,6 +3,7 @@ package advanced_test
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -18,8 +19,10 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
@@ -356,121 +359,195 @@ var _ = Describe("Advanced Cluster Access", func() {
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(c), c)).To(Succeed())
 	})
 
-	It("should update AccessRequests correctly", func() {
-		env := defaultTestSetup("testdata", "test-01")
-		rec := defaultClusterAccessReconciler(env, "foo")
-		oidc := &clustersv1alpha1.OIDCConfig{
-			OIDCProviderConfig: commonapi.OIDCProviderConfig{
-				Name:          "my-oidc",
-				Issuer:        "https://example.com/oidc",
-				ClientID:      "my-client-id",
-				UsernameClaim: "email",
-				GroupsClaim:   "groups",
-				ExtraScopes:   []string{"scope1", "scope2"},
-				RoleBindings: []commonapi.RoleBindings{
-					{
-						Subjects: []rbacv1.Subject{
-							{
-								Kind: rbacv1.UserKind,
-								Name: "user1",
-							},
-						},
-						RoleRefs: []commonapi.RoleRef{
-							{
-								Name: "my-cluster-admin",
-								Kind: "ClusterRole",
-							},
-						},
-					},
-				},
-			},
-			Roles: []clustersv1alpha1.PermissionsRequest{
-				{
-					Name: "my-custom-admin",
-					Rules: []rbacv1.PolicyRule{
+	Context("Updates", func() {
+
+		It("should update AccessRequests correctly", func() {
+			env := defaultTestSetup("testdata", "test-01")
+			rec := defaultClusterAccessReconciler(env, "foo")
+			oidc := &clustersv1alpha1.OIDCConfig{
+				OIDCProviderConfig: commonapi.OIDCProviderConfig{
+					Name:          "my-oidc",
+					Issuer:        "https://example.com/oidc",
+					ClientID:      "my-client-id",
+					UsernameClaim: "email",
+					GroupsClaim:   "groups",
+					ExtraScopes:   []string{"scope1", "scope2"},
+					RoleBindings: []commonapi.RoleBindings{
 						{
-							APIGroups: []string{"*"},
-							Resources: []string{"*"},
-							Verbs:     []string{"*"},
+							Subjects: []rbacv1.Subject{
+								{
+									Kind: rbacv1.UserKind,
+									Name: "user1",
+								},
+							},
+							RoleRefs: []commonapi.RoleRef{
+								{
+									Name: "my-cluster-admin",
+									Kind: "ClusterRole",
+								},
+							},
 						},
 					},
 				},
-			},
-		}
-		rec.Register(advanced.ExistingCluster("foobar", "fb", advanced.StaticReferenceGenerator(&commonapi.ObjectReference{
-			Name:      "cluster-01",
-			Namespace: "test",
-		})).WithOIDCAccess(oidc).Build())
-		req := testutils.RequestFromStrings("bar", "baz")
-
-		Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
-
-		// check AccessRequest
-		ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
-		Expect(err).ToNot(HaveOccurred())
-		Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
-		namespace, err := advanced.DefaultNamespaceGenerator(req)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(ar.Namespace).To(Equal(namespace))
-		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedByLabel, "foo"))
-		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, req.Namespace+"."+req.Name+".foobar"))
-		Expect(ar.Spec.ClusterRef.Name).To(Equal("cluster-01"))
-		Expect(ar.Spec.ClusterRef.Namespace).To(Equal("test"))
-		Expect(ar.Spec.Token).To(BeNil())
-		Expect(ar.Spec.OIDC).ToNot(BeNil())
-		Expect(ar.Spec.OIDC).To(Equal(oidc))
-		arCopy := ar.DeepCopy()
-		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
-		Expect(ar).To(Equal(arCopy)) // the method should have returned the up-to-date object
-
-		// update AccessRequest to use Token access instead		permission := clustersv1alpha1.PermissionsRequest{
-		permission := clustersv1alpha1.PermissionsRequest{
-			Name: "my-custom-admin",
-			Rules: []rbacv1.PolicyRule{
-				{
-					APIGroups: []string{"*"},
-					Resources: []string{"*"},
-					Verbs:     []string{"*"},
+				Roles: []clustersv1alpha1.PermissionsRequest{
+					{
+						Name: "my-custom-admin",
+						Rules: []rbacv1.PolicyRule{
+							{
+								APIGroups: []string{"*"},
+								Resources: []string{"*"},
+								Verbs:     []string{"*"},
+							},
+						},
+					},
 				},
-			},
-		}
-		roleRef := commonapi.RoleRef{
-			Name: "cluster-admin",
-			Kind: "ClusterRole",
-		}
-		Expect(rec.Update("foobar", advanced.UpdateTokenAccess(&clustersv1alpha1.TokenConfig{
-			Permissions: []clustersv1alpha1.PermissionsRequest{permission},
-			RoleRefs:    []commonapi.RoleRef{roleRef},
-		}))).To(Succeed())
+			}
+			rec.Register(advanced.ExistingCluster("foobar", "fb", advanced.StaticReferenceGenerator(&commonapi.ObjectReference{
+				Name:      "cluster-01",
+				Namespace: "test",
+			})).WithOIDCAccess(oidc).Build())
+			req := testutils.RequestFromStrings("bar", "baz")
 
-		Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
+			Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
 
-		// check AccessRequest
-		ar, err = rec.AccessRequest(env.Ctx, req, "foobar")
-		Expect(err).ToNot(HaveOccurred())
-		Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
-		Expect(ar.Namespace).To(Equal(namespace))
-		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedByLabel, "foo"))
-		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, req.Namespace+"."+req.Name+".foobar"))
-		Expect(ar.Spec.ClusterRef.Name).To(Equal("cluster-01"))
-		Expect(ar.Spec.ClusterRef.Namespace).To(Equal("test"))
-		Expect(ar.Spec.Token).ToNot(BeNil())
-		Expect(ar.Spec.Token.Permissions).To(ConsistOf(permission))
-		Expect(ar.Spec.Token.RoleRefs).To(ConsistOf(roleRef))
-		Expect(ar.Spec.OIDC).To(BeNil())
-		arCopy = ar.DeepCopy()
-		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
-		Expect(ar).To(Equal(arCopy)) // the method should have returned the up-to-date object
+			// check AccessRequest
+			ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
+			namespace, err := advanced.DefaultNamespaceGenerator(req)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ar.Namespace).To(Equal(namespace))
+			Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedByLabel, "foo"))
+			Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, req.Namespace+"."+req.Name+".foobar"))
+			Expect(ar.Spec.ClusterRef.Name).To(Equal("cluster-01"))
+			Expect(ar.Spec.ClusterRef.Namespace).To(Equal("test"))
+			Expect(ar.Spec.Token).To(BeNil())
+			Expect(ar.Spec.OIDC).ToNot(BeNil())
+			Expect(ar.Spec.OIDC).To(Equal(oidc))
+			arCopy := ar.DeepCopy()
+			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			Expect(ar).To(Equal(arCopy)) // the method should have returned the up-to-date object
 
-		// remove Token access and validate that AccessRequest is deleted
-		Expect(rec.Update("foobar", advanced.UpdateTokenAccess(nil))).To(Succeed())
+			// update AccessRequest to use Token access instead of OIDC
+			permission := clustersv1alpha1.PermissionsRequest{
+				Name: "my-custom-admin",
+				Rules: []rbacv1.PolicyRule{
+					{
+						APIGroups: []string{"*"},
+						Resources: []string{"*"},
+						Verbs:     []string{"*"},
+					},
+				},
+			}
+			roleRef := commonapi.RoleRef{
+				Name: "cluster-admin",
+				Kind: "ClusterRole",
+			}
+			Expect(rec.Update("foobar", advanced.UpdateTokenAccess(&clustersv1alpha1.TokenConfig{
+				Permissions: []clustersv1alpha1.PermissionsRequest{permission},
+				RoleRefs:    []commonapi.RoleRef{roleRef},
+			}))).To(Succeed())
 
-		Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
+			Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
 
-		// check AccessRequest
-		_, err = rec.AccessRequest(env.Ctx, req, "foobar")
-		Expect(err).To(HaveOccurred()) // no access was requested, so this should fail
-		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+			// check AccessRequest
+			ar, err = rec.AccessRequest(env.Ctx, req, "foobar")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
+			Expect(ar.Namespace).To(Equal(namespace))
+			Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedByLabel, "foo"))
+			Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, req.Namespace+"."+req.Name+".foobar"))
+			Expect(ar.Spec.ClusterRef.Name).To(Equal("cluster-01"))
+			Expect(ar.Spec.ClusterRef.Namespace).To(Equal("test"))
+			Expect(ar.Spec.Token).ToNot(BeNil())
+			Expect(ar.Spec.Token.Permissions).To(ConsistOf(permission))
+			Expect(ar.Spec.Token.RoleRefs).To(ConsistOf(roleRef))
+			Expect(ar.Spec.OIDC).To(BeNil())
+			arCopy = ar.DeepCopy()
+			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(Succeed())
+			Expect(ar).To(Equal(arCopy)) // the method should have returned the up-to-date object
+
+			// remove Token access and validate that AccessRequest is deleted
+			Expect(rec.Update("foobar", advanced.UpdateTokenAccess(nil))).To(Succeed())
+
+			Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
+
+			// check AccessRequest
+			_, err = rec.AccessRequest(env.Ctx, req, "foobar")
+			Expect(err).To(HaveOccurred()) // no access was requested, so this should fail
+			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(ar), ar)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		})
+
+		It("should requeue if the AccessRequest is ready but its generation has changed", func() {
+			scheme := install.InstallOperatorAPIsPlatform(runtime.NewScheme())
+			env := testutils.NewEnvironmentBuilder().
+				WithFakeClient(scheme).
+				WithInitObjectPath("testdata", "test-01").
+				WithDynamicObjectsWithStatus(&clustersv1alpha1.ClusterRequest{}, &clustersv1alpha1.AccessRequest{}).
+				WithFakeClientBuilderCall("WithInterceptorFuncs", interceptor.Funcs{
+					Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+						// simulate generation update on spec change
+						oldObj := obj.DeepCopyObject().(client.Object)
+						err := c.Get(ctx, client.ObjectKeyFromObject(obj), oldObj)
+						if err != nil {
+							return err
+						}
+						oldSpec := ctrlutils.GetField(oldObj, "Spec", false)
+						spec := ctrlutils.GetField(obj, "Spec", false)
+						if !reflect.DeepEqual(oldSpec, spec) {
+							obj.SetGeneration(obj.GetGeneration() + 1)
+						}
+						return c.Update(ctx, obj, opts...)
+					},
+				}).
+				Build()
+			rec := advanced.NewClusterAccessReconciler(env.Client(), "foo").
+				WithRetryInterval(100 * time.Millisecond).
+				WithFakeClientGenerator(func(ctx context.Context, kcfgData []byte, scheme *runtime.Scheme, additionalData ...any) (client.Client, error) {
+					return fake.NewClientBuilder().WithScheme(scheme).Build(), nil
+				})
+
+			permission := clustersv1alpha1.PermissionsRequest{
+				Name: "my-custom-admin",
+				Rules: []rbacv1.PolicyRule{
+					{
+						APIGroups: []string{"*"},
+						Resources: []string{"*"},
+						Verbs:     []string{"get", "list", "watch"},
+					},
+				},
+			}
+			rec.Register(advanced.ExistingCluster("foobar", "fb", advanced.StaticReferenceGenerator(&commonapi.ObjectReference{
+				Name:      "cluster-01",
+				Namespace: "test",
+			})).WithTokenAccess(&clustersv1alpha1.TokenConfig{Permissions: []clustersv1alpha1.PermissionsRequest{permission}}).Build())
+			req := testutils.RequestFromStrings("bar", "baz")
+
+			// first reconciliation should create the AccessRequest
+			expectRequeue(env.Ctx, rec, req, false)(Default)
+
+			// mock AccessRequest readiness (ignoring its secret)
+			ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
+			Expect(err).ToNot(HaveOccurred())
+			ar.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+			ar.Status.ObservedGeneration = ar.Generation
+			Expect(env.Client().Status().Update(env.Ctx, ar)).To(Succeed())
+
+			// second reconciliation should not requeue
+			expectNoRequeue(env.Ctx, rec, req, false)(Default)
+
+			// update AccessRequest by changing its Token permissions
+			permission.Rules[0].Verbs = []string{"*"}
+			Expect(rec.Update("foobar", advanced.UpdateTokenAccess(&clustersv1alpha1.TokenConfig{Permissions: []clustersv1alpha1.PermissionsRequest{permission}}))).To(Succeed())
+			// third reconciliation should requeue due to generation change
+			rr, err := rec.Reconcile(env.Ctx, req)
+			Expect(err).ToNot(HaveOccurred())
+			ar, err = rec.AccessRequest(env.Ctx, req, "foobar")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(ar.Status.ObservedGeneration).ToNot(Equal(ar.Generation))
+			Expect(rr.RequeueAfter).ToNot(BeZero())
+		})
+
 	})
 
 	It("should take overwritten labels into account", func() {
