@@ -1,6 +1,6 @@
 module github.com/openmcp-project/openmcp-operator
 
-go 1.25.5
+go 1.25.6
 
 //godebug default=go1.23
 
