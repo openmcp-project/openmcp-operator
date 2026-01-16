@@ -477,5 +477,17 @@ var _ = Describe("ClusterAccessManager", func() {
 
 		Expect(err).ToNot(HaveOccurred(), "should not return an error when creating/waiting for onboarding cluster access")
 		Expect(cluster).ToNot(BeNil(), "should return a valid onboarding cluster")
+
+		ar, err := manager.AccessRequest(ctx, clusterName)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ar).To(Equal(accessRequest))
+
+		cr, err := manager.ClusterRequest(ctx, clusterName)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cr).To(Equal(clusterRequest))
+
+		access, err := manager.Access(ctx, clusterName, scheme)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(access.RESTConfig()).To(Equal(cluster.RESTConfig()))
 	})
 })
