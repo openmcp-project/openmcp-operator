@@ -6,6 +6,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	providerv1alpha1 "github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
@@ -71,4 +73,57 @@ func IsClusterProviderResponsibleForAccessRequest(ar *clustersv1alpha1.AccessReq
 		return false
 	}
 	return true
+}
+
+// AccessRequestPhasePredicate returns a predicate that filters AccessRequests by their phase.
+// It is the typed version of AccessRequestPhasePredicateUntyped.
+func AccessRequestPhasePredicate(phase string) predicate.TypedPredicate[*clustersv1alpha1.AccessRequest] {
+	return &accessRequestPhasePredicate[*clustersv1alpha1.AccessRequest]{
+		phase: phase,
+		cast: func(obj *clustersv1alpha1.AccessRequest) *clustersv1alpha1.AccessRequest {
+			return obj
+		},
+	}
+}
+
+// AccessRequestPhasePredicateUntyped returns a predicate that filters AccessRequests by their phase.
+// It is the untyped version of AccessRequestPhasePredicate.
+func AccessRequestPhasePredicateUntyped(phase string) predicate.Predicate {
+	return &accessRequestPhasePredicate[client.Object]{
+		phase: phase,
+		cast: func(obj client.Object) *clustersv1alpha1.AccessRequest {
+			ar, _ := obj.(*clustersv1alpha1.AccessRequest)
+			return ar
+		},
+	}
+}
+
+type accessRequestPhasePredicate[Obj client.Object] struct {
+	phase string
+	cast  func(Obj) *clustersv1alpha1.AccessRequest
+}
+
+func (a *accessRequestPhasePredicate[Obj]) resolve(obj Obj) bool {
+	ar := a.cast(obj)
+	return ar != nil && ar.Status.Phase == a.phase
+}
+
+// Create implements predicate.TypedPredicate.
+func (a *accessRequestPhasePredicate[Obj]) Create(e event.TypedCreateEvent[Obj]) bool {
+	return a.resolve(e.Object)
+}
+
+// Delete implements predicate.TypedPredicate.
+func (a *accessRequestPhasePredicate[Obj]) Delete(e event.TypedDeleteEvent[Obj]) bool {
+	return a.resolve(e.Object)
+}
+
+// Generic implements predicate.TypedPredicate.
+func (a *accessRequestPhasePredicate[Obj]) Generic(e event.TypedGenericEvent[Obj]) bool {
+	return a.resolve(e.Object)
+}
+
+// Update implements predicate.TypedPredicate.
+func (a *accessRequestPhasePredicate[Obj]) Update(e event.TypedUpdateEvent[Obj]) bool {
+	return a.resolve(e.ObjectNew)
 }
