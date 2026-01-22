@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strings"
 	"sync"
 	"time"
 
@@ -133,7 +134,15 @@ type FakingCallback func(ctx context.Context, platformClusterClient client.Clien
 type ManagedLabelGenerator func(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string, map[string]string)
 
 func DefaultManagedLabelGenerator(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string, map[string]string) {
-	return controllerName, fmt.Sprintf("%s.%s.%s", req.Namespace, req.Name, reg.ID()), nil
+	sb := strings.Builder{}
+	if req.Namespace != "" {
+		sb.WriteString(req.Namespace)
+		sb.WriteString(".")
+	}
+	sb.WriteString(req.Name)
+	sb.WriteString(".")
+	sb.WriteString(reg.ID())
+	return controllerName, strings.Trim(sb.String(), ". "), nil
 }
 
 // FakeClientGenerator is a function that generates a fake client.Client.
