@@ -26,7 +26,10 @@ import (
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
-const ControllerName = "AccessRequest"
+const (
+	ControllerName      = "AccessRequest"
+	allClusterProviders = ""
+)
 
 func NewAccessRequestReconciler(platformCluster *clusters.Cluster, cfg *config.AccessRequestConfig) *AccessRequestReconciler {
 	if cfg == nil {
@@ -79,7 +82,7 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 	// don't act on AccessRequest if the ClusterProvider is responsible for it
 	ttlCheckOnly := false
 
-	if libutils.IsClusterProviderResponsibleForAccessRequest(ar, "") {
+	if libutils.IsClusterProviderResponsibleForAccessRequest(ar, allClusterProviders) {
 		if ar.Spec.TTL != nil {
 			log.Debug("Controller is not responsible for reconciling this AccessRequest, just checking TTL expiration")
 			ttlCheckOnly = true
