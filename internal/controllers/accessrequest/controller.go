@@ -84,7 +84,7 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 			log.Debug("Controller is not responsible for reconciling this AccessRequest, just checking TTL expiration")
 			ttlCheckOnly = true
 		} else {
-			log.Info("ClusterProvider is responsible for AccessRequest, skipping reconciliation")
+			log.Info("AccessRequest controller is not responsible for AccessRequest, skipping reconciliation")
 			return ReconcileResult{}
 		}
 	}
