@@ -250,6 +250,19 @@ type Manager interface {
 	// refType is either 'Cluster' or 'ClusterRequest' and determines what ref references.
 	// permissions are the permissions to request for the AccessRequest.
 	WaitForClusterAccess(ctx context.Context, localName string, scheme *runtime.Scheme, ref *commonapi.ObjectReference, refType ClusterReferenceType, permissions []clustersv1alpha1.PermissionsRequest) (*clusters.Cluster, *clustersv1alpha1.AccessRequest, error)
+
+	// Access returns an internal Cluster object granting access to the cluster.
+	// Only works after CreateAndWaitForCluster or WaitForClusterAccess returned successfully for the given clusterName.
+	Access(ctx context.Context, clusterName string, scheme *runtime.Scheme) (*clusters.Cluster, error)
+	// AccessRequest fetches the AccessRequest object for the cluster.
+	// Only works after CreateAndWaitForCluster or WaitForClusterAccess returned successfully for the given clusterName.
+	AccessRequest(ctx context.Context, clusterName string) (*clustersv1alpha1.AccessRequest, error)
+	// ClusterRequest fetches the ClusterRequest object for the cluster.
+	// Only works after CreateAndWaitForCluster or WaitForClusterAccess returned successfully for the given clusterName.
+	ClusterRequest(ctx context.Context, clusterName string) (*clustersv1alpha1.ClusterRequest, error)
+	// Cluster fetches the external Cluster object for the cluster.
+	// Only works after CreateAndWaitForCluster or WaitForClusterAccess returned successfully for the given clusterName.
+	Cluster(ctx context.Context, clusterName string) (*clustersv1alpha1.Cluster, error)
 }
 
 type managerImpl struct {
@@ -386,7 +399,7 @@ func (m *managerImpl) WaitForClusterAccess(ctx context.Context, localName string
 		return nil, ar, fmt.Errorf("failed to wait for AccessRequest: %w", err)
 	}
 
-	cl, err := createClusterForAccessRequest(ctx, m.platformClusterClient, clustersv1alpha1.PURPOSE_ONBOARDING, scheme, ar)
+	cl, err := createClusterForAccessRequest(ctx, m.platformClusterClient, localName, scheme, ar)
 	return cl, ar, err
 }
 
@@ -398,7 +411,7 @@ func (m *managerImpl) wait(ctx context.Context, test func(ctx context.Context) (
 }
 
 func createClusterForAccessRequest(ctx context.Context, platformClusterClient client.Client,
-	purpose string, scheme *runtime.Scheme, accessRequest *clustersv1alpha1.AccessRequest) (*clusters.Cluster, error) {
+	clusterName string, scheme *runtime.Scheme, accessRequest *clustersv1alpha1.AccessRequest) (*clusters.Cluster, error) {
 
 	if accessRequest.Status.SecretRef == nil {
 		return nil, fmt.Errorf("access request %q has no accessSecret reference", accessRequest.Name)
@@ -425,13 +438,71 @@ func createClusterForAccessRequest(ctx context.Context, platformClusterClient cl
 		return nil, fmt.Errorf("failed to create rest config from kubeconfig bytes: %w", err)
 	}
 
-	c := clusters.New(purpose).WithRESTConfig(config)
+	c := clusters.New(clusterName).WithRESTConfig(config)
 
 	if err = c.InitializeClient(scheme); err != nil {
-		return nil, fmt.Errorf("failed to initialize client for purpose %q: %w", purpose, err)
+		return nil, fmt.Errorf("failed to initialize client for cluster %q: %w", clusterName, err)
 	}
 
 	return c, nil
+}
+
+func (m *managerImpl) Access(ctx context.Context, clusterName string, scheme *runtime.Scheme) (*clusters.Cluster, error) {
+	ar, err := m.AccessRequest(ctx, clusterName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get AccessRequest: %w", err)
+	}
+	access, err := createClusterForAccessRequest(ctx, m.platformClusterClient, clusterName, scheme, ar)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create access for AccessRequest: %w", err)
+	}
+	return access, nil
+}
+
+func (m *managerImpl) AccessRequest(ctx context.Context, clusterName string) (*clustersv1alpha1.AccessRequest, error) {
+	ar := &clustersv1alpha1.AccessRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      StableRequestNameFromLocalName(m.controllerName, clusterName),
+			Namespace: m.controllerNamespace,
+		},
+	}
+	if err := m.platformClusterClient.Get(ctx, client.ObjectKeyFromObject(ar), ar); err != nil {
+		return nil, fmt.Errorf("failed to get AccessRequest: %w", err)
+	}
+	return ar, nil
+}
+
+func (m *managerImpl) ClusterRequest(ctx context.Context, clusterName string) (*clustersv1alpha1.ClusterRequest, error) {
+	cr := &clustersv1alpha1.ClusterRequest{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      StableRequestNameFromLocalName(m.controllerName, clusterName),
+			Namespace: m.controllerNamespace,
+		},
+	}
+	if err := m.platformClusterClient.Get(ctx, client.ObjectKeyFromObject(cr), cr); err != nil {
+		return nil, fmt.Errorf("failed to get ClusterRequest: %w", err)
+	}
+	return cr, nil
+}
+
+func (m *managerImpl) Cluster(ctx context.Context, clusterName string) (*clustersv1alpha1.Cluster, error) {
+	cr, err := m.ClusterRequest(ctx, clusterName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ClusterRequest: %w", err)
+	}
+	if cr.Status.Cluster == nil {
+		return nil, fmt.Errorf("ClusterRequest '%s/%s' does not reference a Cluster", cr.Namespace, cr.Name)
+	}
+	cluster := &clustersv1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cr.Status.Cluster.Name,
+			Namespace: cr.Status.Cluster.Namespace,
+		},
+	}
+	if err := m.platformClusterClient.Get(ctx, client.ObjectKeyFromObject(cluster), cluster); err != nil {
+		return nil, fmt.Errorf("failed to get Cluster: %w", err)
+	}
+	return cluster, nil
 }
 
 type clusterRequestMutator struct {
