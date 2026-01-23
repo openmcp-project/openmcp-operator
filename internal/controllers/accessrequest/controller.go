@@ -259,6 +259,7 @@ func (r *AccessRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			),
 			ctrlutils.LabelSelectorPredicate(r.Config.Selector.Completed()),
 			predicate.Or(
+				predicate.GenerationChangedPredicate{},
 				ctrlutils.GotAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueReconcile),
 				ctrlutils.LostAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore),
 			),
