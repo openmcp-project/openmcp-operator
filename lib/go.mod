@@ -5,7 +5,7 @@ go 1.25.6
 replace github.com/openmcp-project/openmcp-operator/api => ../api
 
 require (
-	github.com/onsi/ginkgo/v2 v2.27.4
+	github.com/onsi/ginkgo/v2 v2.27.5
 	github.com/onsi/gomega v1.39.0
 	github.com/openmcp-project/controller-utils v0.24.0
 	github.com/openmcp-project/openmcp-operator/api v0.17.1
