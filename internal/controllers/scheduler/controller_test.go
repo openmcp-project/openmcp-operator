@@ -580,14 +580,7 @@ var _ = Describe("Scheduler", func() {
 			return apierrors.IsNotFound(err)
 		}, 3).Should(BeTrue(), "Cluster should be deleted")
 
-		// reconciliation should remove the request status and set it to pending
-		rr := env.ShouldReconcile(testutils.RequestFromObject(req))
-		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
-		Expect(req.Status.Cluster).To(BeNil())
-		Expect(req.Status.Phase).To(Equal(clustersv1alpha1.REQUEST_PENDING))
-		Expect(rr.RequeueAfter).ToNot(BeZero(), "RequeueAfter should be set")
-
-		// reconcile again, this should re-create the cluster
+		// reconciliation should recreate the cluster
 		env.ShouldReconcile(testutils.RequestFromObject(req))
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
 		Expect(req.Status.Cluster).ToNot(BeNil())
