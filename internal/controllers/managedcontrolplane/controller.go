@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -41,7 +41,7 @@ import (
 
 const ControllerName = "ManagedControlPlane"
 
-func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboardingCluster *clusters.Cluster, eventRecorder record.EventRecorder, cfg *config.ManagedControlPlaneConfig) (*ManagedControlPlaneReconciler, error) {
+func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboardingCluster *clusters.Cluster, eventRecorder events.EventRecorder, cfg *config.ManagedControlPlaneConfig) (*ManagedControlPlaneReconciler, error) {
 	if cfg == nil {
 		cfg = &config.ManagedControlPlaneConfig{}
 		if err := cfg.Default(nil); err != nil {
@@ -61,7 +61,7 @@ type ManagedControlPlaneReconciler struct {
 	PlatformCluster   *clusters.Cluster
 	OnboardingCluster *clusters.Cluster
 	Config            *config.ManagedControlPlaneConfig
-	eventRecorder     record.EventRecorder
+	eventRecorder     events.EventRecorder
 	sr                *smartrequeue.Store
 }
 
