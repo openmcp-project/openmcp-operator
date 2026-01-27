@@ -2,7 +2,6 @@ package utils_test
 
 import (
 	"fmt"
-	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -15,11 +14,6 @@ const (
 	onboardingName      = "foo"
 	onboardingNamespace = "foo"
 )
-
-func TestUtils(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Utils Test Suite")
-}
 
 var _ = Describe("Utils", func() {
 	Context("StableRequestNamespace", func() {
