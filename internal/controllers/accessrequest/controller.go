@@ -119,28 +119,25 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 		rr.Object = ar
 	}
 
-	// ignore AccessRequests that are in deletion
-	if !ar.GetDeletionTimestamp().IsZero() {
-		log.Info("Ignoring AccessRequest, because it is in deletion")
-		return ReconcileResult{}
-	}
-
 	// check if TTL is set and has expired
 	if ar.Spec.TTL != nil {
 		isExpired, expirationTime := hasExpiredTTL(ar)
 		if isExpired {
-			log.Info("AccessRequest TTL has expired, deleting AccessRequest", "expirationTime", expirationTime, "creationTime", ar.GetCreationTimestamp(), "ttl", ar.Spec.TTL.Duration)
-			if err := r.PlatformCluster.Client().Delete(ctx, ar); err != nil {
-				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error deleting AccessRequest after TTL expiration: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+			if ar.DeletionTimestamp.IsZero() {
+				log.Info("AccessRequest TTL has expired, deleting AccessRequest", "expirationTime", expirationTime, "creationTime", ar.GetCreationTimestamp(), "ttl", ar.Spec.TTL.Duration)
+				if err := r.PlatformCluster.Client().Delete(ctx, ar); err != nil {
+					rr.ReconcileError = errutils.WithReason(fmt.Errorf("error deleting AccessRequest after TTL expiration: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+					return rr
+				}
 				return rr
+			} else {
+				log.Debug("AccessRequest TTL has expired, but AccessRequest is already in deletion")
 			}
-			// don't update the status after deletion, could become a race condition
-			rr.Object = nil
-			return rr
+		} else {
+			log.Debug("AccessRequest TTL not yet expired", "expirationTime", expirationTime)
+			// compute requeue after duration, which is the remaining time until expiration plus one second
+			rr.Result.RequeueAfter = time.Until(expirationTime) + time.Second
 		}
-		log.Debug("AccessRequest TTL not yet expired", "expirationTime", expirationTime)
-		// compute requeue after duration, which is the remaining time until expiration plus one second
-		rr.Result.RequeueAfter = time.Until(expirationTime) + time.Second
 	}
 
 	// check if this reconciliation was just a TTL check and no further action is required
