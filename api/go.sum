@@ -69,8 +69,8 @@ github.com/onsi/ginkgo/v2 v2.27.5 h1:ZeVgZMx2PDMdJm/+w5fE/OyG6ILo1Y3e+QX4zSR0zTE
 github.com/onsi/ginkgo/v2 v2.27.5/go.mod h1:ArE1D/XhNXBXCBkKOLkbsb2c81dQHCRcF5zwn/ykDRo=
 github.com/onsi/gomega v1.39.0 h1:y2ROC3hKFmQZJNFeGAMeHZKkjBL65mIZcvrLQBF9k6Q=
 github.com/onsi/gomega v1.39.0/go.mod h1:ZCU1pkQcXDO5Sl9/VVEGlDyp+zm0m1cmeG5TOzLgdh4=
-github.com/openmcp-project/controller-utils v0.25.1 h1:shITEMIiXNGnwM/Rnq8Wb519XCUlC60V9Yo35maMA4g=
-github.com/openmcp-project/controller-utils v0.25.1/go.mod h1:ftJBSIpOgL3xXo8NctuK3WcvAwxNtaOupBSNHkArrGY=
+github.com/openmcp-project/controller-utils v0.25.2 h1:Q+niT4DXFK0ObxcxgLQCSGG9C1ZrtJK6YXqK6jr+cbs=
+github.com/openmcp-project/controller-utils v0.25.2/go.mod h1:F26KaZ/OIlsUW3NcPecdzznDVlUjJWet+AIYedTa9hc=
 github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
