@@ -90,3 +90,8 @@ func init() {
 func (cr *ClusterRequest) FinalizerForCluster() string {
 	return RequestFinalizerOnClusterPrefix + string(cr.UID)
 }
+
+// GetPurposes implements the ObjectWithPurposes interface.
+func (cr *ClusterRequest) GetPurposes() []string {
+	return []string{cr.Spec.Purpose}
+}

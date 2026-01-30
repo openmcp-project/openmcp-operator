@@ -136,3 +136,8 @@ func (c *Cluster) GetRequestUIDs() sets.Set[string] {
 	}
 	return res
 }
+
+// GetPurposes implements the ObjectWithPurposes interface.
+func (c *Cluster) GetPurposes() []string {
+	return c.Spec.Purposes
+}
