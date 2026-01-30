@@ -166,7 +166,10 @@ func (s *IdentityLabelSelector) Matches(obj ObjectWithPurposes) bool {
 	if s.Empty() || obj == nil {
 		return true
 	}
-	return s.IdentitySelector.Matches(obj) || s.LabelSelector.Matches(obj)
+	if !s.IdentitySelector.Empty() {
+		return s.IdentitySelector.Matches(obj)
+	}
+	return s.LabelSelector.Matches(obj)
 }
 
 func (s *IdentityLabelSelector) Validate() error {
@@ -192,7 +195,10 @@ func (s *IdentityPurposeSelector) Matches(obj ObjectWithPurposes) bool {
 	if s.Empty() || obj == nil {
 		return true
 	}
-	return s.IdentitySelector.Matches(obj) || s.PurposeSelector.Matches(obj)
+	if !s.IdentitySelector.Empty() {
+		return s.IdentitySelector.Matches(obj)
+	}
+	return s.PurposeSelector.Matches(obj)
 }
 
 func (s *IdentityPurposeSelector) Validate() error {
