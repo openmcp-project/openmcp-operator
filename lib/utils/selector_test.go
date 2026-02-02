@@ -1011,7 +1011,3 @@ var _ = Describe("Cluster Selector Tests", func() {
 	})
 
 })
-
-var _ = Describe("Cluster Selector Predicate Tests", func() {
-
-})
