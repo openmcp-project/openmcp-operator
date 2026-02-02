@@ -11,6 +11,7 @@
 ## Libraries
 
 - [The ClusterAccess Library](libraries/clusteraccess.md)
+- [Cluster Selectors](libraries/selectors.md)
 
 ## Resources
 
