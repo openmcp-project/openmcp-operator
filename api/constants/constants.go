@@ -18,6 +18,8 @@ const (
 	ManagedByLabel = OpenMCPGroupName + "/managed-by"
 	// ManagedPurposeLabel is used to indicate the purpose of the resource.
 	ManagedPurposeLabel = OpenMCPGroupName + "/managed-purpose"
+	// EnvironmentLabel is used to indicate the environment of the resource.
+	EnvironmentLabel = OpenMCPGroupName + "/environment"
 
 	// OnboardingNameLabel is used to store the name on the onboarding cluster of a resource.
 	OnboardingNameLabel = OpenMCPGroupName + "/onboarding-name"
