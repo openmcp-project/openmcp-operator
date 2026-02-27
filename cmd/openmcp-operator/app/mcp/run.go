@@ -26,6 +26,7 @@ import (
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
+	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 )
@@ -121,7 +122,7 @@ func (o *RunOptions) PrintRawOptions(cmd *cobra.Command) {
 }
 
 func (o *RunOptions) Complete(ctx context.Context) error {
-	if err := o.PersistentOptions.Complete(); err != nil {
+	if err := o.PersistentOptions.Complete(ctx); err != nil {
 		return err
 	}
 	if o.ProviderName == "" {
@@ -229,6 +230,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	setupLog = o.Log.WithName("setup")
 	setupLog.Info("Environment", "value", o.Environment)
 	setupLog.Info("Provider name", "value", o.ProviderName)
+	ctx = logging.NewContext(ctx, setupLog)
 
 	// get access to the onboarding cluster
 	setupLog.Info("Getting access to the onboarding cluster")
@@ -295,7 +297,26 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	}
 
 	// setup MCP controller
-	mcpRec, err := managedcontrolplane.NewManagedControlPlaneReconciler(o.PlatformCluster, onboardingCluster, mgr.GetEventRecorder(managedcontrolplane.ControllerName), o.Config.ManagedControlPlane)
+	mcpConfigGetter := func(ctx context.Context) (*config.ManagedControlPlaneConfig, error) {
+		return o.Config.ManagedControlPlane, nil
+	}
+	if o.ConfigMapName != "" {
+		mcpConfigGetter = func(ctx context.Context) (*config.ManagedControlPlaneConfig, error) {
+			providerConfig, err := config.LoadFromConfigMap(ctx, o.PlatformCluster.Client(), o.ConfigMapName, providerSystemNamespace)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load config from ConfigMap: %w", err)
+			}
+			if providerConfig == nil {
+				mcpConfig := &config.ManagedControlPlaneConfig{}
+				err = mcpConfig.Default(nil)
+				return mcpConfig, err
+			}
+
+			return providerConfig.ManagedControlPlane, nil
+		}
+	}
+
+	mcpRec, err := managedcontrolplane.NewManagedControlPlaneReconciler(o.PlatformCluster, onboardingCluster, mgr.GetEventRecorder(managedcontrolplane.ControllerName), mcpConfigGetter, o.ConfigMapName)
 	if err != nil {
 		return fmt.Errorf("unable to create managedcontrolplane controller: %w", err)
 	}

@@ -84,6 +84,11 @@ func (r *ManagedControlPlaneReconciler) manageAccessRequests(ctx context.Context
 func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, platformNamespace string, cr *clustersv1alpha1.ClusterRequest, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) (map[string]*clustersv1alpha1.AccessRequest, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
+	cfg, err := r.GetConfigFunc(ctx)
+	if err != nil {
+		return nil, errutils.WithReason(fmt.Errorf("error fetching managedcontrolplane config: %w", err), cconst.ReasonConfigurationProblem)
+	}
+
 	updatedAccessRequests := map[string]*clustersv1alpha1.AccessRequest{}
 	var oidcProviders []commonapi.OIDCProviderConfig
 	var tokenProviders []corev2alpha1.TokenConfig
@@ -100,9 +105,9 @@ func (r *ManagedControlPlaneReconciler) createOrUpdateDesiredAccessRequests(ctx 
 
 		oidcProviders = make([]commonapi.OIDCProviderConfig, 0, oidcProvidersLen)
 
-		if r.Config.DefaultOIDCProvider != nil && defaultProviderRoleBindingsLen > 0 {
+		if cfg.DefaultOIDCProvider != nil && defaultProviderRoleBindingsLen > 0 {
 			// add default OIDC provider, unless it has been disabled
-			defaultOidc := r.Config.DefaultOIDCProvider.DeepCopy()
+			defaultOidc := cfg.DefaultOIDCProvider.DeepCopy()
 			defaultOidc.Name = corev2alpha1.DefaultOIDCProviderName
 			defaultOidc.RoleBindings = mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings
 			oidcProviders = append(oidcProviders, *defaultOidc)

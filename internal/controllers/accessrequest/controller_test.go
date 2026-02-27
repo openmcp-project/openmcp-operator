@@ -1,6 +1,7 @@
 package accessrequest_test
 
 import (
+	"context"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,13 +20,21 @@ import (
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	// cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	"github.com/openmcp-project/openmcp-operator/api/install"
+	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
 )
 
 var scheme = install.InstallOperatorAPIsPlatform(runtime.NewScheme())
 
 func arReconciler(c client.Client) reconcile.Reconciler {
-	return accessrequest.NewAccessRequestReconciler(clusters.NewTestClusterFromClient("platform", c), nil)
+	getter := func(ctx context.Context) (*config.AccessRequestConfig, error) {
+		return &config.AccessRequestConfig{}, nil
+	}
+	reconciler, err := accessrequest.NewAccessRequestReconciler(clusters.NewTestClusterFromClient("platform", c), getter, "")
+	if err != nil {
+		panic(err)
+	}
+	return reconciler
 }
 
 var _ = Describe("AccessRequest Controller", func() {

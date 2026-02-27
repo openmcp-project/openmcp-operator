@@ -3,6 +3,7 @@ package managedcontrolplane
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,12 +12,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/events"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -41,17 +44,15 @@ import (
 
 const ControllerName = "ManagedControlPlane"
 
-func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboardingCluster *clusters.Cluster, eventRecorder events.EventRecorder, cfg *config.ManagedControlPlaneConfig) (*ManagedControlPlaneReconciler, error) {
-	if cfg == nil {
-		cfg = &config.ManagedControlPlaneConfig{}
-		if err := cfg.Default(nil); err != nil {
-			return nil, err
-		}
+func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboardingCluster *clusters.Cluster, eventRecorder events.EventRecorder, configGetter config.ManagedControlPlaneConfigGetter, configMapName string) (*ManagedControlPlaneReconciler, error) {
+	if configGetter == nil {
+		return nil, fmt.Errorf("managed control plane config getter must not be nil")
 	}
 	return &ManagedControlPlaneReconciler{
 		PlatformCluster:   platformCluster,
 		OnboardingCluster: onboardingCluster,
-		Config:            cfg,
+		GetConfigFunc:     configGetter,
+		ConfigMapName:     configMapName,
 		eventRecorder:     eventRecorder,
 		sr:                smartrequeue.NewStore(5*time.Second, 24*time.Hour, 1.5),
 	}, nil
@@ -60,7 +61,8 @@ func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboard
 type ManagedControlPlaneReconciler struct {
 	PlatformCluster   *clusters.Cluster
 	OnboardingCluster *clusters.Cluster
-	Config            *config.ManagedControlPlaneConfig
+	GetConfigFunc     config.ManagedControlPlaneConfigGetter
+	ConfigMapName     string
 	eventRecorder     events.EventRecorder
 	sr                *smartrequeue.Store
 }
@@ -143,7 +145,7 @@ func (r *ManagedControlPlaneReconciler) reconcile(ctx context.Context, req recon
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		For(&corev2alpha1.ManagedControlPlaneV2{}).
 		WithEventFilter(predicate.And(
 			predicate.Or(
@@ -155,17 +157,53 @@ func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error
 			predicate.Not(
 				ctrlutils.HasAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore),
 			),
-		)).
-		Complete(r)
+		))
+
+	// add a watch for config ConfigMap if it's passed to the operator
+	if r.ConfigMapName != "" {
+		podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
+		ctrlBuilder = ctrlBuilder.Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				cm, ok := obj.(*corev1.ConfigMap)
+				if !ok || cm.Name != r.ConfigMapName || cm.Namespace != podNamespace {
+					return nil
+				}
+				// requeue all ManagedControlPlanes
+				mcpList := &corev2alpha1.ManagedControlPlaneV2List{}
+				if err := r.PlatformCluster.Client().List(ctx, mcpList); err != nil {
+					logging.FromContextOrPanic(ctx).Error(err, "failed to list ManagedControlPlanes for ConfigMap change")
+					return nil
+				}
+				requests := make([]reconcile.Request, len(mcpList.Items))
+				for i, mcp := range mcpList.Items {
+					requests[i] = reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      mcp.Name,
+							Namespace: mcp.Namespace,
+						},
+					}
+				}
+				return requests
+			}),
+		)
+	}
+
+	return ctrlBuilder.Complete(r)
 }
 
 func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	log.Info("Handling creation or update of ManagedControlPlane resource")
 
+	cfg, err := r.GetConfigFunc(ctx)
+	if err != nil {
+		return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("error fetching managedcontrolplane config: %w", err), cconst.ReasonConfigurationProblem)}
+	}
+
 	rr := ReconcileResult{
 		Result: ctrl.Result{
-			RequeueAfter: time.Duration(r.Config.ReconcileMCPEveryXDays) * 24 * time.Hour,
+			RequeueAfter: time.Duration(cfg.ReconcileMCPEveryXDays) * 24 * time.Hour,
 		},
 		Object:     mcp,
 		OldObject:  mcp.DeepCopy(),
@@ -219,7 +257,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	cr.Name = mcp.Name
 	cr.Namespace = platformNamespace
 	// determine cluster request purpose
-	purpose := r.Config.MCPClusterPurpose
+	purpose := cfg.MCPClusterPurpose
 	if override, ok := mcp.Labels[corev2alpha1.MCPPurposeOverrideLabel]; ok && override != "" {
 		log.Info("Using purpose override from MCP label", "purposeOverride", override)
 		purpose = override
@@ -298,9 +336,14 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	log := logging.FromContextOrPanic(ctx)
 	log.Info("Handling deletion of ManagedControlPlane resource")
 
+	cfg, err := r.GetConfigFunc(ctx)
+	if err != nil {
+		return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("error fetching managedcontrolplane config: %w", err), cconst.ReasonConfigurationProblem)}
+	}
+
 	rr := ReconcileResult{
 		Result: ctrl.Result{
-			RequeueAfter: time.Duration(r.Config.ReconcileMCPEveryXDays) * 24 * time.Hour,
+			RequeueAfter: time.Duration(cfg.ReconcileMCPEveryXDays) * 24 * time.Hour,
 		},
 		Object:     mcp,
 		OldObject:  mcp.DeepCopy(),

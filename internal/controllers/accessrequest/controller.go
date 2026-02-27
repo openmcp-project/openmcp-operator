@@ -3,12 +3,17 @@ package accessrequest
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -31,19 +36,22 @@ const (
 	allClusterProviders = ""
 )
 
-func NewAccessRequestReconciler(platformCluster *clusters.Cluster, cfg *config.AccessRequestConfig) *AccessRequestReconciler {
-	if cfg == nil {
-		cfg = &config.AccessRequestConfig{}
+func NewAccessRequestReconciler(platformCluster *clusters.Cluster, configGetter config.AccessRequestConfigGetter, configMapName string) (*AccessRequestReconciler, error) {
+	if configGetter == nil {
+		return nil, fmt.Errorf("access request config getter must not be nil")
 	}
+
 	return &AccessRequestReconciler{
 		PlatformCluster: platformCluster,
-		Config:          cfg,
-	}
+		GetConfigFunc:   configGetter,
+		ConfigMapName:   configMapName,
+	}, nil
 }
 
 type AccessRequestReconciler struct {
 	PlatformCluster *clusters.Cluster
-	Config          *config.AccessRequestConfig
+	GetConfigFunc   config.AccessRequestConfigGetter
+	ConfigMapName   string
 }
 
 var _ reconcile.Reconciler = &AccessRequestReconciler{}
@@ -241,8 +249,13 @@ func (r *AccessRequestReconciler) reconcile(ctx context.Context, req reconcile.R
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *AccessRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+func (r *AccessRequestReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+	logger, err := logging.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+	logger.WithName(ControllerName)
+	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		// watch AccessRequest resources
 		For(&clustersv1alpha1.AccessRequest{}).
 		WithEventFilter(predicate.And(
@@ -254,15 +267,83 @@ func (r *AccessRequestReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				}),
 				hasTTLPredicate(),
 			),
-			ctrlutils.LabelSelectorPredicate(r.Config.Selector.Completed()),
+			predicate.Funcs{
+				UpdateFunc: func(updateEvent event.TypedUpdateEvent[client.Object]) bool {
+					cfg, err := r.GetConfigFunc(ctx)
+					if err != nil || cfg == nil {
+						logger.Error(err, "error getting config for update event, skipping event", "name", updateEvent.ObjectNew.GetName(), "namespace", updateEvent.ObjectNew.GetNamespace())
+						return false
+					}
+					selector := cfg.Selector.Completed()
+					return selector.Matches(labels.Set(updateEvent.ObjectNew.GetLabels()))
+				},
+				CreateFunc: func(createEvent event.TypedCreateEvent[client.Object]) bool {
+					cfg, err := r.GetConfigFunc(ctx)
+					if err != nil || cfg == nil {
+						logger.Error(err, "error getting config for create event, skipping event", "name", createEvent.Object.GetName(), "namespace", createEvent.Object.GetNamespace())
+						return false
+					}
+					selector := cfg.Selector.Completed()
+					return selector.Matches(labels.Set(createEvent.Object.GetLabels()))
+				},
+				DeleteFunc: func(deleteEvent event.TypedDeleteEvent[client.Object]) bool {
+					cfg, err := r.GetConfigFunc(ctx)
+					if err != nil || cfg == nil {
+						logger.Error(err, "error getting config for delete event, skipping event", "name", deleteEvent.Object.GetName(), "namespace", deleteEvent.Object.GetNamespace())
+						return false
+					}
+					selector := cfg.Selector.Completed()
+					return selector.Matches(labels.Set(deleteEvent.Object.GetLabels()))
+				},
+				GenericFunc: func(genericEvent event.TypedGenericEvent[client.Object]) bool {
+					cfg, err := r.GetConfigFunc(ctx)
+					if err != nil || cfg == nil {
+						logger.Error(err, "error getting config for generic event, skipping event", "name", genericEvent.Object.GetName(), "namespace", genericEvent.Object.GetNamespace())
+						return false
+					}
+					selector := cfg.Selector.Completed()
+					return selector.Matches(labels.Set(genericEvent.Object.GetLabels()))
+				},
+			},
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.GotAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueReconcile),
 				ctrlutils.LostAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore),
 			),
 			predicate.Not(ctrlutils.HasAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore)),
-		)).
-		Complete(r)
+		))
+
+	// add a watch for config ConfigMap if it's passed to the operator
+	if r.ConfigMapName != "" {
+		podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
+		ctrlBuilder = ctrlBuilder.Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				cm, ok := obj.(*corev1.ConfigMap)
+				if !ok || cm.Name != r.ConfigMapName || cm.Namespace != podNamespace {
+					return nil
+				}
+				// requeue all AccessRequests
+				arList := &clustersv1alpha1.AccessRequestList{}
+				if err := r.PlatformCluster.Client().List(ctx, arList); err != nil {
+					logging.FromContextOrPanic(ctx).Error(err, "failed to list AccessRequests for ConfigMap change")
+					return nil
+				}
+				requests := make([]reconcile.Request, len(arList.Items))
+				for i, ar := range arList.Items {
+					requests[i] = reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      ar.Name,
+							Namespace: ar.Namespace,
+						},
+					}
+				}
+				return requests
+			}),
+		)
+	}
+
+	return ctrlBuilder.Complete(r)
 }
 
 // hasTTLPredicate returns true if the AccessRequest is not in deletion and has a TTL set.
