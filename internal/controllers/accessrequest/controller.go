@@ -267,44 +267,15 @@ func (r *AccessRequestReconciler) SetupWithManager(ctx context.Context, mgr ctrl
 				}),
 				hasTTLPredicate(),
 			),
-			predicate.Funcs{
-				UpdateFunc: func(updateEvent event.TypedUpdateEvent[client.Object]) bool {
-					cfg, err := r.GetConfigFunc(ctx)
-					if err != nil || cfg == nil {
-						logger.Error(err, "error getting config for update event, skipping event", "name", updateEvent.ObjectNew.GetName(), "namespace", updateEvent.ObjectNew.GetNamespace())
-						return false
-					}
-					selector := cfg.Selector.Completed()
-					return selector.Matches(labels.Set(updateEvent.ObjectNew.GetLabels()))
-				},
-				CreateFunc: func(createEvent event.TypedCreateEvent[client.Object]) bool {
-					cfg, err := r.GetConfigFunc(ctx)
-					if err != nil || cfg == nil {
-						logger.Error(err, "error getting config for create event, skipping event", "name", createEvent.Object.GetName(), "namespace", createEvent.Object.GetNamespace())
-						return false
-					}
-					selector := cfg.Selector.Completed()
-					return selector.Matches(labels.Set(createEvent.Object.GetLabels()))
-				},
-				DeleteFunc: func(deleteEvent event.TypedDeleteEvent[client.Object]) bool {
-					cfg, err := r.GetConfigFunc(ctx)
-					if err != nil || cfg == nil {
-						logger.Error(err, "error getting config for delete event, skipping event", "name", deleteEvent.Object.GetName(), "namespace", deleteEvent.Object.GetNamespace())
-						return false
-					}
-					selector := cfg.Selector.Completed()
-					return selector.Matches(labels.Set(deleteEvent.Object.GetLabels()))
-				},
-				GenericFunc: func(genericEvent event.TypedGenericEvent[client.Object]) bool {
-					cfg, err := r.GetConfigFunc(ctx)
-					if err != nil || cfg == nil {
-						logger.Error(err, "error getting config for generic event, skipping event", "name", genericEvent.Object.GetName(), "namespace", genericEvent.Object.GetNamespace())
-						return false
-					}
-					selector := cfg.Selector.Completed()
-					return selector.Matches(labels.Set(genericEvent.Object.GetLabels()))
-				},
-			},
+			predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				cfg, err := r.GetConfigFunc(ctx)
+				if err != nil || cfg == nil {
+					logger.Error(err, "error getting config for event, skipping event", "name", obj.GetName(), "namespace", obj.GetNamespace())
+					return false
+				}
+				selector := cfg.Selector.Completed()
+				return selector.Matches(labels.Set(obj.GetLabels()))
+			}),
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.GotAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueReconcile),
@@ -331,6 +302,9 @@ func (r *AccessRequestReconciler) SetupWithManager(ctx context.Context, mgr ctrl
 				}
 				requests := make([]reconcile.Request, len(arList.Items))
 				for i, ar := range arList.Items {
+					if ar.Status.IsGranted() {
+						continue
+					}
 					requests[i] = reconcile.Request{
 						NamespacedName: types.NamespacedName{
 							Name:      ar.Name,

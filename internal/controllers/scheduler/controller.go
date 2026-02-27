@@ -16,7 +16,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -38,15 +37,15 @@ import (
 
 const ControllerName = "Scheduler"
 
-func NewClusterScheduler(ctx context.Context, setupLog *logging.Logger, platformCluster *clusters.Cluster, configGtter config.SchedulerConfigGetter, configMapName string) (*ClusterScheduler, error) {
+func NewClusterScheduler(ctx context.Context, setupLog *logging.Logger, platformCluster *clusters.Cluster, configGetter config.SchedulerConfigGetter, configMapName string) (*ClusterScheduler, error) {
 	if platformCluster == nil {
 		return nil, fmt.Errorf("onboarding cluster must not be nil")
 	}
-	if configGtter == nil {
+	if configGetter == nil {
 		return nil, fmt.Errorf("scheduler config getter must not be nil")
 	}
 
-	cfg, err := configGtter(ctx)
+	cfg, err := configGetter(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error fetching scheduler config during initialization: %w", err)
 	}
@@ -59,7 +58,7 @@ func NewClusterScheduler(ctx context.Context, setupLog *logging.Logger, platform
 	}
 	return &ClusterScheduler{
 		PlatformCluster: platformCluster,
-		GetConfigFunc:   configGtter,
+		GetConfigFunc:   configGetter,
 		ConfigMapName:   configMapName,
 	}, nil
 }
@@ -468,45 +467,15 @@ func (r *ClusterScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Manage
 		// watch ClusterRequest resources
 		For(&clustersv1alpha1.ClusterRequest{}).
 		WithEventFilter(predicate.And(
-			predicate.Funcs{
-				UpdateFunc: func(updateEvent event.TypedUpdateEvent[client.Object]) bool {
-					cfg, err := r.GetConfigFunc(ctx)
-					if err != nil || cfg == nil {
-						logger.Error(err, "error getting config for update event, skipping event", "name", updateEvent.ObjectNew.GetName(), "namespace", updateEvent.ObjectNew.GetNamespace())
-						return false
-					}
-					selector := cfg.Selectors.Requests.Completed()
-					return selector.Matches(labels.Set(updateEvent.ObjectNew.GetLabels()))
-				},
-				CreateFunc: func(createEvent event.TypedCreateEvent[client.Object]) bool {
-					cfg, err := r.GetConfigFunc(ctx)
-					if err != nil || cfg == nil {
-						logger.Error(err, "error getting config for create event, skipping event", "name", createEvent.Object.GetName(), "namespace", createEvent.Object.GetNamespace())
-						return false
-					}
-					selector := cfg.Selectors.Requests.Completed()
-					return selector.Matches(labels.Set(createEvent.Object.GetLabels()))
-				},
-				DeleteFunc: func(deleteEvent event.TypedDeleteEvent[client.Object]) bool {
-					cfg, err := r.GetConfigFunc(ctx)
-					if err != nil || cfg == nil {
-						logger.Error(err, "error getting config for delete event, skipping event", "name", deleteEvent.Object.GetName(), "namespace", deleteEvent.Object.GetNamespace())
-
-						return false
-					}
-					selector := cfg.Selectors.Requests.Completed()
-					return selector.Matches(labels.Set(deleteEvent.Object.GetLabels()))
-				},
-				GenericFunc: func(genericEvent event.TypedGenericEvent[client.Object]) bool {
-					cfg, err := r.GetConfigFunc(ctx)
-					if err != nil || cfg == nil {
-						logger.Error(err, "error getting config for generic event, skipping event", "name", genericEvent.Object.GetName(), "namespace", genericEvent.Object.GetNamespace())
-						return false
-					}
-					selector := cfg.Selectors.Requests.Completed()
-					return selector.Matches(labels.Set(genericEvent.Object.GetLabels()))
-				},
-			},
+			predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				cfg, err := r.GetConfigFunc(ctx)
+				if err != nil || cfg == nil {
+					logger.Error(err, "error getting config for event, skipping event", "name", obj.GetName(), "namespace", obj.GetNamespace())
+					return false
+				}
+				selector := cfg.Selectors.Requests.Completed()
+				return selector.Matches(labels.Set(obj.GetLabels()))
+			}),
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.DeletionTimestampChangedPredicate{},
