@@ -2,6 +2,7 @@ package managedcontrolplane_test
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -891,6 +892,128 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		))
 		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
 		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute), "MCP has not been requeued")
+	})
+
+	It("should pick up changes to ReconcileMCPEveryXDays from dynamic config", func() {
+		platform := "platform"
+		onboarding := "onboarding"
+		mcpRec := "mcp"
+		configMapName := "mcp-config"
+		configMapNamespace := "test-namespace"
+
+		testScheme := install.InstallOperatorAPIsPlatform(runtime.NewScheme())
+		install.InstallOperatorAPIsOnboarding(testScheme)
+
+		// Read initial config from testdata
+		initialConfigYAMLBytes, err := os.ReadFile(filepath.Join("testdata", "test-03", "configmap", "config-initial.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+
+		// Read updated config from testdata
+		updatedConfigYAMLBytes, err := os.ReadFile(filepath.Join("testdata", "test-03", "configmap", "config-updated.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create ConfigMap with initial config
+		initialConfigMap := &corev1.ConfigMap{}
+		initialConfigMap.SetName(configMapName)
+		initialConfigMap.SetNamespace(configMapNamespace)
+		initialConfigMap.Data = map[string]string{
+			"config.yaml": string(initialConfigYAMLBytes),
+		}
+
+		envB := testutils.NewComplexEnvironmentBuilder().
+			WithFakeClient(platform, testScheme).
+			WithDynamicObjectsWithStatus(platform, &clustersv1alpha1.ClusterRequest{}, &clustersv1alpha1.AccessRequest{}, &clustersv1alpha1.Cluster{}).
+			WithFakeClient(onboarding, install.InstallOperatorAPIsOnboarding(runtime.NewScheme())).
+			WithInitObjectPath(onboarding, "testdata", "test-03", onboarding).
+			WithReconcilerConstructor(mcpRec, func(clients ...client.Client) reconcile.Reconciler {
+				// Create configGetter with access to the platform client
+				getter := func(ctx context.Context) (*config.ManagedControlPlaneConfig, error) {
+					providerConfig, err := config.LoadFromConfigMap(ctx, clients[0], configMapName, configMapNamespace)
+					if err != nil {
+						return nil, fmt.Errorf("failed to load config from ConfigMap: %w", err)
+					}
+					if providerConfig == nil {
+						mcpConfig := &config.ManagedControlPlaneConfig{}
+						err = mcpConfig.Default(nil)
+						return mcpConfig, err
+					}
+					return providerConfig.ManagedControlPlane, nil
+				}
+				mcpRec, err := managedcontrolplane.NewManagedControlPlaneReconciler(
+					clusters.NewTestClusterFromClient(platform, clients[0]),
+					clusters.NewTestClusterFromClient(onboarding, clients[1]),
+					nil,
+					getter,
+					configMapName,
+				)
+				Expect(err).ToNot(HaveOccurred())
+				return mcpRec
+			}, platform, onboarding)
+
+		env := envB.Build()
+
+		// Create ConfigMap in the environment
+		Expect(env.Client(platform).Create(env.Ctx, initialConfigMap)).To(Succeed())
+
+		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp.SetName("mcp-dynamic-config")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("first reconciliation with initial config (7 days)")
+		res := env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		initialRequeueDuration := res.RequeueAfter
+		Expect(initialRequeueDuration).To(BeNumerically(">", 0), "Should requeue")
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		By("fake ClusterRequest readiness with full setup")
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{"mcp"}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{
+			{
+				Type:               "Ready",
+				Status:             metav1.ConditionTrue,
+				Reason:             "TestReason",
+				Message:            "Cluster is ready",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: 1,
+			},
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{
+			Name:      cluster.Name,
+			Namespace: cluster.Namespace,
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		By("second reconciliation - MCP reaches ready state")
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("updating ConfigMap to use reconciliation duration: 14 days")
+		currentConfigMap := &corev1.ConfigMap{}
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKey{Namespace: configMapNamespace, Name: configMapName}, currentConfigMap)).To(Succeed())
+		currentConfigMap.Data["config.yaml"] = string(updatedConfigYAMLBytes)
+		Expect(env.Client(platform).Update(env.Ctx, currentConfigMap)).To(Succeed())
+
+		By("third reconciliation after ConfigMap update - should use new duration (14 days)")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		updatedRequeueDuration := res.RequeueAfter
+		// Verify the requeue duration has changed
+		Expect(updatedRequeueDuration).ToNot(Equal(initialRequeueDuration), "Requeue duration should change after ConfigMap update")
 	})
 
 })

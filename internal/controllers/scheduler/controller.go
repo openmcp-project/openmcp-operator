@@ -122,14 +122,11 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, req reconcile.Request)
 	}
 
 	inDeletion := !cr.DeletionTimestamp.IsZero()
-	var rr ReconcileResult
-	if !inDeletion {
-		rr = r.handleCreateOrUpdate(ctx, req, cr)
-	} else {
-		rr = r.handleDelete(ctx, req, cr)
+	if inDeletion {
+		return r.handleDelete(ctx, req, cr)
 	}
+	return r.handleCreateOrUpdate(ctx, req, cr)
 
-	return rr
 }
 
 //nolint:gocyclo
