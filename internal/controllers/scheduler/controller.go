@@ -500,6 +500,9 @@ func (r *ClusterScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Manage
 				}
 				requests := make([]reconcile.Request, len(crList.Items))
 				for i, cr := range crList.Items {
+					if cr.Status.IsGranted() {
+						continue
+					}
 					requests[i] = reconcile.Request{
 						NamespacedName: types.NamespacedName{
 							Name:      cr.Name,

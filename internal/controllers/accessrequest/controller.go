@@ -302,9 +302,6 @@ func (r *AccessRequestReconciler) SetupWithManager(ctx context.Context, mgr ctrl
 				}
 				requests := make([]reconcile.Request, len(arList.Items))
 				for i, ar := range arList.Items {
-					if ar.Status.IsGranted() {
-						continue
-					}
 					requests[i] = reconcile.Request{
 						NamespacedName: types.NamespacedName{
 							Name:      ar.Name,
