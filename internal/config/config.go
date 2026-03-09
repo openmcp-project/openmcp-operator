@@ -1,6 +1,7 @@
 package config
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,7 +12,10 @@ import (
 	"strings"
 
 	"dario.cat/mergo"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
@@ -33,6 +37,10 @@ type Config struct {
 	// ManagedControlPlane is the configuration for the MCP controller.
 	ManagedControlPlane *ManagedControlPlaneConfig `json:"managedControlPlane,omitempty"`
 }
+
+type SchedulerConfigGetter func(ctx context.Context) (*SchedulerConfig, error)
+type AccessRequestConfigGetter func(ctx context.Context) (*AccessRequestConfig, error)
+type ManagedControlPlaneConfigGetter func(ctx context.Context) (*ManagedControlPlaneConfig, error)
 
 // Dump is used for logging and debugging purposes.
 func (c *Config) Dump(out io.Writer) error {
@@ -105,6 +113,29 @@ func LoadFromFiles(paths ...string) (*Config, error) {
 			rawConfigs = append(rawConfigs, data)
 		}
 	}
+	return LoadFromBytes(rawConfigs...)
+}
+
+// LoadFromConfigMap reads the configuration from a ConfigMap in a Kubernetes cluster.
+func LoadFromConfigMap(ctx context.Context, c client.Client, name, namespace string) (*Config, error) {
+	cm := &corev1.ConfigMap{}
+	if err := c.Get(ctx, types.NamespacedName{
+		Name:      name,
+		Namespace: namespace,
+	}, cm); err != nil {
+		return nil, fmt.Errorf("failed to fetch ConfigMap %s/%s: %w", namespace, name, err)
+	}
+
+	// Collect all config data from the ConfigMap
+	rawConfigs := [][]byte{}
+	for _, value := range cm.Data {
+		rawConfigs = append(rawConfigs, []byte(value))
+	}
+
+	if len(rawConfigs) == 0 {
+		return nil, fmt.Errorf("ConfigMap %s/%s contains no data", namespace, name)
+	}
+
 	return LoadFromBytes(rawConfigs...)
 }
 

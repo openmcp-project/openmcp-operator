@@ -2,6 +2,7 @@
 package scheduler_test
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -30,20 +31,24 @@ var scheme = install.InstallOperatorAPIsPlatform(runtime.NewScheme())
 
 // defaultTestSetup initializes a new environment for testing the scheduler controller.
 // Expected folder structure is a 'config.yaml' file next to a folder named 'cluster' containing the manifests.
-func defaultTestSetup(testDirPathSegments ...string) (*scheduler.ClusterScheduler, *testutils.Environment) {
+func defaultTestSetup(testDirPathSegments ...string) (*testutils.Environment, *config.SchedulerConfig) {
 	cfg, err := config.LoadFromFiles(filepath.Join(append(testDirPathSegments, "config.yaml")...))
 	Expect(err).ToNot(HaveOccurred())
 	Expect(cfg.Default()).To(Succeed())
 	Expect(cfg.Validate()).To(Succeed())
 	Expect(cfg.Complete()).To(Succeed())
 	env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath(append(testDirPathSegments, "cluster")...).WithReconcilerConstructor(func(c client.Client) reconcile.Reconciler {
-		r, err := scheduler.NewClusterScheduler(nil, clusters.NewTestClusterFromClient("onboarding", c), cfg.Scheduler)
+		staticConfig := cfg.Scheduler
+		getter := func(ctx context.Context) (*config.SchedulerConfig, error) {
+			return staticConfig, nil
+		}
+		r, err := scheduler.NewClusterScheduler(context.Background(), nil, clusters.NewTestClusterFromClient("onboarding", c), getter, "")
 		Expect(err).ToNot(HaveOccurred())
 		return r
 	}).Build()
-	sc, ok := env.Reconciler().(*scheduler.ClusterScheduler)
+	_, ok := env.Reconciler().(*scheduler.ClusterScheduler)
 	Expect(ok).To(BeTrue(), "Reconciler is not of type ClusterScheduler")
-	return sc, env
+	return env, cfg.Scheduler
 }
 
 var _ = Describe("Scheduler", func() {
@@ -52,8 +57,8 @@ var _ = Describe("Scheduler", func() {
 
 		It("should create a new exclusive cluster if no cluster exists", func() {
 			clusterNamespace := "exclusive"
-			sc, env := defaultTestSetup("testdata", "test-01")
-			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+			env, cfg := defaultTestSetup("testdata", "test-01")
+			Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -73,15 +78,15 @@ var _ = Describe("Scheduler", func() {
 			Expect(cluster.Name).To(Equal(req.Status.Cluster.Name))
 			Expect(cluster.Namespace).To(Equal(clusterNamespace))
 			Expect(cluster.Name).To(HavePrefix(fmt.Sprintf("%s-", req.Spec.Purpose)))
-			Expect(cluster.Namespace).To(Equal(sc.Config.PurposeMappings[req.Spec.Purpose].Template.Namespace))
-			Expect(cluster.Spec.Tenancy).To(BeEquivalentTo(sc.Config.PurposeMappings[req.Spec.Purpose].Template.Spec.Tenancy))
+			Expect(cluster.Namespace).To(Equal(cfg.PurposeMappings[req.Spec.Purpose].Template.Namespace))
+			Expect(cluster.Spec.Tenancy).To(BeEquivalentTo(cfg.PurposeMappings[req.Spec.Purpose].Template.Spec.Tenancy))
 			Expect(cluster.Finalizers).To(ContainElements(req.FinalizerForCluster()))
 		})
 
 		It("should create a new exclusive cluster if a cluster exists", func() {
 			clusterNamespace := "exclusive"
-			sc, env := defaultTestSetup("testdata", "test-01")
-			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+			env, cfg := defaultTestSetup("testdata", "test-01")
+			Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			oldCount := len(existingClusters.Items)
@@ -103,15 +108,15 @@ var _ = Describe("Scheduler", func() {
 					"Finalizers": ContainElements(req.FinalizerForCluster()),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
-					"Tenancy": BeEquivalentTo(sc.Config.PurposeMappings[req.Spec.Purpose].Template.Spec.Tenancy),
+					"Tenancy": BeEquivalentTo(cfg.PurposeMappings[req.Spec.Purpose].Template.Spec.Tenancy),
 				}),
 			})))
 		})
 
 		It("should create a new shared cluster if no cluster exists", func() {
 			clusterNamespace := "shared-twice"
-			sc, env := defaultTestSetup("testdata", "test-01")
-			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+			env, cfg := defaultTestSetup("testdata", "test-01")
+			Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -131,15 +136,15 @@ var _ = Describe("Scheduler", func() {
 			Expect(cluster.Name).To(Equal(req.Status.Cluster.Name))
 			Expect(cluster.Namespace).To(Equal(clusterNamespace))
 			Expect(cluster.Name).To(HavePrefix(fmt.Sprintf("%s-", req.Spec.Purpose)))
-			Expect(cluster.Namespace).To(Equal(sc.Config.PurposeMappings[req.Spec.Purpose].Template.Namespace))
-			Expect(cluster.Spec.Tenancy).To(BeEquivalentTo(sc.Config.PurposeMappings[req.Spec.Purpose].Template.Spec.Tenancy))
+			Expect(cluster.Namespace).To(Equal(cfg.PurposeMappings[req.Spec.Purpose].Template.Namespace))
+			Expect(cluster.Spec.Tenancy).To(BeEquivalentTo(cfg.PurposeMappings[req.Spec.Purpose].Template.Spec.Tenancy))
 			Expect(cluster.Finalizers).To(ContainElements(req.FinalizerForCluster()))
 		})
 
 		It("should share a shared cluster if it still has capacity and create a new one otherwise", func() {
 			clusterNamespace := "shared-twice"
-			sc, env := defaultTestSetup("testdata", "test-01")
-			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+			env, cfg := defaultTestSetup("testdata", "test-01")
+			Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			existingClusters := &clustersv1alpha1.ClusterList{}
 			Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
 			oldCount := len(existingClusters.Items)
@@ -163,7 +168,7 @@ var _ = Describe("Scheduler", func() {
 					"Finalizers": ContainElements(req.FinalizerForCluster()),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
-					"Tenancy": BeEquivalentTo(sc.Config.PurposeMappings[req.Spec.Purpose].Template.Spec.Tenancy),
+					"Tenancy": BeEquivalentTo(cfg.PurposeMappings[req.Spec.Purpose].Template.Spec.Tenancy),
 				}),
 			})))
 
@@ -186,7 +191,7 @@ var _ = Describe("Scheduler", func() {
 					"Finalizers": ContainElements(req2.FinalizerForCluster()),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
-					"Tenancy": BeEquivalentTo(sc.Config.PurposeMappings[req2.Spec.Purpose].Template.Spec.Tenancy),
+					"Tenancy": BeEquivalentTo(cfg.PurposeMappings[req2.Spec.Purpose].Template.Spec.Tenancy),
 				}),
 			})))
 			Expect(req2.Status.Cluster.Name).To(Equal(req.Status.Cluster.Name))
@@ -210,7 +215,7 @@ var _ = Describe("Scheduler", func() {
 					"Finalizers": ContainElements(req3.FinalizerForCluster()),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
-					"Tenancy": BeEquivalentTo(sc.Config.PurposeMappings[req3.Spec.Purpose].Template.Spec.Tenancy),
+					"Tenancy": BeEquivalentTo(cfg.PurposeMappings[req3.Spec.Purpose].Template.Spec.Tenancy),
 				}),
 			})))
 			Expect(req3.Status.Cluster.Name).ToNot(Equal(req.Status.Cluster.Name))
@@ -219,8 +224,8 @@ var _ = Describe("Scheduler", func() {
 
 		It("should only create a new cluster if none exists for unlimitedly shared clusters", func() {
 			clusterNamespace := "shared-unlimited"
-			sc, env := defaultTestSetup("testdata", "test-01")
-			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+			env, cfg := defaultTestSetup("testdata", "test-01")
+			Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 			reqCount := 20
 			requests := make([]*clustersv1alpha1.ClusterRequest, reqCount)
 			for i := range reqCount {
@@ -245,14 +250,14 @@ var _ = Describe("Scheduler", func() {
 			Expect(cluster.Name).To(Equal(requests[0].Status.Cluster.Name))
 			Expect(cluster.Namespace).To(Equal(clusterNamespace))
 			Expect(cluster.Name).To(Equal(requests[0].Spec.Purpose))
-			Expect(cluster.Namespace).To(Equal(sc.Config.PurposeMappings[requests[0].Spec.Purpose].Template.Namespace))
+			Expect(cluster.Namespace).To(Equal(cfg.PurposeMappings[requests[0].Spec.Purpose].Template.Namespace))
 			Expect(cluster.Spec.Tenancy).To(BeEquivalentTo(clustersv1alpha1.TENANCY_SHARED))
 			Expect(cluster.Finalizers).To(ContainElements(requests[0].FinalizerForCluster()))
 		})
 
 		It("should take over annotations and labels from the cluster template", func() {
-			sc, env := defaultTestSetup("testdata", "test-02")
-			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+			env, cfg := defaultTestSetup("testdata", "test-02")
+			Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), req)).To(Succeed())
@@ -270,8 +275,8 @@ var _ = Describe("Scheduler", func() {
 
 		It("should use the request's namespace if none is specified in the template and ignore clusters that don't match the label selector", func() {
 			clusterNamespace := "foo"
-			sc, env := defaultTestSetup("testdata", "test-02")
-			Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+			env, cfg := defaultTestSetup("testdata", "test-02")
+			Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())
@@ -325,8 +330,8 @@ var _ = Describe("Scheduler", func() {
 	Context("Scope: Cluster", func() {
 
 		It("should evaluate all namespaces in cluster scope", func() {
-			sc, env := defaultTestSetup("testdata", "test-03")
-			Expect(sc.Config.Scope).To(Equal(config.SCOPE_CLUSTER))
+			env, cfg := defaultTestSetup("testdata", "test-03")
+			Expect(cfg.Scope).To(Equal(config.SCOPE_CLUSTER))
 
 			req := &clustersv1alpha1.ClusterRequest{}
 			Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), req)).To(Succeed())
@@ -377,7 +382,7 @@ var _ = Describe("Scheduler", func() {
 	})
 
 	It("should combine cluster label selectors correctly", func() {
-		_, env := defaultTestSetup("testdata", "test-04")
+		env, _ := defaultTestSetup("testdata", "test-04")
 
 		// should use the existing cluster
 		req := &clustersv1alpha1.ClusterRequest{}
@@ -411,7 +416,7 @@ var _ = Describe("Scheduler", func() {
 	})
 
 	It("should handle the delete-without-requests label correctly", func() {
-		_, env := defaultTestSetup("testdata", "test-05")
+		env, _ := defaultTestSetup("testdata", "test-05")
 
 		// should create a new cluster
 		req := &clustersv1alpha1.ClusterRequest{}
@@ -458,7 +463,7 @@ var _ = Describe("Scheduler", func() {
 
 	It("should not consider clusters that are in deletion for scheduling", func() {
 		// verify that the cluster is usually considered for scheduling
-		_, env := defaultTestSetup("testdata", "test-01")
+		env, _ := defaultTestSetup("testdata", "test-01")
 
 		c := &clustersv1alpha1.Cluster{}
 		c.SetName("shared-1")
@@ -476,7 +481,7 @@ var _ = Describe("Scheduler", func() {
 		Expect(cr.Status.Cluster.Namespace).To(Equal(c.Namespace))
 
 		// repeat, but with the cluster in deletion
-		_, env = defaultTestSetup("testdata", "test-01")
+		env, _ = defaultTestSetup("testdata", "test-01")
 
 		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(c), c)).To(Succeed())
 		c.Finalizers = []string{"foo"}
@@ -495,8 +500,8 @@ var _ = Describe("Scheduler", func() {
 
 	It("should choose the Cluster name correctly", func() {
 		clusterNamespace := "exclusive"
-		sc, env := defaultTestSetup("testdata", "test-01")
-		Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+		env, cfg := defaultTestSetup("testdata", "test-01")
+		Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 		Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 		existingClusters := &clustersv1alpha1.ClusterList{}
 		Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())
@@ -542,8 +547,8 @@ var _ = Describe("Scheduler", func() {
 
 	It("should restore a missing finalizer and recreate a deleted cluster for an existing request", func() {
 		clusterNamespace := "exclusive"
-		sc, env := defaultTestSetup("testdata", "test-01")
-		Expect(sc.Config.Scope).To(Equal(config.SCOPE_NAMESPACED))
+		env, cfg := defaultTestSetup("testdata", "test-01")
+		Expect(cfg.Scope).To(Equal(config.SCOPE_NAMESPACED))
 		Expect(env.Client().DeleteAllOf(env.Ctx, &clustersv1alpha1.Cluster{}, client.InNamespace(clusterNamespace))).To(Succeed())
 		existingClusters := &clustersv1alpha1.ClusterList{}
 		Expect(env.Client().List(env.Ctx, existingClusters, client.InNamespace(clusterNamespace))).To(Succeed())

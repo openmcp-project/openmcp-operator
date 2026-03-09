@@ -136,7 +136,7 @@ func (o *RunOptions) PrintRawOptions(cmd *cobra.Command) {
 }
 
 func (o *RunOptions) Complete(ctx context.Context) error {
-	if err := o.PersistentOptions.Complete(); err != nil {
+	if err := o.PersistentOptions.Complete(ctx); err != nil {
 		return err
 	}
 	setupLog = o.Log.WithName("setup")
@@ -259,6 +259,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 
 	setupLog = o.Log.WithName("setup")
 	setupLog.Info("Environment", "value", o.Environment)
+	ctx = logging.NewContext(ctx, setupLog)
 
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts: o.WebhookTLSOpts,
@@ -296,22 +297,63 @@ func (o *RunOptions) Run(ctx context.Context) error {
 
 	// setup cluster scheduler
 	if slices.Contains(o.Controllers, strings.ToLower(scheduler.ControllerName)) {
-		sc, err := scheduler.NewClusterScheduler(&setupLog, o.PlatformCluster, o.Config.Scheduler)
+		// setup scheduler config fallback getter
+		schedulerConfigGetter := func(ctx context.Context) (*config.SchedulerConfig, error) {
+			return o.Config.Scheduler, nil
+		}
+		// dynamic config getter
+		if o.ConfigMapName != "" {
+			schedulerConfigGetter = func(ctx context.Context) (*config.SchedulerConfig, error) {
+				providerConfig, err := config.LoadFromConfigMap(ctx, o.PlatformCluster.Client(), o.ConfigMapName, podNamespace)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load config from ConfigMap: %w", err)
+				}
+				if providerConfig == nil {
+					schedulerConfig := &config.SchedulerConfig{}
+					if err := schedulerConfig.Default(nil); err != nil {
+						return nil, fmt.Errorf("failed to default scheduler config: %w", err)
+					}
+					return schedulerConfig, nil
+				}
+				return providerConfig.Scheduler, nil
+			}
+		}
+		sc, err := scheduler.NewClusterScheduler(ctx, &setupLog, o.PlatformCluster, schedulerConfigGetter, o.ConfigMapName)
 		if err != nil {
 			return fmt.Errorf("unable to initialize cluster scheduler: %w", err)
 		}
-		if err := sc.SetupWithManager(mgr); err != nil {
+		if err := sc.SetupWithManager(ctx, mgr); err != nil {
 			return fmt.Errorf("unable to setup cluster scheduler with manager: %w", err)
 		}
 	}
 
 	// setup accessrequest controller
 	if slices.Contains(o.Controllers, strings.ToLower(accessrequest.ControllerName)) {
-		var arConfig *config.AccessRequestConfig
-		if o.Config != nil {
-			arConfig = o.Config.AccessRequest
+		// fallback config getter
+		arConfigGetter := func(ctx context.Context) (*config.AccessRequestConfig, error) {
+			if o.Config.AccessRequest == nil {
+				o.Config.AccessRequest = &config.AccessRequestConfig{}
+			}
+			return o.Config.AccessRequest, nil
 		}
-		if err := accessrequest.NewAccessRequestReconciler(o.PlatformCluster, arConfig).SetupWithManager(mgr); err != nil {
+		// dynamic config getter
+		if o.ConfigMapName != "" {
+			arConfigGetter = func(ctx context.Context) (*config.AccessRequestConfig, error) {
+				providerConfig, err := config.LoadFromConfigMap(ctx, o.PlatformCluster.Client(), o.ConfigMapName, podNamespace)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load config from ConfigMap: %w", err)
+				}
+				if providerConfig == nil || providerConfig.AccessRequest == nil {
+					return &config.AccessRequestConfig{}, nil
+				}
+				return providerConfig.AccessRequest, nil
+			}
+		}
+		arReconciler, err := accessrequest.NewAccessRequestReconciler(o.PlatformCluster, arConfigGetter, o.ConfigMapName)
+		if err != nil {
+			return fmt.Errorf("unable to create accessrequest reconciler: %w", err)
+		}
+		if err := arReconciler.SetupWithManager(ctx, mgr); err != nil {
 			return fmt.Errorf("unable to setup accessrequest controller: %w", err)
 		}
 	}

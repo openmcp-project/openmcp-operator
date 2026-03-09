@@ -4,14 +4,19 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"os"
 	"slices"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -32,25 +37,36 @@ import (
 
 const ControllerName = "Scheduler"
 
-func NewClusterScheduler(setupLog *logging.Logger, platformCluster *clusters.Cluster, config *config.SchedulerConfig) (*ClusterScheduler, error) {
+func NewClusterScheduler(ctx context.Context, setupLog *logging.Logger, platformCluster *clusters.Cluster, configGetter config.SchedulerConfigGetter, configMapName string) (*ClusterScheduler, error) {
 	if platformCluster == nil {
 		return nil, fmt.Errorf("onboarding cluster must not be nil")
 	}
-	if config == nil {
+	if configGetter == nil {
+		return nil, fmt.Errorf("scheduler config getter must not be nil")
+	}
+
+	cfg, err := configGetter(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching scheduler config during initialization: %w", err)
+	}
+	if cfg == nil {
 		return nil, fmt.Errorf("scheduler config must not be nil")
 	}
+
 	if setupLog != nil {
-		setupLog.WithName(ControllerName).Info("Initializing cluster scheduler", "scope", string(config.Scope), "strategy", string(config.Strategy), "knownPurposes", strings.Join(sets.List(sets.KeySet(config.PurposeMappings)), ","))
+		setupLog.WithName(ControllerName).Info("Initializing cluster scheduler", "scope", string(cfg.Scope), "strategy", string(cfg.Strategy), "knownPurposes", strings.Join(sets.List(sets.KeySet(cfg.PurposeMappings)), ","))
 	}
 	return &ClusterScheduler{
 		PlatformCluster: platformCluster,
-		Config:          config,
+		GetConfigFunc:   configGetter,
+		ConfigMapName:   configMapName,
 	}, nil
 }
 
 type ClusterScheduler struct {
 	PlatformCluster *clusters.Cluster
-	Config          *config.SchedulerConfig
+	GetConfigFunc   config.SchedulerConfigGetter
+	ConfigMapName   string
 }
 
 var _ reconcile.Reconciler = &ClusterScheduler{}
@@ -106,14 +122,11 @@ func (r *ClusterScheduler) reconcile(ctx context.Context, req reconcile.Request)
 	}
 
 	inDeletion := !cr.DeletionTimestamp.IsZero()
-	var rr ReconcileResult
-	if !inDeletion {
-		rr = r.handleCreateOrUpdate(ctx, req, cr)
-	} else {
-		rr = r.handleDelete(ctx, req, cr)
+	if inDeletion {
+		return r.handleDelete(ctx, req, cr)
 	}
+	return r.handleCreateOrUpdate(ctx, req, cr)
 
-	return rr
 }
 
 //nolint:gocyclo
@@ -167,7 +180,11 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 
 	// fetch cluster definition
 	purpose := cr.Spec.Purpose
-	cDef, ok := r.Config.PurposeMappings[purpose]
+	cfg, err := r.GetConfigFunc(ctx)
+	if err != nil {
+		return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("error fetching scheduler config: %w", err), cconst.ReasonConfigurationProblem)}
+	}
+	cDef, ok := cfg.PurposeMappings[purpose]
 	if !ok {
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("no cluster definition found for purpose '%s'", purpose), cconst.ReasonConfigurationProblem)
 		return rr
@@ -222,8 +239,12 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 				cluster = clusters[0]
 				log.Debug("One existing cluster qualifies for request", "clusterName", cluster.Name, "clusterNamespace", cluster.Namespace)
 			} else if len(clusters) > 0 {
-				log.Debug("Multiple existing clusters qualify for request, choosing one according to strategy", "strategy", string(r.Config.Strategy), "count", len(clusters))
-				switch r.Config.Strategy {
+				cfgForStrategy, err := r.GetConfigFunc(ctx)
+				if err != nil {
+					return ReconcileResult{ReconcileError: errutils.WithReason(fmt.Errorf("error fetching scheduler config: %w", err), cconst.ReasonConfigurationProblem)}
+				}
+				log.Debug("Multiple existing clusters qualify for request, choosing one according to strategy", "strategy", string(cfgForStrategy.Strategy), "count", len(clusters))
+				switch cfgForStrategy.Strategy {
 				case config.STRATEGY_SIMPLE:
 					cluster = clusters[0]
 				case config.STRATEGY_RANDOM:
@@ -243,7 +264,7 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 						}
 					}
 				default:
-					rr.ReconcileError = errutils.WithReason(fmt.Errorf("unknown strategy '%s'", r.Config.Strategy), cconst.ReasonConfigurationProblem)
+					rr.ReconcileError = errutils.WithReason(fmt.Errorf("unknown strategy '%s'", cfgForStrategy.Strategy), cconst.ReasonConfigurationProblem)
 					return rr
 				}
 			}
@@ -372,8 +393,13 @@ func (r *ClusterScheduler) handleDelete(ctx context.Context, req reconcile.Reque
 
 	// fetch all clusters and filter for the ones that have a finalizer from this request
 	fin := cr.FinalizerForCluster()
+	cfg, err := r.GetConfigFunc(ctx)
+	if err != nil {
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error fetching scheduler config: %w", err), cconst.ReasonConfigurationProblem)
+		return rr
+	}
 	clusterList := &clustersv1alpha1.ClusterList{}
-	if err := r.PlatformCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: r.Config.Selectors.Clusters.Completed()}); err != nil {
+	if err := r.PlatformCluster.Client().List(ctx, clusterList, client.MatchingLabelsSelector{Selector: cfg.Selectors.Clusters.Completed()}); err != nil {
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error listing Clusters: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
 		return rr
 	}
@@ -429,12 +455,24 @@ func (r *ClusterScheduler) handleDelete(ctx context.Context, req reconcile.Reque
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+func (r *ClusterScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+	logger, err := logging.FromContext(ctx)
+	if err != nil {
+		return err
+	}
+	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
 		// watch ClusterRequest resources
 		For(&clustersv1alpha1.ClusterRequest{}).
 		WithEventFilter(predicate.And(
-			ctrlutils.LabelSelectorPredicate(r.Config.Selectors.Requests.Completed()),
+			predicate.NewPredicateFuncs(func(obj client.Object) bool {
+				cfg, err := r.GetConfigFunc(ctx)
+				if err != nil || cfg == nil {
+					logger.Error(err, "error getting config for event, skipping event", "name", obj.GetName(), "namespace", obj.GetNamespace())
+					return false
+				}
+				selector := cfg.Selectors.Requests.Completed()
+				return selector.Matches(labels.Set(obj.GetLabels()))
+			}),
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
 				ctrlutils.DeletionTimestampChangedPredicate{},
@@ -442,8 +480,42 @@ func (r *ClusterScheduler) SetupWithManager(mgr ctrl.Manager) error {
 				ctrlutils.LostAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore),
 			),
 			predicate.Not(ctrlutils.HasAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore)),
-		)).
-		Complete(r)
+		))
+
+	// add a watch for config ConfigMap if it's passed to the operator
+	if r.ConfigMapName != "" {
+		podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
+		ctrlBuilder = ctrlBuilder.Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+				cm, ok := obj.(*corev1.ConfigMap)
+				if !ok || cm.Name != r.ConfigMapName || cm.Namespace != podNamespace {
+					return nil
+				}
+				// requeue all ClusterRequests
+				crList := &clustersv1alpha1.ClusterRequestList{}
+				if err := r.PlatformCluster.Client().List(ctx, crList); err != nil {
+					logging.FromContextOrPanic(ctx).Error(err, "failed to list ClusterRequests for ConfigMap change")
+					return nil
+				}
+				requests := make([]reconcile.Request, len(crList.Items))
+				for i, cr := range crList.Items {
+					if cr.Status.IsGranted() {
+						continue
+					}
+					requests[i] = reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      cr.Name,
+							Namespace: cr.Namespace,
+						},
+					}
+				}
+				return requests
+			}),
+		)
+	}
+
+	return ctrlBuilder.Complete(r)
 }
 
 // fetchRelevantClusters fetches all Cluster resources that could qualify for the given ClusterRequest.
@@ -451,7 +523,11 @@ func (r *ClusterScheduler) fetchRelevantClusters(ctx context.Context, cr *cluste
 	// fetch clusters
 	purpose := cr.Spec.Purpose
 	namespace := cr.Namespace
-	if r.Config.Scope == config.SCOPE_CLUSTER {
+	cfg, err := r.GetConfigFunc(ctx)
+	if err != nil {
+		return nil, errutils.WithReason(fmt.Errorf("error fetching scheduler config: %w", err), cconst.ReasonConfigurationProblem)
+	}
+	if cfg.Scope == config.SCOPE_CLUSTER {
 		// in cluster scope, search all namespaces
 		namespace = ""
 	} else if cDef.Template.Namespace != "" {

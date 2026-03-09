@@ -70,7 +70,7 @@ func (o *InitOptions) AddFlags(cmd *cobra.Command) {
 }
 
 func (o *InitOptions) Complete(ctx context.Context) error {
-	if err := o.PersistentOptions.Complete(); err != nil {
+	if err := o.PersistentOptions.Complete(ctx); err != nil {
 		return err
 	}
 	return nil

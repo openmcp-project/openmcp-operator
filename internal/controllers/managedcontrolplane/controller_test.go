@@ -1,6 +1,8 @@
 package managedcontrolplane_test
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -42,7 +44,7 @@ const (
 
 // defaultTestSetup initializes a new environment for testing the mcp controller.
 // Expected folder structure is a 'config.yaml' file next to a 'platform' and 'onboarding' directory, containing the manifests for the respective clusters.
-func defaultTestSetup(testDirPathSegments ...string) (*managedcontrolplane.ManagedControlPlaneReconciler, *testutils.ComplexEnvironment) {
+func defaultTestSetup(testDirPathSegments ...string) (*testutils.ComplexEnvironment, *config.ManagedControlPlaneConfig) {
 	cfg, err := config.LoadFromFiles(filepath.Join(append(testDirPathSegments, "config.yaml")...))
 	Expect(err).ToNot(HaveOccurred())
 	Expect(cfg.Default()).To(Succeed())
@@ -65,7 +67,11 @@ func defaultTestSetup(testDirPathSegments ...string) (*managedcontrolplane.Manag
 		WithDynamicObjectsWithStatus(platform, &clustersv1alpha1.ClusterRequest{}, &clustersv1alpha1.AccessRequest{}, &clustersv1alpha1.Cluster{}).
 		WithFakeClient(onboarding, install.InstallOperatorAPIsOnboarding(runtime.NewScheme())).
 		WithReconcilerConstructor(mcpRec, func(clients ...client.Client) reconcile.Reconciler {
-			mcpr, err := managedcontrolplane.NewManagedControlPlaneReconciler(clusters.NewTestClusterFromClient(platform, clients[0]), clusters.NewTestClusterFromClient(onboarding, clients[1]), nil, cfg.ManagedControlPlane)
+			staticConfig := cfg.ManagedControlPlane
+			getter := func(ctx context.Context) (*config.ManagedControlPlaneConfig, error) {
+				return staticConfig, nil
+			}
+			mcpr, err := managedcontrolplane.NewManagedControlPlaneReconciler(clusters.NewTestClusterFromClient(platform, clients[0]), clusters.NewTestClusterFromClient(onboarding, clients[1]), nil, getter, "")
 			Expect(err).ToNot(HaveOccurred())
 			return mcpr
 		}, platform, onboarding)
@@ -76,15 +82,15 @@ func defaultTestSetup(testDirPathSegments ...string) (*managedcontrolplane.Manag
 		envB.WithInitObjectPath(onboarding, append(testDirPathSegments, onboarding)...)
 	}
 	env := envB.Build()
-	mcpReconciler, ok := env.Reconciler(mcpRec).(*managedcontrolplane.ManagedControlPlaneReconciler)
+	_, ok := env.Reconciler(mcpRec).(*managedcontrolplane.ManagedControlPlaneReconciler)
 	Expect(ok).To(BeTrue(), "Reconciler is not of type ManagedControlPlaneReconciler")
-	return mcpReconciler, env
+	return env, cfg.ManagedControlPlane
 }
 
 var _ = Describe("ManagedControlPlane Controller", func() {
 
 	It("should correctly handle the creation, update, and deletion flow for MCP resources", func() {
-		rec, env := defaultTestSetup("testdata", "test-01")
+		env, cfg := defaultTestSetup("testdata", "test-01")
 
 		mcp := &corev2alpha1.ManagedControlPlaneV2{}
 		mcp.SetName("mcp-01")
@@ -122,7 +128,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		cr.SetName(mcp.Name)
 		cr.SetNamespace(platformNamespace)
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
-		Expect(cr.Spec.Purpose).To(Equal(rec.Config.MCPClusterPurpose))
+		Expect(cr.Spec.Purpose).To(Equal(cfg.MCPClusterPurpose))
 		Expect(cr.Spec.WaitForClusterDeletion).To(PointTo(BeTrue()))
 		Expect(mcp.Status.Conditions).To(ContainElements(
 			MatchCondition(TestCondition().
@@ -136,7 +142,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		cluster := &clustersv1alpha1.Cluster{}
 		cluster.SetName("cluster-01")
 		cluster.SetNamespace(platformNamespace)
-		cluster.Spec.Purposes = []string{rec.Config.MCPClusterPurpose}
+		cluster.Spec.Purposes = []string{cfg.MCPClusterPurpose}
 		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
 		cluster.Status.Conditions = []metav1.Condition{
 			{
@@ -197,7 +203,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithType(corev2alpha1.ConditionClusterConditionsSynced).
 				WithStatus(metav1.ConditionTrue)),
 		))
-		oidcProviders := []commonapi.OIDCProviderConfig{*rec.Config.DefaultOIDCProvider.DeepCopy()}
+		oidcProviders := []commonapi.OIDCProviderConfig{*cfg.DefaultOIDCProvider.DeepCopy()}
 		oidcProviders[0].RoleBindings = mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings
 		for _, addProv := range mcp.Spec.IAM.OIDC.ExtraProviders {
 			oidcProviders = append(oidcProviders, *addProv.DeepCopy())
@@ -294,7 +300,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		By("third MCP reconciliation")
 		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
-		Expect(res.RequeueAfter).To(BeNumerically("~", int64(rec.Config.ReconcileMCPEveryXDays)*24*int64(time.Hour), int64(time.Second)))
+		Expect(res.RequeueAfter).To(BeNumerically("~", int64(cfg.ReconcileMCPEveryXDays)*24*int64(time.Hour), int64(time.Second)))
 		Expect(mcp.Status.Conditions).To(ContainElements(
 			MatchCondition(TestCondition().
 				WithType(corev2alpha1.ConditionClusterRequestReady).
@@ -475,7 +481,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		By("second MCP reconciliation after update")
 		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
-		Expect(res.RequeueAfter).To(BeNumerically("~", int64(rec.Config.ReconcileMCPEveryXDays)*24*int64(time.Hour), int64(time.Second)))
+		Expect(res.RequeueAfter).To(BeNumerically("~", int64(cfg.ReconcileMCPEveryXDays)*24*int64(time.Hour), int64(time.Second)))
 		Expect(mcp.Status.Conditions).To(ContainElements(
 			MatchCondition(TestCondition().
 				WithType(corev2alpha1.ConditionClusterRequestReady).
@@ -791,7 +797,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 	})
 
 	It("should correctly set the purpose if the MCP has the override label", func() {
-		rec, env := defaultTestSetup("testdata", "test-01")
+		env, cfg := defaultTestSetup("testdata", "test-01")
 
 		mcp := &corev2alpha1.ManagedControlPlaneV2{}
 		mcp.SetName("mcp-02")
@@ -805,13 +811,13 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		cr.SetName(mcp.Name)
 		cr.SetNamespace(platformNamespace)
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
-		Expect(cr.Spec.Purpose).ToNot(Equal(rec.Config.MCPClusterPurpose))
+		Expect(cr.Spec.Purpose).ToNot(Equal(cfg.MCPClusterPurpose))
 		Expect(cr.Spec.Purpose).To(Equal("my-mcp-purpose"))
 		Expect(cr.Spec.WaitForClusterDeletion).To(PointTo(BeTrue()))
 	})
 
 	It("should correctly handle an MCP without OIDC providers", func() {
-		rec, env := defaultTestSetup("testdata", "test-01")
+		env, cfg := defaultTestSetup("testdata", "test-01")
 
 		mcp := &corev2alpha1.ManagedControlPlaneV2{}
 		mcp.SetName("mcp-03")
@@ -832,7 +838,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		cluster := &clustersv1alpha1.Cluster{}
 		cluster.SetName("cluster-01")
 		cluster.SetNamespace(platformNamespace)
-		cluster.Spec.Purposes = []string{rec.Config.MCPClusterPurpose}
+		cluster.Spec.Purposes = []string{cfg.MCPClusterPurpose}
 		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
 		cluster.Status.Conditions = []metav1.Condition{
 			{
@@ -864,7 +870,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 	})
 
 	It("should requeue the MCP if its phase is not 'Ready', even if all accesses are ready", func() {
-		_, env := defaultTestSetup("testdata", "test-02")
+		env, _ := defaultTestSetup("testdata", "test-02")
 
 		mcp := &corev2alpha1.ManagedControlPlaneV2{}
 		mcp.SetName("mcp-01")
@@ -886,6 +892,128 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		))
 		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
 		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute), "MCP has not been requeued")
+	})
+
+	It("should pick up changes to ReconcileMCPEveryXDays from dynamic config", func() {
+		platform := "platform"
+		onboarding := "onboarding"
+		mcpRec := "mcp"
+		configMapName := "mcp-config"
+		configMapNamespace := "test-namespace"
+
+		testScheme := install.InstallOperatorAPIsPlatform(runtime.NewScheme())
+		install.InstallOperatorAPIsOnboarding(testScheme)
+
+		// Read initial config from testdata
+		initialConfigYAMLBytes, err := os.ReadFile(filepath.Join("testdata", "test-03", "configmap", "config-initial.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+
+		// Read updated config from testdata
+		updatedConfigYAMLBytes, err := os.ReadFile(filepath.Join("testdata", "test-03", "configmap", "config-updated.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+
+		// Create ConfigMap with initial config
+		initialConfigMap := &corev1.ConfigMap{}
+		initialConfigMap.SetName(configMapName)
+		initialConfigMap.SetNamespace(configMapNamespace)
+		initialConfigMap.Data = map[string]string{
+			"config.yaml": string(initialConfigYAMLBytes),
+		}
+
+		envB := testutils.NewComplexEnvironmentBuilder().
+			WithFakeClient(platform, testScheme).
+			WithDynamicObjectsWithStatus(platform, &clustersv1alpha1.ClusterRequest{}, &clustersv1alpha1.AccessRequest{}, &clustersv1alpha1.Cluster{}).
+			WithFakeClient(onboarding, install.InstallOperatorAPIsOnboarding(runtime.NewScheme())).
+			WithInitObjectPath(onboarding, "testdata", "test-03", onboarding).
+			WithReconcilerConstructor(mcpRec, func(clients ...client.Client) reconcile.Reconciler {
+				// Create configGetter with access to the platform client
+				getter := func(ctx context.Context) (*config.ManagedControlPlaneConfig, error) {
+					providerConfig, err := config.LoadFromConfigMap(ctx, clients[0], configMapName, configMapNamespace)
+					if err != nil {
+						return nil, fmt.Errorf("failed to load config from ConfigMap: %w", err)
+					}
+					if providerConfig == nil {
+						mcpConfig := &config.ManagedControlPlaneConfig{}
+						err = mcpConfig.Default(nil)
+						return mcpConfig, err
+					}
+					return providerConfig.ManagedControlPlane, nil
+				}
+				mcpRec, err := managedcontrolplane.NewManagedControlPlaneReconciler(
+					clusters.NewTestClusterFromClient(platform, clients[0]),
+					clusters.NewTestClusterFromClient(onboarding, clients[1]),
+					nil,
+					getter,
+					configMapName,
+				)
+				Expect(err).ToNot(HaveOccurred())
+				return mcpRec
+			}, platform, onboarding)
+
+		env := envB.Build()
+
+		// Create ConfigMap in the environment
+		Expect(env.Client(platform).Create(env.Ctx, initialConfigMap)).To(Succeed())
+
+		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp.SetName("mcp-dynamic-config")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("first reconciliation with initial config (7 days)")
+		res := env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		initialRequeueDuration := res.RequeueAfter
+		Expect(initialRequeueDuration).To(BeNumerically(">", 0), "Should requeue")
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		By("fake ClusterRequest readiness with full setup")
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{"mcp"}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{
+			{
+				Type:               "Ready",
+				Status:             metav1.ConditionTrue,
+				Reason:             "TestReason",
+				Message:            "Cluster is ready",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: 1,
+			},
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{
+			Name:      cluster.Name,
+			Namespace: cluster.Namespace,
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		By("second reconciliation - MCP reaches ready state")
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("updating ConfigMap to use reconciliation duration: 14 days")
+		currentConfigMap := &corev1.ConfigMap{}
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKey{Namespace: configMapNamespace, Name: configMapName}, currentConfigMap)).To(Succeed())
+		currentConfigMap.Data["config.yaml"] = string(updatedConfigYAMLBytes)
+		Expect(env.Client(platform).Update(env.Ctx, currentConfigMap)).To(Succeed())
+
+		By("third reconciliation after ConfigMap update - should use new duration (14 days)")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		updatedRequeueDuration := res.RequeueAfter
+		// Verify the requeue duration has changed
+		Expect(updatedRequeueDuration).ToNot(Equal(initialRequeueDuration), "Requeue duration should change after ConfigMap update")
 	})
 
 })
