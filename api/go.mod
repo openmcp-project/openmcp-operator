@@ -3,7 +3,7 @@ module github.com/openmcp-project/openmcp-operator/api
 go 1.25.7
 
 require (
-	github.com/openmcp-project/controller-utils v0.25.2
+	github.com/openmcp-project/controller-utils v0.26.0
 	k8s.io/api v0.35.0
 	k8s.io/apiextensions-apiserver v0.35.0
 	k8s.io/apimachinery v0.35.0
