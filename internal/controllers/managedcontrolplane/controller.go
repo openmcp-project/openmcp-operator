@@ -369,7 +369,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 		msg.WriteString("Waiting for the following service resources to be deleted: ")
 		for providerName, resources := range remainingResources {
 			for _, res := range resources {
-				msg.WriteString(fmt.Sprintf("[%s]%s.%s, ", providerName, res.GetKind(), res.GetAPIVersion()))
+				fmt.Fprintf(&msg, "[%s]%s.%s, ", providerName, res.GetKind(), res.GetAPIVersion())
 			}
 		}
 		createCon(corev2alpha1.ConditionAllServicesDeleted, metav1.ConditionFalse, cconst.ReasonWaitingForServiceDeletion, strings.TrimSuffix(msg.String(), ", "))
