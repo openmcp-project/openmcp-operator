@@ -2074,6 +2074,17 @@ spec:
                 items:
                   type: string
                 type: array
+              metrics:
+                properties:
+                  disabled:
+                    type: boolean
+                  port:
+                    format: int32
+                    type: integer
+                required:
+                - disabled
+                - port
+                type: object
               runCommand:
                 description: |-
                   RunCommand is the command that is executed to run the provider controllers.

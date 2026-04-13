@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"github.com/openmcp-project/openmcp-operator/api/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -94,12 +95,26 @@ type DeploymentSpec struct {
 	// +listType=map
 	// +listMapKey=topologyKey
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty" patchStrategy:"merge" patchMergeKey:"topologyKey"`
+
+	Metrics MetricsConfiguration `json:"metrics,omitempty"`
 }
 
 type WebhookConfiguration struct {
 	// Enabled indicates whether the webhook is enabled.
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled"`
+}
+
+type MetricsConfiguration struct {
+	Disabled bool   `json:"disabled"`
+	Port     *int32 `json:"port"`
+}
+
+func (m *MetricsConfiguration) GetPort() int32 {
+	if m.Port == nil {
+		return constants.MetricsPortDefault
+	}
+	return *m.Port
 }
 
 // DeploymentStatus defines the observed state of a provider.
