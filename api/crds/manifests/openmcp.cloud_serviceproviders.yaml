@@ -2075,10 +2075,21 @@ spec:
                   type: string
                 type: array
               metrics:
+                description: Metrics configures the controller-runtime metrics endpoint
+                  configuration
                 properties:
                   disabled:
+                    default: false
+                    description: |-
+                      Disabled disables the metrics endpoint.
+                      When enabled, an additional TCP port will be added to the container of the deployment.
+                      In addition, a ClusterIP service will be created for the metrics endpoint.
                     type: boolean
                   port:
+                    description: |-
+                      The port that is used for the metrics endpoint.
+                      If `Disabled` is false and Port is nil, the default value will be used.
+                      Default: 8080
                     format: int32
                     type: integer
                 required:

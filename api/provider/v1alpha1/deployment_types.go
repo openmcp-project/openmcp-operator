@@ -17,9 +17,10 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"github.com/openmcp-project/openmcp-operator/api/constants"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/openmcp-project/openmcp-operator/api/constants"
 
 	"github.com/openmcp-project/openmcp-operator/api/common"
 )
@@ -96,6 +97,7 @@ type DeploymentSpec struct {
 	// +listMapKey=topologyKey
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty" patchStrategy:"merge" patchMergeKey:"topologyKey"`
 
+	// Metrics configures the controller-runtime metrics endpoint configuration
 	Metrics MetricsConfiguration `json:"metrics,omitempty"`
 }
 
@@ -106,8 +108,15 @@ type WebhookConfiguration struct {
 }
 
 type MetricsConfiguration struct {
-	Disabled bool   `json:"disabled"`
-	Port     *int32 `json:"port"`
+	// Disabled disables the metrics endpoint.
+	// When enabled, an additional TCP port will be added to the container of the deployment.
+	// In addition, a ClusterIP service will be created for the metrics endpoint.
+	// +kubebuilder:default=false
+	Disabled bool `json:"disabled"`
+	// The port that is used for the metrics endpoint.
+	// If `Disabled` is false and Port is nil, the default value will be used.
+	// Default: 8080
+	Port *int32 `json:"port"`
 }
 
 func (m *MetricsConfiguration) GetPort() int32 {
