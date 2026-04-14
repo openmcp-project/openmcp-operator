@@ -20,10 +20,11 @@ type metricsServiceMutator struct {
 var _ resources.Mutator[*corev1.Service] = &metricsServiceMutator{}
 
 func NewMetricsServiceMutator(values *Values) resources.Mutator[*corev1.Service] {
+	suffix := "-metrics"
 	res := &metricsServiceMutator{
 		values: values,
 		meta:   resources.NewMetadataMutator(),
-		name:   fmt.Sprintf("%s-metrics", values.NamespacedDefaultResourceName()),
+		name:   fmt.Sprintf("%s%s", ctrlutils.ShortenToXCharactersUnsafe(values.NamespacedDefaultResourceName(), ctrlutils.K8sMaxNameLength-len(suffix)), suffix)
 	}
 	res.meta.WithLabels(values.LabelsController())
 	return res
