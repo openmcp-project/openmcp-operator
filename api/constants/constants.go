@@ -45,7 +45,7 @@ const (
 	EnvVariablePodServiceAccountName = "POD_SERVICE_ACCOUNT_NAME"
 
 	// MetricsPortName is the name of the controller-runtime metrics endpoint
-	MetricsPortName = "metrics"
+	MetricsPortName = "metrics-http"
 	// MetricsPortDefault is the default port used for the metrics endpoint
 	MetricsPortDefault int32 = 8080
 )

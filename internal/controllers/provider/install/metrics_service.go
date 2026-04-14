@@ -59,5 +59,5 @@ func (m *metricsServiceMutator) Mutate(s *corev1.Service) error {
 			},
 		},
 	}
-	return nil
+	return m.meta.Mutate(s)
 }

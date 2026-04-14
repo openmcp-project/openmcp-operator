@@ -1,6 +1,8 @@
 package provider
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
@@ -138,6 +140,10 @@ var _ = Describe("Deployment Controller", func() {
 					ContainerPort: deploymentSpec.Metrics.GetPort(),
 					Protocol:      corev1.ProtocolTCP,
 				}))
+				Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElements(
+					fmt.Sprintf("--metrics-bind-address=:%d", deploymentSpec.Metrics.GetPort()),
+					"--metrics-secure=false",
+				))
 
 				metricsService := install.NewMetricsServiceMutator(values).Empty()
 				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(metricsService), metricsService)).To(Succeed())

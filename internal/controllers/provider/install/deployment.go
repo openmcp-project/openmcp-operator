@@ -89,7 +89,7 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 	}
 	if !m.values.deploymentSpec.Metrics.Disabled {
 		runCmd = append(runCmd,
-			fmt.Sprintf("--metrics-bind-address=:%d", m.values.deploymentSpec.Metrics.Port),
+			fmt.Sprintf("--metrics-bind-address=:%d", m.values.deploymentSpec.Metrics.GetPort()),
 			"--metrics-secure=false")
 	}
 	d.Spec = appsv1.DeploymentSpec{
