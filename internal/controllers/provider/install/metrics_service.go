@@ -8,6 +8,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
+
 	"github.com/openmcp-project/openmcp-operator/api/constants"
 )
 
