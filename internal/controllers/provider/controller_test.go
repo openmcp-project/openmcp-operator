@@ -1,12 +1,16 @@
 package provider
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -130,6 +134,29 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(isInitialized(deploymentStatus)).To(BeTrue(), "Provider should be initialized")
 			Expect(isProviderInstalledAndReady(deploymentStatus)).To(BeTrue(), "Provider should be ready")
 
+			if !deploymentSpec.Metrics.Disabled {
+				Expect(deploy.Spec.Template.Spec.Containers[0].Ports).To(ContainElement(corev1.ContainerPort{
+					Name:          constants.MetricsPortName,
+					ContainerPort: deploymentSpec.Metrics.GetPort(),
+					Protocol:      corev1.ProtocolTCP,
+				}))
+				Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElements(
+					fmt.Sprintf("--metrics-bind-address=:%d", deploymentSpec.Metrics.GetPort()),
+					"--metrics-secure=false",
+				))
+
+				metricsService := install.NewMetricsServiceMutator(values).Empty()
+				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(metricsService), metricsService)).To(Succeed())
+				Expect(metricsService.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
+				Expect(metricsService.Spec.Selector).To(Equal(values.LabelsController()))
+				Expect(metricsService.Spec.Ports).To(ContainElement(corev1.ServicePort{
+					Name:       constants.MetricsPortName,
+					Protocol:   corev1.ProtocolTCP,
+					Port:       deploymentSpec.Metrics.GetPort(),
+					TargetPort: intstr.FromString(constants.MetricsPortName),
+				}))
+			}
+
 			// delete the provider
 			Expect(env.Client().Delete(env.Ctx, provider)).To(Succeed(), "Provider deletion should succeed")
 			env.ShouldReconcile(req, "Reconcile after provider deletion should not return an error")
@@ -170,6 +197,11 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(deploymentSpec.TopologySpreadConstraints).To(HaveLen(2))
 		})
 
+		It("should configure the metrics endoint when eanabled", func() {
+			env := buildTestEnvironment("test-06", v1alpha1.ServiceProviderGKV())
+			req := testutils.RequestFromStrings("service-provider-test-06")
+			_ = reconcileProvider(env, req, v1alpha1.ServiceProviderGKV())
+		})
 	})
 
 	Context("Converter", func() {

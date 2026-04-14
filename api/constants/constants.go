@@ -43,4 +43,9 @@ const (
 	// EnvVariablePodServiceAccountName is the name of an environment variable passed to providers.
 	// Its value is the name of the service account under which the pod is running.
 	EnvVariablePodServiceAccountName = "POD_SERVICE_ACCOUNT_NAME"
+
+	// MetricsPortName is the name of the controller-runtime metrics endpoint
+	MetricsPortName = "metrics-http"
+	// MetricsPortDefault is the default port used for the metrics endpoint
+	MetricsPortDefault int32 = 8080
 )

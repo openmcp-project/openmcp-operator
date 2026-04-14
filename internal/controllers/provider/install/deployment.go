@@ -87,6 +87,11 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 	if m.values.deploymentSpec.RunReplicas > 1 {
 		runCmd = append(runCmd, "--leader-elect=true")
 	}
+	if !m.values.deploymentSpec.Metrics.Disabled {
+		runCmd = append(runCmd,
+			fmt.Sprintf("--metrics-bind-address=:%d", m.values.deploymentSpec.Metrics.GetPort()),
+			"--metrics-secure=false")
+	}
 	d.Spec = appsv1.DeploymentSpec{
 		Replicas: ptr.To(m.values.deploymentSpec.RunReplicas),
 		Selector: &metav1.LabelSelector{
@@ -128,6 +133,14 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 
 		d.Spec.Template.Labels[constants.TopologyLabel] = m.values.NamespacedDefaultResourceName()
 		d.Spec.Template.Labels[constants.TopologyNamespaceLabel] = m.values.Namespace()
+	}
+
+	if !m.values.deploymentSpec.Metrics.Disabled {
+		d.Spec.Template.Spec.Containers[0].Ports = append(d.Spec.Template.Spec.Containers[0].Ports, corev1.ContainerPort{
+			Name:          constants.MetricsPortName,
+			ContainerPort: m.values.deploymentSpec.Metrics.GetPort(),
+			Protocol:      corev1.ProtocolTCP,
+		})
 	}
 
 	// Set the provider as owner of the deployment, so that the provider controller gets an event if the deployment changes.
