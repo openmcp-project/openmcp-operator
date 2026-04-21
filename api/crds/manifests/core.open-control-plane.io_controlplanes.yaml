@@ -6,16 +6,17 @@ metadata:
     controller-gen.kubebuilder.io/version: v0.20.1
   labels:
     openmcp.cloud/cluster: onboarding
-  name: managedcontrolplanev2s.core.openmcp.cloud
+  name: controlplanes.core.open-control-plane.io
 spec:
-  group: core.openmcp.cloud
+  group: core.open-control-plane.io
   names:
-    kind: ManagedControlPlaneV2
-    listKind: ManagedControlPlaneV2List
-    plural: managedcontrolplanev2s
+    kind: ControlPlane
+    listKind: ControlPlaneList
+    plural: controlplanes
     shortNames:
-    - mcpv2
-    singular: managedcontrolplanev2
+    - cp
+    - ctrlp
+    singular: controlplane
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -47,14 +48,14 @@ spec:
             properties:
               iam:
                 description: IAM contains the access management configuration for
-                  the ManagedControlPlaneV2.
+                  the ControlPlane.
                 properties:
                   oidc:
                     description: OIDC is the OIDC-based access configuration.
                     properties:
                       defaultProvider:
                         description: DefaultProvider is the standard OIDC provider
-                          that is enabled for all ManagedControlPlaneV2 resources.
+                          that is enabled for all ControlPlane resources.
                         properties:
                           roleBindings:
                             description: |-
@@ -136,7 +137,7 @@ spec:
                         type: object
                       extraProviders:
                         description: |-
-                          ExtraProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
+                          ExtraProviders is a list of OIDC providers that should be configured for the ControlPlane.
                           They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
                         items:
                           properties:
@@ -277,7 +278,7 @@ spec:
                         name:
                           description: |-
                             Name is the name of this token configuration.
-                            It is used to generate a secret name and must be unique among all token configurations in the same ManagedControlPlaneV2.
+                            It is used to generate a secret name and must be unique among all token configurations in the same ControlPlane.
                           type: string
                         permissions:
                           description: |-
@@ -411,7 +412,7 @@ spec:
                   x-kubernetes-map-type: atomic
                 description: |-
                   Access is a mapping from OIDC provider names to secret references.
-                  Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ManagedControlPlaneV2.
+                  Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ControlPlane.
                   The default OIDC provider, if configured, uses the name "default" in this mapping.
                   The "default" key is also used if the ClusterProvider does not support OIDC-based access and created a serviceaccount with a token instead.
                 type: object

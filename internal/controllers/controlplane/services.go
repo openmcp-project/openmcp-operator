@@ -1,4 +1,4 @@
-package managedcontrolplane
+package controlplane
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 // deleteDependingServices lists all service providers and checks for all of their registered service resources whether there exists one for the given MCP. If so, it triggers their deletion.
 // It returns a set of service provider names for which still resources exist (should be in deletion by the time this function returns) and the total number of resources that are still left.
 // Deletion of the MCP should wait until the set is empty and the count is zero.
-func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) (map[string][]*unstructured.Unstructured, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Context, mcp *corev2alpha1.ControlPlane) (map[string][]*unstructured.Unstructured, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// delete depending service resources, if any

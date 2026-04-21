@@ -25,14 +25,14 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/controlplane"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 )
 
 // currently hard-coded, can be made configurable in the future if needed
 const (
-	MCPPurposeOverrideValidationPolicyName         = "mcp-purpose-override-validation." + corev2alpha1.GroupName
-	OIDCProviderNameUniquenessValidationPolicyName = "oidc-provider-name-uniqueness." + corev2alpha1.GroupName
+	MCPPurposeOverrideValidationPolicyName         = "mcp-purpose-override-validation." + corev2alpha1.OldGroupName
+	OIDCProviderNameUniquenessValidationPolicyName = "oidc-provider-name-uniqueness." + corev2alpha1.OldGroupName
 )
 
 func NewInitCommand(po *options.PersistentOptions) *cobra.Command {
@@ -94,7 +94,7 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
 	}
 
-	clusterAccessManager := clusteraccess.NewClusterAccessManager(o.PlatformCluster.Client(), managedcontrolplane.ControllerName, providerSystemNamespace)
+	clusterAccessManager := clusteraccess.NewClusterAccessManager(o.PlatformCluster.Client(), controlplane.ControllerName, providerSystemNamespace)
 	clusterAccessManager.WithLogger(&log).
 		WithInterval(10 * time.Second).
 		WithTimeout(30 * time.Minute)
@@ -169,7 +169,7 @@ func (o *InitOptions) PrintCompletedOptions(cmd *cobra.Command) {
 
 func (o *InitOptions) ensureMCPPurposeOverrideImmutabilityValidationPolicy(ctx context.Context, log logging.Logger, onboardingCluster *clusters.Cluster) error {
 	labelSelector := client.MatchingLabels{
-		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedByLabel:      controlplane.ControllerName,
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
 	}
 	evapbs := &admissionv1.ValidatingAdmissionPolicyBindingList{}
@@ -238,7 +238,7 @@ func (o *InitOptions) ensureMCPPurposeOverrideImmutabilityValidationPolicy(ctx c
 		},
 	})
 	vapm.MetadataMutator().WithLabels(map[string]string{
-		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedByLabel:      controlplane.ControllerName,
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
 	})
 	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapm); err != nil {
@@ -262,7 +262,7 @@ func (o *InitOptions) ensureMCPPurposeOverrideImmutabilityValidationPolicy(ctx c
 							APIGroups:   []string{corev2alpha1.GroupVersion.Group},
 							APIVersions: []string{corev2alpha1.GroupVersion.Version},
 							Resources: []string{
-								"managedcontrolplanev2s",
+								"ControlPlanes",
 							},
 						},
 					},
@@ -271,7 +271,7 @@ func (o *InitOptions) ensureMCPPurposeOverrideImmutabilityValidationPolicy(ctx c
 		},
 	})
 	vapbm.MetadataMutator().WithLabels(map[string]string{
-		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedByLabel:      controlplane.ControllerName,
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeMCPPurposeOverride,
 	})
 	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapbm); err != nil {
@@ -296,7 +296,7 @@ func (o *InitOptions) ensureDefaultOIDCProviderNameUniquenessValidationPolicy(ct
 	}
 
 	labelSelector := client.MatchingLabels{
-		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedByLabel:      controlplane.ControllerName,
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeOIDCProviderNameUniqueness,
 	}
 	evapbs := &admissionv1.ValidatingAdmissionPolicyBindingList{}
@@ -338,7 +338,7 @@ func (o *InitOptions) ensureDefaultOIDCProviderNameUniquenessValidationPolicy(ct
 							APIGroups:   []string{corev2alpha1.GroupVersion.Group},
 							APIVersions: []string{corev2alpha1.GroupVersion.Version},
 							Resources: []string{
-								"managedcontrolplanev2s",
+								"ControlPlanes",
 							},
 						},
 					},
@@ -363,7 +363,7 @@ func (o *InitOptions) ensureDefaultOIDCProviderNameUniquenessValidationPolicy(ct
 		},
 	})
 	vapm.MetadataMutator().WithLabels(map[string]string{
-		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedByLabel:      controlplane.ControllerName,
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeOIDCProviderNameUniqueness,
 	})
 	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapm); err != nil {
@@ -377,7 +377,7 @@ func (o *InitOptions) ensureDefaultOIDCProviderNameUniquenessValidationPolicy(ct
 		},
 	})
 	vapbm.MetadataMutator().WithLabels(map[string]string{
-		apiconst.ManagedByLabel:      managedcontrolplane.ControllerName,
+		apiconst.ManagedByLabel:      controlplane.ControllerName,
 		apiconst.ManagedPurposeLabel: corev2alpha1.ManagedPurposeOIDCProviderNameUniqueness,
 	})
 	if err := resources.CreateOrUpdateResource(ctx, onboardingCluster.Client(), vapbm); err != nil {

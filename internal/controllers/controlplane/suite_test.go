@@ -1,4 +1,4 @@
-package managedcontrolplane_test
+package controlplane_test
 
 import (
 	"testing"
