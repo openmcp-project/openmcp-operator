@@ -8,8 +8,8 @@ import (
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
-type ManagedControlPlaneV2Spec struct {
-	// IAM contains the access management configuration for the ManagedControlPlaneV2.
+type ControlPlaneSpec struct {
+	// IAM contains the access management configuration for the ControlPlane.
 	IAM IAMConfig `json:"iam"`
 }
 
@@ -22,9 +22,9 @@ type IAMConfig struct {
 }
 
 type OIDCConfig struct {
-	// DefaultProvider is the standard OIDC provider that is enabled for all ManagedControlPlaneV2 resources.
+	// DefaultProvider is the standard OIDC provider that is enabled for all ControlPlane resources.
 	DefaultProvider DefaultProviderConfig `json:"defaultProvider,omitempty"`
-	// ExtraProviders is a list of OIDC providers that should be configured for the ManagedControlPlaneV2.
+	// ExtraProviders is a list of OIDC providers that should be configured for the ControlPlane.
 	// They are independent of the standard OIDC provider and in addition to it, unless it has been disabled by not specifying any role bindings.
 	// +optional
 	ExtraProviders []commonapi.OIDCProviderConfig `json:"extraProviders,omitempty"`
@@ -40,17 +40,17 @@ type DefaultProviderConfig struct {
 
 type TokenConfig struct {
 	// Name is the name of this token configuration.
-	// It is used to generate a secret name and must be unique among all token configurations in the same ManagedControlPlaneV2.
+	// It is used to generate a secret name and must be unique among all token configurations in the same ControlPlane.
 	// +kubebuilder:validation:minLength=1
 	Name                         string `json:"name"`
 	clustersv1alpha1.TokenConfig `json:",inline"`
 }
 
-type ManagedControlPlaneV2Status struct {
+type ControlPlaneStatus struct {
 	commonapi.Status `json:",inline"`
 
 	// Access is a mapping from OIDC provider names to secret references.
-	// Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ManagedControlPlaneV2.
+	// Each referenced secret is expected to contain a 'kubeconfig' key with the kubeconfig that was generated for the respective OIDC provider for the ControlPlane.
 	// The default OIDC provider, if configured, uses the name "default" in this mapping.
 	// The "default" key is also used if the ClusterProvider does not support OIDC-based access and created a serviceaccount with a token instead.
 	// +optional
@@ -59,26 +59,26 @@ type ManagedControlPlaneV2Status struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:shortName=mcpv2
+// +kubebuilder:resource:shortName=cp;ctrlp
 // +kubebuilder:metadata:labels="openmcp.cloud/cluster=onboarding"
 // +kubebuilder:selectablefield:JSONPath=".status.phase"
 // +kubebuilder:printcolumn:JSONPath=".status.phase",name="Phase",type=string
 
-type ManagedControlPlaneV2 struct {
+type ControlPlane struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              ManagedControlPlaneV2Spec   `json:"spec,omitempty"`
-	Status            ManagedControlPlaneV2Status `json:"status,omitempty"`
+	Spec              ControlPlaneSpec   `json:"spec,omitempty"`
+	Status            ControlPlaneStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-type ManagedControlPlaneV2List struct {
+type ControlPlaneList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []ManagedControlPlaneV2 `json:"items"`
+	Items           []ControlPlane `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&ManagedControlPlaneV2{}, &ManagedControlPlaneV2List{})
+	SchemeBuilder.Register(&ControlPlane{}, &ControlPlaneList{})
 }

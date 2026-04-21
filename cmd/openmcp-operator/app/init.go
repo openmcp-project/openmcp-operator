@@ -24,7 +24,7 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	providerv1alpha1 "github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/controlplane"
 )
 
 const OpenMCPOperatorName = "openmcp-operator"
@@ -172,12 +172,12 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		// create/update PlatformService
 		mcpPSName := o.ProviderName
 		if mcpPSName == "" {
-			mcpPSName = strings.ToLower(managedcontrolplane.ControllerName)
+			mcpPSName = strings.ToLower(controlplane.ControllerName)
 		}
 
 		expectedLabels := map[string]string{
 			apiconst.ManagedByLabel: OpenMCPOperatorName,
-			"platformservice." + apiconst.OpenMCPGroupName + "/purpose": managedcontrolplane.ControllerName,
+			"platformservice." + apiconst.OpenMCPGroupName + "/purpose": controlplane.ControllerName,
 		}
 		psl := &providerv1alpha1.PlatformServiceList{}
 		if err := o.PlatformCluster.Client().List(ctx, psl, client.MatchingLabels(expectedLabels)); err != nil {

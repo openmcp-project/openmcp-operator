@@ -1,4 +1,4 @@
-package managedcontrolplane_test
+package controlplane_test
 
 import (
 	"context"
@@ -32,7 +32,7 @@ import (
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/controlplane"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
@@ -71,7 +71,7 @@ func defaultTestSetup(testDirPathSegments ...string) (*testutils.ComplexEnvironm
 			getter := func(ctx context.Context) (*config.ManagedControlPlaneConfig, error) {
 				return staticConfig, nil
 			}
-			mcpr, err := managedcontrolplane.NewManagedControlPlaneReconciler(clusters.NewTestClusterFromClient(platform, clients[0]), clusters.NewTestClusterFromClient(onboarding, clients[1]), nil, getter, "")
+			mcpr, err := controlplane.NewManagedControlPlaneReconciler(clusters.NewTestClusterFromClient(platform, clients[0]), clusters.NewTestClusterFromClient(onboarding, clients[1]), nil, getter, "")
 			Expect(err).ToNot(HaveOccurred())
 			return mcpr
 		}, platform, onboarding)
@@ -82,7 +82,7 @@ func defaultTestSetup(testDirPathSegments ...string) (*testutils.ComplexEnvironm
 		envB.WithInitObjectPath(onboarding, append(testDirPathSegments, onboarding)...)
 	}
 	env := envB.Build()
-	_, ok := env.Reconciler(mcpRec).(*managedcontrolplane.ManagedControlPlaneReconciler)
+	_, ok := env.Reconciler(mcpRec).(*controlplane.ManagedControlPlaneReconciler)
 	Expect(ok).To(BeTrue(), "Reconciler is not of type ManagedControlPlaneReconciler")
 	return env, cfg.ManagedControlPlane
 }
@@ -92,7 +92,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 	It("should correctly handle the creation, update, and deletion flow for MCP resources", func() {
 		env, cfg := defaultTestSetup("testdata", "test-01")
 
-		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp := &corev2alpha1.ControlPlane{}
 		mcp.SetName("mcp-01")
 		mcp.SetNamespace("test")
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
@@ -123,7 +123,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(ns), ns)).To(Succeed())
 		Expect(ns.Labels).To(HaveKeyWithValue(corev2alpha1.MCPNameLabel, mcp.Name))
 		Expect(ns.Labels).To(HaveKeyWithValue(corev2alpha1.MCPNamespaceLabel, mcp.Namespace))
-		Expect(ns.Labels).To(HaveKeyWithValue(apiconst.ManagedByLabel, managedcontrolplane.ControllerName))
+		Expect(ns.Labels).To(HaveKeyWithValue(apiconst.ManagedByLabel, controlplane.ControllerName))
 		cr := &clustersv1alpha1.ClusterRequest{}
 		cr.SetName(mcp.Name)
 		cr.SetNamespace(platformNamespace)
@@ -799,7 +799,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 	It("should correctly set the purpose if the MCP has the override label", func() {
 		env, cfg := defaultTestSetup("testdata", "test-01")
 
-		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp := &corev2alpha1.ControlPlane{}
 		mcp.SetName("mcp-02")
 		mcp.SetNamespace("test")
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
@@ -819,7 +819,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 	It("should correctly handle an MCP without OIDC providers", func() {
 		env, cfg := defaultTestSetup("testdata", "test-01")
 
-		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp := &corev2alpha1.ControlPlane{}
 		mcp.SetName("mcp-03")
 		mcp.SetNamespace("test")
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
@@ -872,7 +872,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 	It("should requeue the MCP if its phase is not 'Ready', even if all accesses are ready", func() {
 		env, _ := defaultTestSetup("testdata", "test-02")
 
-		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp := &corev2alpha1.ControlPlane{}
 		mcp.SetName("mcp-01")
 		mcp.SetNamespace("test")
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
@@ -939,7 +939,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 					}
 					return providerConfig.ManagedControlPlane, nil
 				}
-				mcpRec, err := managedcontrolplane.NewManagedControlPlaneReconciler(
+				mcpRec, err := controlplane.NewManagedControlPlaneReconciler(
 					clusters.NewTestClusterFromClient(platform, clients[0]),
 					clusters.NewTestClusterFromClient(onboarding, clients[1]),
 					nil,
@@ -955,7 +955,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		// Create ConfigMap in the environment
 		Expect(env.Client(platform).Create(env.Ctx, initialConfigMap)).To(Succeed())
 
-		mcp := &corev2alpha1.ManagedControlPlaneV2{}
+		mcp := &corev2alpha1.ControlPlane{}
 		mcp.SetName("mcp-dynamic-config")
 		mcp.SetNamespace("test")
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
