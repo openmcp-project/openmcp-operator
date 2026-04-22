@@ -25,6 +25,10 @@ const (
 	ProviderGenerationLabel = "openmcp.cloud/provider-generation"
 )
 
+type InstallerStatus struct {
+	Metrics *v1alpha1.MetricsStatus
+}
+
 type Installer struct {
 	PlatformClient  client.Client
 	Provider        *unstructured.Unstructured
@@ -37,7 +41,7 @@ type Installer struct {
 // Does nothing if the generation has not changed.
 // Otherwise, it deletes the old job before it creates the new job.
 // Adds provider generation as annotation to the job.
-func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err error) {
+func (a *Installer) InstallInitJob(ctx context.Context, _ *InstallerStatus) (completed bool, err error) {
 
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment, a.SystemNamespace)
 
@@ -101,7 +105,7 @@ func (a *Installer) InstallInitJob(ctx context.Context) (completed bool, err err
 	}
 }
 
-func (a *Installer) InstallProvider(ctx context.Context) error {
+func (a *Installer) InstallProvider(ctx context.Context, status *InstallerStatus) error {
 
 	values := NewValues(a.Provider, a.DeploymentSpec, a.Environment, a.SystemNamespace)
 
@@ -129,8 +133,15 @@ func (a *Installer) InstallProvider(ctx context.Context) error {
 	}
 
 	if !values.deploymentSpec.Metrics.Disabled {
-		if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, NewMetricsServiceMutator(values)); err != nil {
+		metricsMutator := NewMetricsServiceMutator(values)
+		if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, metricsMutator); err != nil {
 			return err
+		}
+		status.Metrics = &v1alpha1.MetricsStatus{
+			Service: v1alpha1.MetricsService{
+				Name:      metricsMutator.Empty().Name,
+				Namespace: metricsMutator.Empty().Namespace,
+			},
 		}
 	}
 

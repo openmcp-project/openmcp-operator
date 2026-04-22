@@ -135,6 +135,12 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(isProviderInstalledAndReady(deploymentStatus)).To(BeTrue(), "Provider should be ready")
 
 			if !deploymentSpec.Metrics.Disabled {
+				metricsService := install.NewMetricsServiceMutator(values).Empty()
+
+				Expect(deploymentStatus.Metrics).ToNot(BeNil(), "Metrics should not be nil")
+				Expect(deploymentStatus.Metrics.Service.Name).To(Equal(metricsService.Name), "Metrics service name should match the metrics service")
+				Expect(deploymentStatus.Metrics.Service.Namespace).To(Equal(metricsService.Namespace), "Metrics service namespace should match the metrics service")
+
 				Expect(deploy.Spec.Template.Spec.Containers[0].Ports).To(ContainElement(corev1.ContainerPort{
 					Name:          constants.MetricsPortName,
 					ContainerPort: deploymentSpec.Metrics.GetPort(),
@@ -145,7 +151,6 @@ var _ = Describe("Deployment Controller", func() {
 					"--metrics-secure=false",
 				))
 
-				metricsService := install.NewMetricsServiceMutator(values).Empty()
 				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(metricsService), metricsService)).To(Succeed())
 				Expect(metricsService.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))
 				Expect(metricsService.Spec.Selector).To(Equal(values.LabelsController()))

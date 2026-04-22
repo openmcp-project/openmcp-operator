@@ -5,6 +5,8 @@ import (
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider/install"
+
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
@@ -69,6 +71,7 @@ type ReconcileStatus struct {
 	UninstalledCondition *meta.Condition
 	ObservedGeneration   int64
 	Phase                string
+	Metrics              *v1alpha1.MetricsStatus
 }
 
 func (s *ReconcileStatus) setInitConditionJobCreationPending() {
@@ -208,5 +211,11 @@ func (s *ReconcileStatus) intoDeploymentStatus(deploymentStatus *v1alpha1.Deploy
 		apimeta.RemoveStatusCondition(&deploymentStatus.Conditions, typeUninstalled)
 	}
 
+	deploymentStatus.Metrics = s.Metrics
+
 	return nil
+}
+
+func (s *ReconcileStatus) fromInstallerStatus(status *install.InstallerStatus) {
+	s.Metrics = status.Metrics
 }
