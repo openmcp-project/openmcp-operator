@@ -132,7 +132,7 @@ func (a *Installer) InstallProvider(ctx context.Context, status *InstallerStatus
 		return err
 	}
 
-	if !values.deploymentSpec.Metrics.Disabled {
+	if values.deploymentSpec.Metrics.IsEnabled() {
 		metricsMutator := NewMetricsServiceMutator(values)
 		if err := resources.CreateOrUpdateResource(ctx, a.PlatformClient, metricsMutator); err != nil {
 			return err

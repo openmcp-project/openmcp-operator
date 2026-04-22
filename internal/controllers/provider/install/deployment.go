@@ -87,7 +87,7 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 	if m.values.deploymentSpec.RunReplicas > 1 {
 		runCmd = append(runCmd, "--leader-elect=true")
 	}
-	if !m.values.deploymentSpec.Metrics.Disabled {
+	if m.values.deploymentSpec.Metrics.IsEnabled() {
 		runCmd = append(runCmd,
 			fmt.Sprintf("--metrics-bind-address=:%d", m.values.deploymentSpec.Metrics.GetPort()),
 			"--metrics-secure=false")
@@ -135,7 +135,7 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 		d.Spec.Template.Labels[constants.TopologyNamespaceLabel] = m.values.Namespace()
 	}
 
-	if !m.values.deploymentSpec.Metrics.Disabled {
+	if m.values.deploymentSpec.Metrics.IsEnabled() {
 		d.Spec.Template.Spec.Containers[0].Ports = append(d.Spec.Template.Spec.Containers[0].Ports, corev1.ContainerPort{
 			Name:          constants.MetricsPortName,
 			ContainerPort: m.values.deploymentSpec.Metrics.GetPort(),

@@ -134,7 +134,7 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(isInitialized(deploymentStatus)).To(BeTrue(), "Provider should be initialized")
 			Expect(isProviderInstalledAndReady(deploymentStatus)).To(BeTrue(), "Provider should be ready")
 
-			if !deploymentSpec.Metrics.Disabled {
+			if deploymentSpec.Metrics.IsEnabled() {
 				metricsService := install.NewMetricsServiceMutator(values).Empty()
 
 				Expect(deploymentStatus.Metrics).ToNot(BeNil(), "Metrics should not be nil")
