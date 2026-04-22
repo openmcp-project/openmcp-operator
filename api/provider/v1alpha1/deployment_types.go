@@ -98,6 +98,7 @@ type DeploymentSpec struct {
 	TopologySpreadConstraints []corev1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty" patchStrategy:"merge" patchMergeKey:"topologyKey"`
 
 	// Metrics configures the controller-runtime metrics endpoint configuration
+	// +optional
 	Metrics MetricsConfiguration `json:"metrics,omitempty"`
 }
 
@@ -116,7 +117,17 @@ type MetricsConfiguration struct {
 	// The port that is used for the metrics endpoint.
 	// If `Disabled` is false and Port is nil, the default value will be used.
 	// Default: 8080
-	Port *int32 `json:"port"`
+	// +optional
+	Port *int32 `json:"port,omitempty"`
+}
+
+type MetricsService struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type MetricsStatus struct {
+	Service MetricsService `json:"serviceRef"`
 }
 
 func (m *MetricsConfiguration) GetPort() int32 {
@@ -135,6 +146,9 @@ type DeploymentStatus struct {
 	ObservedGeneration int64 `json:"observedGeneration"`
 
 	Phase string `json:"phase,omitempty"`
+
+	// +optional
+	Metrics *MetricsStatus `json:"metrics,omitempty"`
 }
 
 // EnvVar represents an environment variable present in a Container.

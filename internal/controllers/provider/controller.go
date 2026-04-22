@@ -133,17 +133,21 @@ func (r *ProviderReconciler) install(
 		SystemNamespace: r.SystemNamespace,
 	}
 
+	installerStatus := &install.InstallerStatus{}
+
 	// init job
 	log.Debug("installing init job")
-	completed, err := installer.InstallInitJob(ctx)
+	completed, err := installer.InstallInitJob(ctx, installerStatus)
 	if err != nil {
 		log.Error(err, "failed to install init job")
 		status.setInitConditionJobCreationFailed(err)
+		status.fromInstallerStatus(installerStatus)
 		return status, err
 	}
 	if !completed {
 		log.Debug("init job has not yet completed")
 		status.setInitConditionJobRunning()
+		status.fromInstallerStatus(installerStatus)
 		return status, nil
 	}
 
@@ -152,9 +156,10 @@ func (r *ProviderReconciler) install(
 
 	// deployment
 	log.Debug("installing provider")
-	if err := installer.InstallProvider(ctx); err != nil {
+	if err := installer.InstallProvider(ctx, installerStatus); err != nil {
 		log.Error(err, "failed to install provider")
 		status.setReadyConditionProviderInstallationFailed(err)
+		status.fromInstallerStatus(installerStatus)
 		return status, err
 	}
 
@@ -162,6 +167,7 @@ func (r *ProviderReconciler) install(
 	if !readinessCheckResult.IsReady() {
 		log.Debug("provider is not yet ready")
 		status.setReadyConditionProviderNotReady(readinessCheckResult.Message())
+		status.fromInstallerStatus(installerStatus)
 		return status, nil
 	}
 
@@ -169,6 +175,8 @@ func (r *ProviderReconciler) install(
 	status.setReadyConditionProviderReady()
 
 	status.Phase = phaseReady
+	status.fromInstallerStatus(installerStatus)
+
 	return status, nil
 }
 
