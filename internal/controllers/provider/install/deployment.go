@@ -141,6 +141,12 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 			ContainerPort: m.values.deploymentSpec.Metrics.GetPort(),
 			Protocol:      corev1.ProtocolTCP,
 		})
+		if d.Spec.Template.Annotations == nil {
+			d.Spec.Template.Annotations = make(map[string]string)
+		}
+		d.Spec.Template.Annotations[constants.MetricsEnabledAnnotation] = "true"
+		d.Spec.Template.Annotations[constants.MetricsPathAnnotation] = constants.MetricsPath
+		d.Spec.Template.Annotations[constants.MetricsPortAnnotation] = fmt.Sprintf("%d", m.values.deploymentSpec.Metrics.GetPort())
 	}
 
 	// Set the provider as owner of the deployment, so that the provider controller gets an event if the deployment changes.
