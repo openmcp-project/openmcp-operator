@@ -46,10 +46,16 @@ const (
 
 	// MetricsPortName is the name of the controller-runtime metrics endpoint
 	MetricsPortName = "metrics-http"
-	MetricsPath     = "/metrics"
+	// MetricsPathDefault is the name of the default controller-runtime metrics path
+	MetricsPathDefault = "/metrics"
 	// MetricsPortDefault is the default port used for the metrics endpoint
-	MetricsPortDefault       int32 = 8080
-	MetricsEnabledAnnotation       = "prometheus.io/scrape"
-	MetricsPortAnnotation          = "prometheus.io/port"
-	MetricsPathAnnotation          = "prometheus.io/path"
+	MetricsPortDefault int32 = 8080
+	// MetricsPrometheusAnnotation is the prefix for the metrics pod annotations
+	MetricsPrometheusAnnotation = "prometheus.io"
+	// MetricsEnabledAnnotation defines the metrics enabled annotation
+	MetricsEnabledAnnotation = MetricsPrometheusAnnotation + "/scrape"
+	// MetricsPortAnnotation defines the metrics port annotation
+	MetricsPortAnnotation = MetricsPrometheusAnnotation + "/port"
+	// MetricsPathAnnotation defines the metrics path annotation
+	MetricsPathAnnotation = MetricsPrometheusAnnotation + "/path"
 )

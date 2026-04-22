@@ -150,6 +150,9 @@ var _ = Describe("Deployment Controller", func() {
 					fmt.Sprintf("--metrics-bind-address=:%d", deploymentSpec.Metrics.GetPort()),
 					"--metrics-secure=false",
 				))
+				Expect(deploy.Spec.Template.Annotations).To(HaveKeyWithValue(constants.MetricsEnabledAnnotation, "true"))
+				Expect(deploy.Spec.Template.Annotations).To(HaveKeyWithValue(constants.MetricsPathAnnotation, deploymentSpec.Metrics.GetPath()))
+				Expect(deploy.Spec.Template.Annotations).To(HaveKeyWithValue(constants.MetricsPortAnnotation, deploymentSpec.Metrics.GetPortAsString()))
 
 				Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(metricsService), metricsService)).To(Succeed())
 				Expect(metricsService.Spec.Type).To(Equal(corev1.ServiceTypeClusterIP))

@@ -2085,6 +2085,12 @@ spec:
                       When enabled, an additional TCP port will be added to the container of the deployment.
                       In addition, a ClusterIP service will be created for the metrics endpoint.
                     type: boolean
+                  path:
+                    description: |-
+                      The metrics path.
+                      If `Disabled` is false and Path is nil, the default value will be used.
+                      Default: /metrics
+                    type: string
                   port:
                     description: |-
                       The port that is used for the metrics endpoint.
@@ -2092,6 +2098,8 @@ spec:
                       Default: 8080
                     format: int32
                     type: integer
+                required:
+                - disabled
                 type: object
               runCommand:
                 description: |-

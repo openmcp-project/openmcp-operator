@@ -145,8 +145,8 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 			d.Spec.Template.Annotations = make(map[string]string)
 		}
 		d.Spec.Template.Annotations[constants.MetricsEnabledAnnotation] = "true"
-		d.Spec.Template.Annotations[constants.MetricsPathAnnotation] = constants.MetricsPath
-		d.Spec.Template.Annotations[constants.MetricsPortAnnotation] = fmt.Sprintf("%d", m.values.deploymentSpec.Metrics.GetPort())
+		d.Spec.Template.Annotations[constants.MetricsPathAnnotation] = m.values.deploymentSpec.Metrics.GetPath()
+		d.Spec.Template.Annotations[constants.MetricsPortAnnotation] = m.values.deploymentSpec.Metrics.GetPortAsString()
 	}
 
 	// Set the provider as owner of the deployment, so that the provider controller gets an event if the deployment changes.
