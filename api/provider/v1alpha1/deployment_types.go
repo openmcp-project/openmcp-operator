@@ -99,7 +99,7 @@ type DeploymentSpec struct {
 
 	// Metrics configures the controller-runtime metrics endpoint configuration
 	// +optional
-	Metrics MetricsConfiguration `json:"metrics,omitempty"`
+	Metrics *MetricsConfiguration `json:"metrics,omitempty"`
 }
 
 type WebhookConfiguration struct {
@@ -113,6 +113,7 @@ type MetricsConfiguration struct {
 	// When enabled, an additional TCP port will be added to the container of the deployment.
 	// In addition, a ClusterIP service will be created for the metrics endpoint.
 	// +kubebuilder:default=false
+	// +optional
 	Disabled bool `json:"disabled"`
 	// The port that is used for the metrics endpoint.
 	// If `Disabled` is false and Port is nil, the default value will be used.
@@ -130,8 +131,12 @@ type MetricsStatus struct {
 	Service MetricsService `json:"serviceRef"`
 }
 
+func (m *MetricsConfiguration) IsEnabled() bool {
+	return m == nil || !m.Disabled
+}
+
 func (m *MetricsConfiguration) GetPort() int32 {
-	if m.Port == nil {
+	if m == nil || m.Port == nil {
 		return constants.MetricsPortDefault
 	}
 	return *m.Port
