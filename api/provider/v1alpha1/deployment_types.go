@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -113,8 +115,12 @@ type MetricsConfiguration struct {
 	// When enabled, an additional TCP port will be added to the container of the deployment.
 	// In addition, a ClusterIP service will be created for the metrics endpoint.
 	// +kubebuilder:default=false
-	// +optional
 	Disabled bool `json:"disabled"`
+	// The metrics path.
+	// If `Disabled` is false and Path is nil, the default value will be used.
+	// Default: /metrics
+	// +optional
+	Path *string `json:"path"`
 	// The port that is used for the metrics endpoint.
 	// If `Disabled` is false and Port is nil, the default value will be used.
 	// Default: 8080
@@ -135,11 +141,23 @@ func (m *MetricsConfiguration) IsEnabled() bool {
 	return m == nil || !m.Disabled
 }
 
+func (m *MetricsConfiguration) GetPath() string {
+	if m == nil || m.Path == nil {
+		return constants.MetricsPathDefault
+	}
+	return *m.Path
+}
+
 func (m *MetricsConfiguration) GetPort() int32 {
 	if m == nil || m.Port == nil {
 		return constants.MetricsPortDefault
 	}
 	return *m.Port
+}
+
+func (m *MetricsConfiguration) GetPortAsString() string {
+	port := m.GetPort()
+	return fmt.Sprintf("%d", port)
 }
 
 // DeploymentStatus defines the observed state of a provider.
