@@ -8,18 +8,18 @@ const (
 )
 
 const (
-	MCPNameLabel            = GroupName + "/mcp-name"
-	MCPNamespaceLabel       = GroupName + "/mcp-namespace"
-	OIDCProviderLabel       = GroupName + "/oidc-provider"
-	TokenProviderLabel      = GroupName + "/token-provider"
-	MCPPurposeOverrideLabel = GroupName + "/purpose"
+	MCPNameLabel            = OldGroupName + "/mcp-name"
+	MCPNamespaceLabel       = OldGroupName + "/mcp-namespace"
+	OIDCProviderLabel       = OldGroupName + "/oidc-provider"
+	TokenProviderLabel      = OldGroupName + "/token-provider"
+	MCPPurposeOverrideLabel = OldGroupName + "/purpose"
 
 	// ManagedPurposeMCPPurposeOverride is used as value for the managed purpose label. It must not be modified.
 	ManagedPurposeMCPPurposeOverride = "mcp-purpose-override"
 	// ManagedPurposeOIDCProviderNameUniqueness is used as value for the managed purpose label. It must not be modified.
 	ManagedPurposeOIDCProviderNameUniqueness = "oidc-provider-name-uniqueness"
 
-	MCPFinalizer = GroupName + "/mcp"
+	MCPFinalizer = OldGroupName + "/mcp"
 
 	// ClusterRequestFinalizerPrefix is the prefix for the finalizers that are added to MCP resources for cluster requests.
 	ClusterRequestFinalizerPrefix = "request.clusters.openmcp.cloud/"

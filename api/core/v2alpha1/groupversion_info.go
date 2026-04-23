@@ -1,5 +1,5 @@
 // +kubebuilder:object:generate=true
-// +groupName=core.openmcp.cloud
+// +groupName=core.open-control-plane.io
 package v2alpha1
 
 import (
@@ -7,7 +7,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
-const GroupName = "core.openmcp.cloud"
+const OldGroupName = "core.openmcp.cloud"
+const GroupName = "core.open-control-plane.io"
 
 var (
 	// GroupVersion is group version used to register these objects
