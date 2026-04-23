@@ -135,8 +135,6 @@ const (
 var _ = Describe("ClusterAccessReconciler", func() {
 	Context("Reconcile", func() {
 		It("should create MCP-/Workload ClusterRequests/AccessRequests", func() {
-			var reconcileResult reconcile.Result
-
 			request := reconcile.Request{
 				NamespacedName: client.ObjectKey{
 					Name:      "instance",
@@ -167,61 +165,69 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 			env := buildTestEnvironmentReconcile("test-01", false, accessRequestMCP, clusterRequestWorkload, accessRequestWorkload)
 
-			reconcileResult = env.ShouldReconcile(request, "reconcilerImpl should not return an error")
-			Expect(reconcileResult.RequeueAfter).ToNot(BeZero(), "reconcile should requeue after a delay")
+			// The order in which the registered accesses are handled is not deterministic, which makes the testing logic slightly complicated here.
+			Eventually(func(g Gomega) {
+				var failErr error
+				reconcileResult, err := env.Reconciler().Reconcile(env.Ctx, request)
+				g.Expect(err).ToNot(HaveOccurred(), "reconcilerImpl should not return an error")
 
-			// there should be an access request for the MCP cluster created
-			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestMCP), accessRequestMCP)).To(Succeed())
+				// check for MCP access request
+				err = env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestMCP), accessRequestMCP)
+				if err == nil && !accessRequestMCP.Status.IsGranted() {
+					// set the access request status to "Granted"
+					accessRequestMCP.Status = clustersv1alpha1.AccessRequestStatus{
+						Status: commonapi.Status{
+							Phase: clustersv1alpha1.REQUEST_GRANTED,
+						},
+					}
+					g.Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
+				} else {
+					failErr = err
+				}
 
-			// set the access request status to "Granted"
-			accessRequestMCP.Status = clustersv1alpha1.AccessRequestStatus{
-				Status: commonapi.Status{
-					Phase: clustersv1alpha1.REQUEST_GRANTED,
-				},
-			}
-			Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
+				// check for workload cluster request
+				err = env.Client().Get(env.Ctx, client.ObjectKeyFromObject(clusterRequestWorkload), clusterRequestWorkload)
+				if err == nil && !clusterRequestWorkload.Status.IsGranted() {
+					// set the cluster request status to "Granted"
+					clusterRequestWorkload.Status = clustersv1alpha1.ClusterRequestStatus{
+						Status: commonapi.Status{
+							Phase: clustersv1alpha1.REQUEST_GRANTED,
+						},
+					}
+					g.Expect(env.Client().Status().Update(env.Ctx, clusterRequestWorkload)).To(Succeed())
+				} else {
+					failErr = err
+				}
 
-			// reconcile again to process the granted access request
-			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
+				// check for workload access request
+				err = env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestWorkload), accessRequestWorkload)
+				if err == nil && !accessRequestWorkload.Status.IsGranted() {
+					// set the access request status to "Granted"
+					accessRequestWorkload.Status = clustersv1alpha1.AccessRequestStatus{
+						Status: commonapi.Status{
+							Phase: clustersv1alpha1.REQUEST_GRANTED,
+						},
+					}
+					g.Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
+				} else {
+					failErr = err
+				}
 
-			// there should be a cluster request for the workload cluster created
-			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(clusterRequestWorkload), clusterRequestWorkload)).To(Succeed())
+				g.Expect(failErr).ToNot(HaveOccurred(), "all cluster and access requests should exist eventually")
 
-			// set the cluster request status to "Granted"
-			clusterRequestWorkload.Status = clustersv1alpha1.ClusterRequestStatus{
-				Status: commonapi.Status{
-					Phase: clustersv1alpha1.REQUEST_GRANTED,
-				},
-			}
-			Expect(env.Client().Status().Update(env.Ctx, clusterRequestWorkload)).To(Succeed())
+				// set the secret reference for the MCP access request and the workload access request
+				accessRequestMCP.Status.SecretRef = &commonapi.LocalObjectReference{
+					Name: "mcp-access",
+				}
+				g.Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
 
-			// reconcile again to process the granted cluster request
-			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
+				accessRequestWorkload.Status.SecretRef = &commonapi.LocalObjectReference{
+					Name: "workload-access",
+				}
+				g.Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
 
-			// there should be an access request for the workload cluster created
-			Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(accessRequestWorkload), accessRequestWorkload)).To(Succeed())
-
-			// set the access request status to "Granted"
-			accessRequestWorkload.Status = clustersv1alpha1.AccessRequestStatus{
-				Status: commonapi.Status{
-					Phase: clustersv1alpha1.REQUEST_GRANTED,
-				},
-			}
-			Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
-
-			// set the secret reference for the MCP access request and the workload access request
-			accessRequestMCP.Status.SecretRef = &commonapi.LocalObjectReference{
-				Name: "mcp-access",
-			}
-			Expect(env.Client().Status().Update(env.Ctx, accessRequestMCP)).To(Succeed())
-
-			accessRequestWorkload.Status.SecretRef = &commonapi.LocalObjectReference{
-				Name: "workload-access",
-			}
-			Expect(env.Client().Status().Update(env.Ctx, accessRequestWorkload)).To(Succeed())
-
-			// reconcile again to process the granted access request
-			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
+				g.Expect(reconcileResult.RequeueAfter).To(BeZero(), "reconcile should finish without requeue eventually")
+			}).Should(Succeed())
 
 			// cast to ClusterAccessReconciler to access the reconcilerImpl methods
 			reconciler, ok := env.Reconciler().(clusteraccess.Reconciler) // nolint:staticcheck
