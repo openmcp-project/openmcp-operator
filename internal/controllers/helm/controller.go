@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
+	"github.com/openmcp-project/controller-utils/pkg/collections"
 	"github.com/openmcp-project/controller-utils/pkg/conditions"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	"github.com/openmcp-project/controller-utils/pkg/controller/smartrequeue"
@@ -48,7 +49,7 @@ type HelmDeploymentController struct {
 	ProviderNamespace string
 	Environment       string
 	sr                *smartrequeue.Store
-	cr                *helmDeploymentClusterController
+	cr                *HelmDeploymentClusterController
 	enqueueCluster    func(*clustersv1alpha1.Cluster)
 }
 
@@ -64,6 +65,20 @@ func NewHelmDeploymentController(platformCluster *clusters.Cluster, recorder eve
 		cr:                cr,
 		enqueueCluster:    enqueueCluster,
 	}
+}
+
+// TestHelmDeploymentController creates a new instance of the HelmDeploymentController.
+// THIS CONSTRUCTOR IS MEANT FOR UNIT TESTS AND SHOULD NEVER BE CALLED OUTSIDE OF TESTS.
+// It uses a queue instead of a channel for triggering cluster reconciliation, since this is easier to handle in unit tests.
+func TestHelmDeploymentController(platformCluster *clusters.Cluster, providerName, providerNamespace, environment string, clusterReconciler *HelmDeploymentClusterController, clusterReconcileQueue collections.Queue[*clustersv1alpha1.Cluster]) *HelmDeploymentController {
+	res := NewHelmDeploymentController(platformCluster, nil, providerName, providerNamespace, environment)
+	res.cr = clusterReconciler
+	res.enqueueCluster = func(cluster *clustersv1alpha1.Cluster) {
+		if err := clusterReconcileQueue.Push(cluster); err != nil {
+			panic(fmt.Errorf("queue ran out of space, this is not supposed to happen"))
+		}
+	}
+	return res
 }
 
 type ReconcileResult struct {
@@ -215,7 +230,6 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 		cct := clusterConType(cluster.Namespace, cluster.Name)
 
 		expectedLabelsForCluster := maps.Clone(expectedLabels)
-		expectedLabelsForCluster[helmv1alpha1.ClusterNamespaceLabel] = cluster.Namespace
 		expectedLabelsForCluster[helmv1alpha1.ClusterNameLabel] = cluster.Name
 
 		createConForCluster := func(status metav1.ConditionStatus, reason, message string) {
@@ -255,11 +269,9 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 			requeueRequired, rerr := c.deployHelmChartSource(ctx, &cluster, expectedLabelsForCluster, rr, createConForCluster)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error creating/updating helm chart source for cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
-				createCon(cct, metav1.ConditionFalse, rerr.Reason(), fmt.Sprintf("Error creating/updating helm chart source for Cluster '%s/%s': %s", cluster.Namespace, cluster.Name, rerr.Error()))
 				continue
 			}
 			if requeueRequired {
-				createCon(cct, metav1.ConditionFalse, helmv1alpha1.ReasonWaitingForHelmChartSourceHealthy, fmt.Sprintf("Waiting for helm chart source to become healthy for Cluster '%s/%s'", cluster.Namespace, cluster.Name))
 				if rr.SmartRequeue != ctrlutils.SR_RESET {
 					rr.SmartRequeue = ctrlutils.SR_BACKOFF
 				}
@@ -269,11 +281,9 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 			requeueRequired, rerr = c.deployHelmRelease(ctx, &cluster, ar, expectedLabelsForCluster, rr, createConForCluster)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error creating/updating HelmRelease for cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
-				createCon(cct, metav1.ConditionFalse, rerr.Reason(), fmt.Sprintf("Error creating/updating HelmRelease for Cluster '%s/%s': %s", cluster.Namespace, cluster.Name, rerr.Error()))
 				continue
 			}
 			if requeueRequired {
-				createCon(cct, metav1.ConditionFalse, helmv1alpha1.ReasonWaitingForHelmReleaseHealthy, fmt.Sprintf("Waiting for HelmRelease to become healthy for Cluster '%s/%s'", cluster.Namespace, cluster.Name))
 				if rr.SmartRequeue != ctrlutils.SR_RESET {
 					rr.SmartRequeue = ctrlutils.SR_BACKOFF
 				}
@@ -281,25 +291,21 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 				continue
 			}
 			clog.Debug("Successfully created/updated helm chart source and HelmRelease")
-			createCon(cct, metav1.ConditionTrue, "", fmt.Sprintf("Successfully created/updated helm chart source and HelmRelease for Cluster '%s/%s'", cluster.Namespace, cluster.Name))
 		} else {
 			// TODO: secret management
-			remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(ctx, expectedLabelsForCluster, createCon)
+			remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(ctx, expectedLabelsForCluster, cluster.Namespace, createCon)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error deleting HelmRelease for Cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
-				createCon(cct, metav1.ConditionFalse, rerr.Reason(), fmt.Sprintf("Error deleting HelmRelease for Cluster '%s/%s': %s", cluster.Namespace, cluster.Name, rerr.Error()))
 				continue
 			}
 			clog.Debug("Successfully deleted HelmReleases")
-			remainingHelmChartSources, rerr := c.deleteMultipleHelmChartSources(ctx, expectedLabelsForCluster, remainingHelmReleases, createCon)
+			remainingHelmChartSources, rerr := c.deleteMultipleHelmChartSources(ctx, expectedLabelsForCluster, cluster.Namespace, remainingHelmReleases, createCon)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error deleting HelmChartSources for Cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
-				createCon(cct, metav1.ConditionFalse, rerr.Reason(), fmt.Sprintf("Error deleting HelmChartSources for Cluster '%s/%s': %s", cluster.Namespace, cluster.Name, rerr.Error()))
 				continue
 			}
 			if len(remainingHelmReleases)+len(remainingHelmChartSources) > 0 {
 				clog.Debug("Waiting for HelmReleases and/or HelmChartSources to be deleted", "remainingHelmReleases", len(remainingHelmReleases), "remainingHelmChartSources", len(remainingHelmChartSources))
-				createCon(cct, metav1.ConditionFalse, helmv1alpha1.ReasonWaitingForHelmReleaseDeletion, fmt.Sprintf("Waiting for %d HelmRelease and %d HelmChartSources to be deleted for Cluster '%s/%s'", len(remainingHelmReleases), len(remainingHelmChartSources), cluster.Namespace, cluster.Name))
 				continue
 			}
 			rr.ConditionsToRemove = append(rr.ConditionsToRemove, cct)
@@ -326,26 +332,28 @@ func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr Reconcil
 	errs := errutils.NewReasonableErrorList()
 
 	// delete all HelmReleases which belong to this HelmDeployment (based on the labels)
-	remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(ctx, expectedLabels, createCon)
+	remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(ctx, expectedLabels, "", createCon)
 	if rerr != nil {
 		errs.Append(errutils.Errorf("error deleting HelmReleases: %w", rerr, rerr))
 	}
-	remainingHelmChartSources, rerr := c.deleteMultipleHelmChartSources(ctx, expectedLabels, remainingHelmReleases, createCon)
+	remainingHelmChartSources, rerr := c.deleteMultipleHelmChartSources(ctx, expectedLabels, "", remainingHelmReleases, createCon)
 	if rerr != nil {
 		errs.Append(errutils.Errorf("error deleting HelmChartSources: %w", rerr, rerr))
 	} else if len(remainingHelmReleases)+len(remainingHelmChartSources) > 0 {
 		log.Debug("Waiting for HelmReleases and/or HelmChartSources to be deleted", "remainingHelmReleases", len(remainingHelmReleases), "remainingHelmChartSources", len(remainingHelmChartSources))
+		rr.SmartRequeue = ctrlutils.SR_BACKOFF
+		return rr
 	}
 
 	// remove this helm deployment's finalizer from all clusters, unless that cluster's identity is still referenced
 	clustersToKeep := sets.New[string]()
 	for _, hr := range remainingHelmReleases {
-		if _, _, cID := clusterIdentityFromLabels(hr); cID != "" {
+		if cID := clusterIdentityFromLabels(hr); cID != "" {
 			clustersToKeep.Insert(cID)
 		}
 	}
 	for _, hcs := range remainingHelmChartSources {
-		if _, _, cID := clusterIdentityFromLabels(hcs); cID != "" {
+		if cID := clusterIdentityFromLabels(hcs); cID != "" {
 			clustersToKeep.Insert(cID)
 		}
 	}
@@ -393,6 +401,18 @@ func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr Reconcil
 	}
 
 	rr.ReconcileError = errs.Aggregate()
+	if rr.ReconcileError == nil {
+		// finally, remove the finalizer from the HelmDeployment itself
+		old := rr.Object.DeepCopy()
+		if controllerutil.RemoveFinalizer(rr.Object, helmv1alpha1.Finalizer) {
+			log.Info("Removing finalizer from HelmDeployment")
+			if err := c.PlatformCluster.Client().Patch(ctx, rr.Object, client.MergeFrom(old)); err != nil {
+				rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to remove finalizer from HelmDeployment '%s/%s': %w", rr.Object.Namespace, rr.Object.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+				return rr
+			}
+			rr.Object = nil // otherwise we will get an error trying to update the non-existing HelmDeployment's status
+		}
+	}
 	return rr
 }
 
@@ -427,18 +447,15 @@ func getSelectorDefinition(hd *helmv1alpha1.HelmDeployment, cfg *helmv1alpha1.He
 	return selectorDef, nil
 }
 
-// clusterIdentityFromLabels extracts the cluster namespace and name from the given object's labels and returns
-// - the namespace (first return value)
-// - the name (second return value)
-// - <namespace>/<name> (third return value)
+// clusterIdentityFromLabels extracts the cluster namespace and name from the given object's labels and returns <namespace>/<name>
 // Empty strings are returned if any of the labels is missing.
-func clusterIdentityFromLabels(obj client.Object) (string, string, string) {
+func clusterIdentityFromLabels(obj client.Object) string {
 	labels := obj.GetLabels()
-	namespace, name := labels[helmv1alpha1.ClusterNamespaceLabel], labels[helmv1alpha1.ClusterNameLabel]
-	if namespace == "" || name == "" {
-		return "", "", ""
+	name := labels[helmv1alpha1.ClusterNameLabel]
+	if name == "" {
+		return ""
 	}
-	return namespace, name, fmt.Sprintf("%s/%s", namespace, name)
+	return fmt.Sprintf("%s/%s", obj.GetNamespace(), name)
 }
 
 func (c *HelmDeploymentController) SetupWithManager(mgr ctrl.Manager) error {

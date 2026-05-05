@@ -14,9 +14,8 @@ const (
 	// ConditionPrefixCluster is the prefix for the cluster-related conditions on HelmDeployments.
 	ConditionPrefixCluster = "Cluster."
 
-	// ClusterNamespaceLabel is the label key that identifies the namespace of the cluster associated with a HelmRelease.
-	ClusterNamespaceLabel = GroupName + "/cluster-namespace"
 	// ClusterNameLabel is the label key that identifies the name of the cluster associated with a HelmRelease.
+	// The cluster namespace does not need an label, as it is always the same one as the resource with the ClusterNameLabel.
 	ClusterNameLabel = GroupName + "/cluster-name"
 
 	ReasonClusterAccessNotAvailable         = "ClusterAccessNotAvailable"

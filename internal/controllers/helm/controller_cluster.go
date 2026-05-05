@@ -9,9 +9,11 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -36,13 +38,13 @@ const (
 
 // newHelmDeploymentClusterController creates a new cluster controller which is used internally by the HelmDeployment controller.
 // It returns the controller and a function to trigger a reconciliation of a specific cluster.
-func newHelmDeploymentClusterController(platformCluster *clusters.Cluster, providerName string) (*helmDeploymentClusterController, func(*clustersv1alpha1.Cluster)) {
-	c := &helmDeploymentClusterController{
+func newHelmDeploymentClusterController(platformCluster *clusters.Cluster, providerName string) (*HelmDeploymentClusterController, func(*clustersv1alpha1.Cluster)) {
+	c := &HelmDeploymentClusterController{
 		PlatformCluster:    platformCluster,
 		ProviderName:       providerName,
 		clustersWithAccess: make(map[string]accessStatus),
 		lock:               &sync.RWMutex{},
-		car: advanced.NewClusterAccessReconciler(platformCluster.Client(), fmt.Sprintf("%s/%s", ControllerName, SubControllerName)).
+		car: advanced.NewClusterAccessReconciler(platformCluster.Client(), ControllerName).
 			WithManagedLabels(func(controllerName string, req ctrl.Request, _ advanced.ClusterRegistration) (string, string, map[string]string) {
 				return fmt.Sprintf("%s.%s", providerName, controllerName), req.Name, nil
 			}).
@@ -69,7 +71,32 @@ func newHelmDeploymentClusterController(platformCluster *clusters.Cluster, provi
 	}
 }
 
-type helmDeploymentClusterController struct {
+// TestHelmDeploymentClusterController creates a new instance of the cluster controller.
+// THIS CONSTRUCTOR IS MEANT FOR UNIT TESTS AND SHOULD NEVER BE CALLED OUTSIDE OF TESTS.
+// It sets the default trigger channel to nil (reconciliation needs to be triggered manually in unit tests) and configues the ClusterAccessReconciler to use fake clients for AccessRequests.
+// AccessRequests created internally by the controller will use the fake clients from the mapping, if the requested cluster's "<namespace>/<name>" matches a key in the mapping.
+// Otherwise, a new fake client will be created and added to the mapping.
+func TestHelmDeploymentClusterController(platformCluster *clusters.Cluster, providerName string, fakeClients map[string]client.Client) *HelmDeploymentClusterController {
+	res, _ := newHelmDeploymentClusterController(platformCluster, providerName)
+	res.trigger = nil
+	res.car.WithFakingCallback(advanced.FakingCallback_WaitingForAccessRequestReadiness, advanced.FakeAccessRequestReadiness())
+	res.car.WithFakingCallback(advanced.FakingCallback_WaitingForAccessRequestDeletion, advanced.FakeAccessRequestDeletion(nil, nil))
+	res.car.WithFakeClientGenerator(func(ctx context.Context, kcfgData []byte, scheme *runtime.Scheme, additionalData ...any) (client.Client, error) {
+		cID, ok := strings.CutPrefix(string(kcfgData), "fake:cluster:")
+		if !ok {
+			return nil, fmt.Errorf("invalid fake client kcfg data: %s", string(kcfgData))
+		}
+		if c, ok := fakeClients[cID]; ok {
+			return c, nil
+		}
+		c := fake.NewClientBuilder().WithScheme(scheme).Build()
+		fakeClients[cID] = c
+		return c, nil
+	})
+	return res
+}
+
+type HelmDeploymentClusterController struct {
 	PlatformCluster    *clusters.Cluster
 	ProviderName       string
 	car                advanced.ClusterAccessReconciler
@@ -87,7 +114,7 @@ const (
 	accessStatusDeletingButRequired // this means that deletion of the access was triggered, but then something changed and now access is required again
 )
 
-func (c *helmDeploymentClusterController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (c *HelmDeploymentClusterController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(ControllerName).WithName(SubControllerName)
 	ctx = logging.NewContext(ctx, log)
 	log.Info("Starting reconcile")
@@ -95,7 +122,8 @@ func (c *helmDeploymentClusterController) Reconcile(ctx context.Context, req ctr
 	return c.reconcile(ctx, req)
 }
 
-func (c *helmDeploymentClusterController) reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+// nolint:gocyclo
+func (c *HelmDeploymentClusterController) reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// fetch cluster
@@ -230,7 +258,7 @@ func helmDeploymentsOnCluster(cluster *clustersv1alpha1.Cluster) sets.Set[string
 	return res
 }
 
-func (c *helmDeploymentClusterController) GetAccessRequestForCluster(ctx context.Context, cluster *clustersv1alpha1.Cluster) (*clustersv1alpha1.AccessRequest, error) {
+func (c *HelmDeploymentClusterController) GetAccessRequestForCluster(ctx context.Context, cluster *clustersv1alpha1.Cluster) (*clustersv1alpha1.AccessRequest, error) {
 	if cluster == nil {
 		return nil, nil
 	}
@@ -245,7 +273,7 @@ func (c *helmDeploymentClusterController) GetAccessRequestForCluster(ctx context
 }
 
 // This controller is somewhat special, as it only reconciles if triggered manually.
-func (c *helmDeploymentClusterController) setupWithManager(mgr ctrl.Manager) error {
+func (c *HelmDeploymentClusterController) setupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		Named("cluster").
 		WatchesRawSource(source.Channel(c.trigger, &handler.TypedEnqueueRequestForObject[*clustersv1alpha1.Cluster]{})).

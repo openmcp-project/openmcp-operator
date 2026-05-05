@@ -169,6 +169,7 @@ func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluste
 	if _, err := controllerutil.CreateOrUpdate(ctx, c.PlatformCluster.Client(), hr, func() error {
 		// owner reference
 		if err := controllerutil.SetOwnerReference(cluster, hr, c.PlatformCluster.Scheme()); err != nil {
+			createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonHelmReleaseDeploymentFailed, fmt.Sprintf("Error setting owner reference on HelmRelease '%s/%s': %s", hr.Namespace, hr.Name, err.Error()))
 			return fmt.Errorf("error setting owner reference on HelmRelease '%s/%s': %w", hr.Namespace, hr.Name, err)
 		}
 		// labels
@@ -205,19 +206,23 @@ func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluste
 		hr.Spec.TargetNamespace = rr.Object.Spec.Namespace
 		hr.Spec.StorageNamespace = rr.Object.Spec.Namespace
 		// values
-		values := string(rr.Object.Spec.HelmValues.Raw)
-		// at some point '<' and '>' get escaped and we have to match the escaped version here
-		values = strings.ReplaceAll(values, fmt.Sprintf("%sprovider.namespace%s", "\\u003c", "\\u003e"), c.ProviderNamespace)
-		values = strings.ReplaceAll(values, fmt.Sprintf("%sprovider.name%s", "\\u003c", "\\u003e"), c.ProviderName)
-		values = strings.ReplaceAll(values, fmt.Sprintf("%senvironment%s", "\\u003c", "\\u003e"), c.Environment)
-		values = strings.ReplaceAll(values, fmt.Sprintf("%shelm.name%s", "\\u003c", "\\u003e"), rr.Object.Name)
-		values = strings.ReplaceAll(values, fmt.Sprintf("%shelm.namespace%s", "\\u003c", "\\u003e"), rr.Object.Namespace)
-		values = strings.ReplaceAll(values, fmt.Sprintf("%scluster.namespace%s", "\\u003c", "\\u003e"), cluster.Namespace)
-		values = strings.ReplaceAll(values, fmt.Sprintf("%scluster.name%s", "\\u003c", "\\u003e"), cluster.Name)
-		hr.Spec.Values = &apiextensionsv1.JSON{Raw: []byte(values)}
+		if rr.Object.Spec.HelmValues != nil {
+			values := string(rr.Object.Spec.HelmValues.Raw)
+			// at some point '<' and '>' get escaped and we have to match the escaped version here
+			values = strings.ReplaceAll(values, fmt.Sprintf("%sprovider.namespace%s", "\\u003c", "\\u003e"), c.ProviderNamespace)
+			values = strings.ReplaceAll(values, fmt.Sprintf("%sprovider.name%s", "\\u003c", "\\u003e"), c.ProviderName)
+			values = strings.ReplaceAll(values, fmt.Sprintf("%senvironment%s", "\\u003c", "\\u003e"), c.Environment)
+			values = strings.ReplaceAll(values, fmt.Sprintf("%shelm.name%s", "\\u003c", "\\u003e"), rr.Object.Name)
+			values = strings.ReplaceAll(values, fmt.Sprintf("%shelm.namespace%s", "\\u003c", "\\u003e"), rr.Object.Namespace)
+			values = strings.ReplaceAll(values, fmt.Sprintf("%scluster.namespace%s", "\\u003c", "\\u003e"), cluster.Namespace)
+			values = strings.ReplaceAll(values, fmt.Sprintf("%scluster.name%s", "\\u003c", "\\u003e"), cluster.Name)
+			hr.Spec.Values = &apiextensionsv1.JSON{Raw: []byte(values)}
+		}
 		// install configuration
 		if hr.Spec.Install == nil {
-			hr.Spec.Install = &fluxhelmv2.Install{}
+			hr.Spec.Install = &fluxhelmv2.Install{
+				CreateNamespace: true,
+			}
 		}
 		hr.Spec.Install.CRDs = fluxhelmv2.CreateReplace
 		if hr.Spec.Install.Remediation == nil {
@@ -293,12 +298,17 @@ func (c *HelmDeploymentController) deleteHelmRelease(ctx context.Context, hr *fl
 }
 
 // deleteMultipleHelmReleases deletes all HelmRelease resources matching the expected labels.
+// If the given namespace is non-empty, only resources in that namespace will be considered.
 // It returns a list of HelmRelease resources that still exist after the deletion attempt.
-func (c *HelmDeploymentController) deleteMultipleHelmReleases(ctx context.Context, expectedLabels map[string]string, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) ([]*fluxhelmv2.HelmRelease, errutils.ReasonableError) {
+func (c *HelmDeploymentController) deleteMultipleHelmReleases(ctx context.Context, expectedLabels map[string]string, namespace string, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) ([]*fluxhelmv2.HelmRelease, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	hrs := &fluxhelmv2.HelmReleaseList{}
-	if err := c.PlatformCluster.Client().List(ctx, hrs, client.MatchingLabels(expectedLabels)); err != nil {
+	listOptions := []client.ListOption{client.MatchingLabels(expectedLabels)}
+	if namespace != "" {
+		listOptions = append(listOptions, client.InNamespace(namespace))
+	}
+	if err := c.PlatformCluster.Client().List(ctx, hrs, listOptions...); err != nil {
 		return nil, errutils.WithReason(fmt.Errorf("error listing HelmReleases: %w", err), clusterconst.ReasonPlatformClusterInteractionProblem)
 	}
 
@@ -308,7 +318,7 @@ func (c *HelmDeploymentController) deleteMultipleHelmReleases(ctx context.Contex
 		hrIdentity := fmt.Sprintf("%s/%s", hr.Namespace, hr.Name)
 		clog := log.WithValues("helmRelease", hrIdentity)
 		createConForCluster := func(status metav1.ConditionStatus, reason, message string) {}
-		_, _, cID := clusterIdentityFromLabels(&hr)
+		cID := clusterIdentityFromLabels(&hr)
 		if cID == "" {
 			clog.Error(nil, "HelmRelease is missing the cluster labels, this should not happen")
 		} else {
@@ -335,20 +345,25 @@ func (c *HelmDeploymentController) deleteMultipleHelmReleases(ctx context.Contex
 
 // deleteMultipleHelmChartSources deletes all Flux sources with the specified labels.
 // Resources that share a cluster label with any of the remaining HelmReleases will be skipped.
+// If the given namespace is non-empty, only resources in that namespace will be considered.
 // It returns a list of resources that still exist after the deletion attempt (including the skipped ones), which can be used to verify their deletion in subsequent reconciliations.
-func (c *HelmDeploymentController) deleteMultipleHelmChartSources(ctx context.Context, expectedLabels map[string]string, remainingHelmReleases []*fluxhelmv2.HelmRelease, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) ([]client.Object, errutils.ReasonableError) {
+func (c *HelmDeploymentController) deleteMultipleHelmChartSources(ctx context.Context, expectedLabels map[string]string, namespace string, remainingHelmReleases []*fluxhelmv2.HelmRelease, createCon func(conType string, status metav1.ConditionStatus, reason, message string)) ([]client.Object, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
+	listOptions := []client.ListOption{client.MatchingLabels(expectedLabels)}
+	if namespace != "" {
+		listOptions = append(listOptions, client.InNamespace(namespace))
+	}
 	existingHelm := &fluxsourcev1.HelmRepositoryList{}
-	if err := c.PlatformCluster.Client().List(ctx, existingHelm, client.MatchingLabels(expectedLabels)); err != nil {
+	if err := c.PlatformCluster.Client().List(ctx, existingHelm, listOptions...); err != nil {
 		return nil, errutils.WithReason(fmt.Errorf("error listing existing HelmRepository resources: %w", err), clusterconst.ReasonPlatformClusterInteractionProblem)
 	}
 	existingGit := &fluxsourcev1.GitRepositoryList{}
-	if err := c.PlatformCluster.Client().List(ctx, existingGit, client.MatchingLabels(expectedLabels)); err != nil {
+	if err := c.PlatformCluster.Client().List(ctx, existingGit, listOptions...); err != nil {
 		return nil, errutils.WithReason(fmt.Errorf("error listing existing GitRepository resources: %w", err), clusterconst.ReasonPlatformClusterInteractionProblem)
 	}
 	existingOCI := &fluxsourcev1.OCIRepositoryList{}
-	if err := c.PlatformCluster.Client().List(ctx, existingOCI, client.MatchingLabels(expectedLabels)); err != nil {
+	if err := c.PlatformCluster.Client().List(ctx, existingOCI, listOptions...); err != nil {
 		return nil, errutils.WithReason(fmt.Errorf("error listing existing OCIRepository resources: %w", err), clusterconst.ReasonPlatformClusterInteractionProblem)
 	}
 	toBeDeleted := []client.Object{}
@@ -373,7 +388,7 @@ func (c *HelmDeploymentController) deleteMultipleHelmChartSources(ctx context.Co
 
 	remainingHRClusters := sets.New[string]()
 	for _, hr := range remainingHelmReleases {
-		_, _, cID := clusterIdentityFromLabels(hr)
+		cID := clusterIdentityFromLabels(hr)
 		remainingHRClusters.Insert(cID)
 	}
 
@@ -382,7 +397,7 @@ func (c *HelmDeploymentController) deleteMultipleHelmChartSources(ctx context.Co
 	for _, tbd := range toBeDeleted {
 		clog := log.WithValues("kind", tbd.GetObjectKind().GroupVersionKind().Kind, "resource", fmt.Sprintf("%s/%s", tbd.GetNamespace(), tbd.GetName()))
 		createConForCluster := func(status metav1.ConditionStatus, reason, message string) {}
-		_, _, cID := clusterIdentityFromLabels(tbd)
+		cID := clusterIdentityFromLabels(tbd)
 		if cID == "" {
 			clog.Error(nil, "Flux source is missing the cluster labels, this should not happen")
 		} else {
@@ -412,6 +427,9 @@ func (c *HelmDeploymentController) deleteMultipleHelmChartSources(ctx context.Co
 					createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonHelmChartSourceDeletionFailed, fmt.Sprintf("Error deleting %s '%s/%s': [%s] %s", tbd.GetObjectKind().GroupVersionKind().Kind, tbd.GetNamespace(), tbd.GetName(), rerr.Reason(), rerr.Error()))
 					continue
 				}
+			} else {
+				remainingResources = append(remainingResources, tbd)
+				createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonWaitingForHelmChartSourceDeletion, fmt.Sprintf("Waiting for %s '%s/%s' to be deleted", tbd.GetObjectKind().GroupVersionKind().Kind, tbd.GetNamespace(), tbd.GetName()))
 			}
 		}
 	}
