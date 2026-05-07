@@ -36,6 +36,9 @@ type Config struct {
 
 	// ManagedControlPlane is the configuration for the MCP controller.
 	ManagedControlPlane *ManagedControlPlaneConfig `json:"managedControlPlane,omitempty"`
+
+	// HelmDeployer is the configuration for the Helm deployer controller.
+	HelmDeployer *HelmDeployerConfig `json:"helmDeployer,omitempty"`
 }
 
 type SchedulerConfigGetter func(ctx context.Context) (*SchedulerConfig, error)

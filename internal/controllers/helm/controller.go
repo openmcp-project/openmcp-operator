@@ -37,7 +37,7 @@ import (
 )
 
 const (
-	ControllerName = "HelmDeployment"
+	ControllerName = "HelmDeployer"
 
 	EventActionReconcile = "Reconcile"
 )
