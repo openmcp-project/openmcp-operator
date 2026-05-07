@@ -44,10 +44,7 @@ type HelmReleaseReconciliationIntervalConfig struct {
 }
 
 type SelectorDefinition struct {
-	// Selector is a selector that can select based on identity, purposes and/or labels of a Cluster.
-	// An empty selector matches all Clusters.
-	// +optional
-	Selector *clustersv1alpha1.IdentityLabelPurposeSelector `json:"selector,omitempty"`
+	*clustersv1alpha1.IdentityLabelPurposeSelector `json:",inline"`
 
 	// SecretsToCopy defines which secrets should be copied when this selector is used for a HelmDeployment.
 	// +optional

@@ -86,8 +86,8 @@ type ReconcileResult struct {
 
 	// SourceKind indicates which kind of Flux source was reconciled for this HelmDeployment, if any.
 	SourceKind string
-	// SelectorDefinition is the selector definition of this HelmDeployment.
-	SelectorDefinition helmv1alpha1.SelectorDefinition
+	// Selector is the resolved selector for this HelmDeployment.
+	Selector *clustersv1alpha1.IdentityLabelPurposeSelector
 	// Config is the provider configuration.
 	Config *helmv1alpha1.HelmDeployerConfig
 }
@@ -180,12 +180,12 @@ func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// determine selector definition for this HelmDeployment
-	selectorDef, err := getSelectorDefinition(hd, rr.Config)
+	var err error
+	rr.Selector, err = hd.Spec.Selector.Resolve(rr.Config)
 	if err != nil {
-		rr.ReconcileError = err
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error resolving selector for HelmDeployment '%s/%s': %w", hd.Namespace, hd.Name, err), cconst.ReasonConfigurationProblem)
 		return rr
 	}
-	rr.SelectorDefinition = selectorDef
 
 	expectedLabels := map[string]string{
 		openmcpconst.ManagedByLabel:      ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s.%s", c.ProviderName, ControllerName), ctrlutils.K8sMaxNameLength),
@@ -236,8 +236,8 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 			createCon(cct, status, reason, message)
 		}
 
-		clusterMatches := rr.SelectorDefinition.Selector.Matches(&cluster) // whether the cluster matches the HelmDeployment's selector
-		clusterInDeletion := !cluster.DeletionTimestamp.IsZero()           // whether the cluster is in deletion
+		clusterMatches := rr.Selector.Matches(&cluster)          // whether the cluster matches the HelmDeployment's selector
+		clusterInDeletion := !cluster.DeletionTimestamp.IsZero() // whether the cluster is in deletion
 
 		// If the cluster matches the selector and is not in deletion, we need to first ensure the finalizer and then create/update the HelmRelease on the cluster.
 		if clusterMatches && !clusterInDeletion {
@@ -431,20 +431,6 @@ func clusterConType(values ...string) string {
 		panic(fmt.Sprintf("invalid number of arguments, expected 1 or 2, got %d", len(values)))
 	}
 	return fmt.Sprintf("%s%s_%s", helmv1alpha1.ConditionPrefixCluster, namespace, name)
-}
-
-func getSelectorDefinition(hd *helmv1alpha1.HelmDeployment, cfg *helmv1alpha1.HelmDeployerConfig) (helmv1alpha1.SelectorDefinition, errutils.ReasonableError) {
-	selectorDef := helmv1alpha1.SelectorDefinition{}
-	if hd.Spec.Selector != nil {
-		selectorDef.Selector = hd.Spec.Selector
-	} else if hd.Spec.SelectorName != nil {
-		var ok bool
-		selectorDef, ok = cfg.Spec.SelectorDefinitions[*hd.Spec.SelectorName]
-		if !ok {
-			return helmv1alpha1.SelectorDefinition{}, errutils.WithReason(fmt.Errorf("selector definition '%s' not found in HelmDeployerConfig", *hd.Spec.SelectorName), cconst.ReasonConfigurationProblem)
-		}
-	}
-	return selectorDef, nil
 }
 
 // clusterIdentityFromLabels extracts the cluster namespace and name from the given object's labels and returns <namespace>/<name>

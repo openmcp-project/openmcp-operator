@@ -619,7 +619,8 @@ spec:
               selector:
                 description: |-
                   Selector can select based on identity, purposes and/or labels of a Cluster.
-                  Exactly one of 'selectorName' or 'selector' must be set.
+                  It can also reference a selector definition from the provider config.
+                  An empty selector matches all Clusters.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -715,24 +716,18 @@ spec:
                       type: object
                     type: array
                     x-kubernetes-list-type: atomic
+                  ref:
+                    description: |-
+                      Reference can be used to reference a selector defined in the provider config.
+                      If set together with the inline selector, the inline selector takes precedence and the reference is ignored.
+                    type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              selectorName:
-                description: |-
-                  SelectorName is a reference to a selector defined in the provider config.
-                  Exactly one of 'selectorName' or 'selector' must be set.
-                  If the referenced selector comes with secret copy instructions, the secrets will be copied accordingly.
-                type: string
             required:
             - chartSource
             - helmValues
             - namespace
             type: object
-            x-kubernetes-validations:
-            - message: exactly one of the fields in [selectorName selector] must be
-                set
-              rule: '[has(self.selectorName),has(self.selector)].filter(x,x==true).size()
-                == 1'
           status:
             properties:
               conditions:

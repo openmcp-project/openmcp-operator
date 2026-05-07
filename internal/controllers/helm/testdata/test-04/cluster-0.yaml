@@ -1,0 +1,18 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  labels:
+    helm.open-control-plane.io/target: "true"
+  finalizers:
+  - provider.clusters.openmcp.cloud/finalizer
+  name: cluster-0
+  namespace: default
+spec:
+  kubernetes: {}
+  profile: myprofile
+  purposes:
+  - workload
+  - single
+  tenancy: Shared
+status:
+  phase: Ready

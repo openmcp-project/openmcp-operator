@@ -12,21 +12,15 @@ import (
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 )
 
-// +kubebuilder:validation:ExactlyOneOf=selectorName;selector
 type HelmDeploymentSpec struct {
 	// ChartSource is the source of the helm chart.
 	ChartSource ChartSource `json:"chartSource"`
 
-	// SelectorName is a reference to a selector defined in the provider config.
-	// Exactly one of 'selectorName' or 'selector' must be set.
-	// If the referenced selector comes with secret copy instructions, the secrets will be copied accordingly.
-	// +optional
-	SelectorName *string `json:"selectorName,omitempty"`
-
 	// Selector can select based on identity, purposes and/or labels of a Cluster.
-	// Exactly one of 'selectorName' or 'selector' must be set.
+	// It can also reference a selector definition from the provider config.
+	// An empty selector matches all Clusters.
 	// +optional
-	Selector *clustersv1alpha1.IdentityLabelPurposeSelector `json:"selector,omitempty"`
+	Selector *SelectorOrReference `json:"selector,omitempty"`
 
 	// Namespace is the namespace on the target cluster to use for the helm deployment.
 	// If secrets are copied onto the target cluster, they will be copied into this namespace.
@@ -46,6 +40,15 @@ type HelmDeploymentSpec struct {
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	HelmValues *apiextensionsv1.JSON `json:"helmValues"`
+}
+
+type SelectorOrReference struct {
+	*clustersv1alpha1.IdentityLabelPurposeSelector `json:",inline"`
+
+	// Reference can be used to reference a selector defined in the provider config.
+	// If set together with the inline selector, the inline selector takes precedence and the reference is ignored.
+	// +optional
+	Reference *string `json:"ref,omitempty"`
 }
 
 // ChartSource defines the source of the helm chart in form of a Flux source.
@@ -100,4 +103,51 @@ func init() {
 // The format is 'helm.open-control-plane.io/<uid>'.
 func (hd *HelmDeployment) Finalizer() string {
 	return fmt.Sprintf("%s/%s", GroupName, hd.UID)
+}
+
+// Matches returns true if the given object (usually a Cluster) matches the specified selector.
+// Returns an error if the selector is a reference, but the config is either nil or does not contain a selector definition with the given name.
+func (sr *SelectorOrReference) Matches(obj clustersv1alpha1.ObjectWithPurposes, cfg *HelmDeployerConfig) (bool, error) {
+	if sr == nil {
+		return true, nil
+	}
+	if sr.IdentityLabelPurposeSelector != nil {
+		return sr.IdentityLabelPurposeSelector.Matches(obj), nil
+	}
+	if sr.Reference != nil {
+		if cfg == nil {
+			return false, fmt.Errorf("unable to resolve selector reference '%s': config is nil", *sr.Reference)
+		}
+		sel, ok := cfg.Spec.SelectorDefinitions[*sr.Reference]
+		if !ok {
+			return false, fmt.Errorf("unable to resolve selector reference '%s': no selector with this name found in config", *sr.Reference)
+		}
+		return sel.Matches(obj), nil
+	}
+	return true, nil
+}
+
+// Resolve returns the IdentityLabelPurposeSelector specified by this SelectorOrReference.
+// If the struct holds a non-nil IdentityLabelPurposeSelector, it is returned directly.
+// If it holds a reference, the selector definition with the given name is looked up in the config and returned.
+// Returns an error if the selector is a reference, but the config is either nil or does not contain a selector definition with the given name.
+// Note that the returned IdentityLabelPurposeSelector may be nil, in which case it matches all Clusters.
+func (sr *SelectorOrReference) Resolve(cfg *HelmDeployerConfig) (*clustersv1alpha1.IdentityLabelPurposeSelector, error) {
+	if sr == nil {
+		return nil, nil
+	}
+	if sr.IdentityLabelPurposeSelector != nil {
+		return sr.IdentityLabelPurposeSelector, nil
+	}
+	if sr.Reference != nil {
+		if cfg == nil {
+			return nil, fmt.Errorf("unable to resolve selector reference '%s': config is nil", *sr.Reference)
+		}
+		sel, ok := cfg.Spec.SelectorDefinitions[*sr.Reference]
+		if !ok {
+			return nil, fmt.Errorf("unable to resolve selector reference '%s': no selector with this name found in config", *sr.Reference)
+		}
+		return sel.IdentityLabelPurposeSelector, nil
+	}
+	return nil, nil
 }

@@ -21,9 +21,11 @@ import (
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	"github.com/openmcp-project/controller-utils/pkg/collections"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
+	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
+	cconst "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1/constants"
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	openmcpconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	helmv1alpha1 "github.com/openmcp-project/openmcp-operator/api/helm/v1alpha1"
@@ -845,7 +847,72 @@ var _ = Describe("HelmDeployment Controller", func() {
 				}),
 			}),
 		))
+	})
 
+	It("should resolve selector references correctly", func() {
+		env, cq, _ := defaultTestSetup("testdata", "test-04")
+
+		hd := &helmv1alpha1.HelmDeployment{}
+		hd.Name = "hd-0"
+		hd.Namespace = "default"
+		hdreq := testutils.RequestFromObject(hd)
+
+		Eventually(func(g Gomega) {
+			// reconcile a cluster, if requested
+			if cq.Size() > 0 {
+				cluster := cq.Poll()
+				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			// reconcile HelmDeployment
+			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
+			g.Expect(err).ToNot(HaveOccurred())
+			// mock flux source and HelmRelease readiness
+			mockAllFluxResourcesReady(g, env)
+			// at one point, the HelmDeployment should not be requeued anymore
+			g.Expect(rr.RequeueAfter).To(BeZero())
+			// verify that no more clusters are queued for reconciliation
+			g.Expect(cq.Size()).To(Equal(0))
+		}).Should(Succeed())
+
+		// list HelmReleases
+		hrList := &fluxhelmv2.HelmReleaseList{}
+		Expect(env.Client(platform).List(env.Ctx, hrList)).To(Succeed())
+		Expect(hrList.Items).To(ConsistOf(
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
+						openmcpconst.ManagedPurposeLabel: "default.hd-0",
+						helmv1alpha1.ClusterNameLabel:    "cluster-0",
+					}),
+				}),
+			}),
+		))
+		// verify HelmDeployment status
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(hd), hd)).To(Succeed())
+		Expect(hd.Status.Phase).To(Equal(commonapi.StatusPhaseReady))
+		Expect(hd.Status.Conditions).To(ConsistOf(
+			MatchCondition(TestCondition().WithType("Cluster.default_cluster-0").WithStatus(metav1.ConditionTrue)),
+		))
+	})
+
+	It("should return a fitting error for unknown selector references", func() {
+		env, _, _ := defaultTestSetup("testdata", "test-04")
+
+		hd := &helmv1alpha1.HelmDeployment{}
+		hd.Name = "hd-1"
+		hd.Namespace = "default"
+		hdreq := testutils.RequestFromObject(hd)
+
+		_, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
+		Expect(err).To(HaveOccurred())
+		Expect(err).To(MatchError(ContainSubstring("unknown")), "the name of the unresolvable reference should be included in the error message")
+		Expect(err).To(WithTransform(func(err error) string {
+			rerr, ok := err.(errutils.ReasonableError)
+			Expect(ok).To(BeTrue(), "the error should implement ReasonableError")
+			return rerr.Reason()
+		}, Equal(cconst.ReasonConfigurationProblem)))
 	})
 
 })

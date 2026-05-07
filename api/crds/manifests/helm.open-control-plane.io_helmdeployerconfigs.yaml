@@ -71,6 +71,100 @@ spec:
               selectorDefinitions:
                 additionalProperties:
                   properties:
+                    matchExpressions:
+                      description: matchExpressions is a list of label selector requirements.
+                        The requirements are ANDed.
+                      items:
+                        description: |-
+                          A label selector requirement is a selector that contains values, a key, and an operator that
+                          relates the key and values.
+                        properties:
+                          key:
+                            description: key is the label key that the selector applies
+                              to.
+                            type: string
+                          operator:
+                            description: |-
+                              operator represents a key's relationship to a set of values.
+                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                            type: string
+                          values:
+                            description: |-
+                              values is an array of string values. If the operator is In or NotIn,
+                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                              the values array must be empty. This array is replaced during a strategic
+                              merge patch.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - key
+                        - operator
+                        type: object
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    matchIdentities:
+                      description: |-
+                        MatchIdentities contains a list of object references and matches only the objects with the given identities.
+                        If this selector is nil, all objects match.
+                        If this selector is not nil, but the list is empty, no objects match.
+                        If not nil, all other selector fields are ignored and only the identities are matched.
+                      items:
+                        description: ObjectReference is a reference to an object in
+                          any namespace.
+                        properties:
+                          name:
+                            description: Name is the name of the object.
+                            type: string
+                          namespace:
+                            description: Namespace is the namespace of the object.
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    matchLabels:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                        map is equivalent to an element of matchExpressions, whose key field is "key", the
+                        operator is "In", and the values array contains only "value". The requirements are ANDed.
+                      type: object
+                    matchPurposes:
+                      description: |-
+                        MatchPurposes contains a list of purpose selector requirements.
+                        An empty or nil list matches all objects.
+                        Duplicate purposes within a single requirement are ignored.
+                        The requirements are ANDed.
+                      items:
+                        description: |-
+                          A label selector requirement is a selector that contains values, a key, and an operator that
+                          relates the key and values.
+                        properties:
+                          operator:
+                            description: |-
+                              Operator represents how the list of purposes is matched against the values.
+                              Valid operators are: 'ContainsAll', 'ContainsAny', 'ContainsNone', 'Equals'.
+                            type: string
+                          values:
+                            description: |-
+                              Values is an array of string values.
+                              An empty or nil array will match no objects for 'ContainsAll' and 'ContainsAny',
+                              all objects for 'ContainsNone', and only objects with no purposes for 'Equals'.
+                              This array is replaced during a strategic merge patch.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - operator
+                        type: object
+                      type: array
+                      x-kubernetes-list-type: atomic
                     secretsToCopy:
                       description: SecretsToCopy defines which secrets should be copied
                         when this selector is used for a HelmDeployment.
@@ -167,108 +261,8 @@ spec:
                             type: object
                           type: array
                       type: object
-                    selector:
-                      description: |-
-                        Selector is a selector that can select based on identity, purposes and/or labels of a Cluster.
-                        An empty selector matches all Clusters.
-                      properties:
-                        matchExpressions:
-                          description: matchExpressions is a list of label selector
-                            requirements. The requirements are ANDed.
-                          items:
-                            description: |-
-                              A label selector requirement is a selector that contains values, a key, and an operator that
-                              relates the key and values.
-                            properties:
-                              key:
-                                description: key is the label key that the selector
-                                  applies to.
-                                type: string
-                              operator:
-                                description: |-
-                                  operator represents a key's relationship to a set of values.
-                                  Valid operators are In, NotIn, Exists and DoesNotExist.
-                                type: string
-                              values:
-                                description: |-
-                                  values is an array of string values. If the operator is In or NotIn,
-                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
-                                  the values array must be empty. This array is replaced during a strategic
-                                  merge patch.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            required:
-                            - key
-                            - operator
-                            type: object
-                          type: array
-                          x-kubernetes-list-type: atomic
-                        matchIdentities:
-                          description: |-
-                            MatchIdentities contains a list of object references and matches only the objects with the given identities.
-                            If this selector is nil, all objects match.
-                            If this selector is not nil, but the list is empty, no objects match.
-                            If not nil, all other selector fields are ignored and only the identities are matched.
-                          items:
-                            description: ObjectReference is a reference to an object
-                              in any namespace.
-                            properties:
-                              name:
-                                description: Name is the name of the object.
-                                type: string
-                              namespace:
-                                description: Namespace is the namespace of the object.
-                                type: string
-                            required:
-                            - name
-                            - namespace
-                            type: object
-                          type: array
-                          x-kubernetes-list-type: atomic
-                        matchLabels:
-                          additionalProperties:
-                            type: string
-                          description: |-
-                            matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
-                            map is equivalent to an element of matchExpressions, whose key field is "key", the
-                            operator is "In", and the values array contains only "value". The requirements are ANDed.
-                          type: object
-                        matchPurposes:
-                          description: |-
-                            MatchPurposes contains a list of purpose selector requirements.
-                            An empty or nil list matches all objects.
-                            Duplicate purposes within a single requirement are ignored.
-                            The requirements are ANDed.
-                          items:
-                            description: |-
-                              A label selector requirement is a selector that contains values, a key, and an operator that
-                              relates the key and values.
-                            properties:
-                              operator:
-                                description: |-
-                                  Operator represents how the list of purposes is matched against the values.
-                                  Valid operators are: 'ContainsAll', 'ContainsAny', 'ContainsNone', 'Equals'.
-                                type: string
-                              values:
-                                description: |-
-                                  Values is an array of string values.
-                                  An empty or nil array will match no objects for 'ContainsAll' and 'ContainsAny',
-                                  all objects for 'ContainsNone', and only objects with no purposes for 'Equals'.
-                                  This array is replaced during a strategic merge patch.
-                                items:
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: atomic
-                            required:
-                            - operator
-                            type: object
-                          type: array
-                          x-kubernetes-list-type: atomic
-                      type: object
-                      x-kubernetes-map-type: atomic
                   type: object
+                  x-kubernetes-map-type: atomic
                 description: SelectorDefinitions is a list of selector definitions
                   that can be referenced from HelmDeployments.
                 type: object
