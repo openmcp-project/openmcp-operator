@@ -1,0 +1,32 @@
+apiVersion: helm.open-control-plane.io/v1alpha1
+kind: HelmDeployment
+metadata:
+  name: hd-0
+  namespace: default
+spec:
+  chartSource:
+    oci:
+      url: "oci://example.org/repo/charts"
+      interval: 10m
+  namespace: helm
+  selector:
+    ref: single
+  secretsToCopy:
+    toPlatformCluster:
+    - source:
+        name: secret-1
+    - source:
+        name: secret-2
+      target:
+        name: copied-secret-2
+    - source:
+        name: secret-overwrite
+    toTargetCluster:
+    - source:
+        name: secret-3
+    - source:
+        name: secret-4
+      target:
+        name: copied-secret-4
+    - source:
+        name: secret-overwrite

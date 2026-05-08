@@ -22,6 +22,14 @@ type HelmDeploymentSpec struct {
 	// +optional
 	Selector *SelectorOrReference `json:"selector,omitempty"`
 
+	// SecretsToCopy defines which secrets should be copied for this HelmDeployment.
+	// This is in addition to any secrets to copy specified in a referenced selector definition in the provider config.
+	// If there are overlapping definitions, the secrets specified here take precedence.
+	// Opposed to secret references in the provider config, references here refer to secrets in the same namespace as the HelmDeployment.
+	// TO BE REFACTORED: We want to move secret copying logic into its own controller at some point.
+	// +optional
+	SecretsToCopy *SecretsToCopy `json:"secretsToCopy,omitempty"`
+
 	// Namespace is the namespace on the target cluster to use for the helm deployment.
 	// If secrets are copied onto the target cluster, they will be copied into this namespace.
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
@@ -105,49 +113,28 @@ func (hd *HelmDeployment) Finalizer() string {
 	return fmt.Sprintf("%s/%s", GroupName, hd.UID)
 }
 
-// Matches returns true if the given object (usually a Cluster) matches the specified selector.
-// Returns an error if the selector is a reference, but the config is either nil or does not contain a selector definition with the given name.
-func (sr *SelectorOrReference) Matches(obj clustersv1alpha1.ObjectWithPurposes, cfg *HelmDeployerConfig) (bool, error) {
-	if sr == nil {
-		return true, nil
-	}
-	if sr.IdentityLabelPurposeSelector != nil {
-		return sr.IdentityLabelPurposeSelector.Matches(obj), nil
-	}
-	if sr.Reference != nil {
-		if cfg == nil {
-			return false, fmt.Errorf("unable to resolve selector reference '%s': config is nil", *sr.Reference)
-		}
-		sel, ok := cfg.Spec.SelectorDefinitions[*sr.Reference]
-		if !ok {
-			return false, fmt.Errorf("unable to resolve selector reference '%s': no selector with this name found in config", *sr.Reference)
-		}
-		return sel.Matches(obj), nil
-	}
-	return true, nil
-}
-
 // Resolve returns the IdentityLabelPurposeSelector specified by this SelectorOrReference.
 // If the struct holds a non-nil IdentityLabelPurposeSelector, it is returned directly.
 // If it holds a reference, the selector definition with the given name is looked up in the config and returned.
 // Returns an error if the selector is a reference, but the config is either nil or does not contain a selector definition with the given name.
 // Note that the returned IdentityLabelPurposeSelector may be nil, in which case it matches all Clusters.
-func (sr *SelectorOrReference) Resolve(cfg *HelmDeployerConfig) (*clustersv1alpha1.IdentityLabelPurposeSelector, error) {
+// The second return value contains the secrets that should be copied. It is only non-nil, if the selector is a reference and the referenced selector definition contains secrets to copy.
+func (sr *SelectorOrReference) Resolve(cfg *HelmDeployerConfig) (*clustersv1alpha1.IdentityLabelPurposeSelector, *SecretsToCopy, error) {
 	if sr == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if sr.IdentityLabelPurposeSelector != nil {
-		return sr.IdentityLabelPurposeSelector, nil
+		return sr.IdentityLabelPurposeSelector, nil, nil
 	}
 	if sr.Reference != nil {
 		if cfg == nil {
-			return nil, fmt.Errorf("unable to resolve selector reference '%s': config is nil", *sr.Reference)
+			return nil, nil, fmt.Errorf("unable to resolve selector reference '%s': config is nil", *sr.Reference)
 		}
 		sel, ok := cfg.Spec.SelectorDefinitions[*sr.Reference]
 		if !ok {
-			return nil, fmt.Errorf("unable to resolve selector reference '%s': no selector with this name found in config", *sr.Reference)
+			return nil, nil, fmt.Errorf("unable to resolve selector reference '%s': no selector with this name found in config", *sr.Reference)
 		}
-		return sel.IdentityLabelPurposeSelector, nil
+		return sel.IdentityLabelPurposeSelector, sel.SecretsToCopy, nil
 	}
-	return nil, nil
+	return nil, nil, nil
 }

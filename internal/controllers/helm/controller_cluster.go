@@ -258,18 +258,26 @@ func helmDeploymentsOnCluster(cluster *clustersv1alpha1.Cluster) sets.Set[string
 	return res
 }
 
-func (c *HelmDeploymentClusterController) GetAccessRequestForCluster(ctx context.Context, cluster *clustersv1alpha1.Cluster) (*clustersv1alpha1.AccessRequest, error) {
+func (c *HelmDeploymentClusterController) GetAccessForCluster(ctx context.Context, cluster *clustersv1alpha1.Cluster) (*clustersv1alpha1.AccessRequest, *clusters.Cluster, error) {
 	if cluster == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	c.lock.RLock()
 	defer c.lock.RUnlock()
 	cID := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
 	if as, ok := c.clustersWithAccess[cID]; !ok || as != accessStatusReady {
 		// There is currently no (ready) access for the cluster.
-		return nil, nil
+		return nil, nil, nil
 	}
-	return c.car.AccessRequest(ctx, testutils.RequestFromObject(cluster), clusterAccessID)
+	ar, err := c.car.AccessRequest(ctx, testutils.RequestFromObject(cluster), clusterAccessID)
+	if err != nil {
+		return nil, nil, err
+	}
+	access, err := c.car.Access(ctx, testutils.RequestFromObject(cluster), clusterAccessID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ar, access, nil
 }
 
 // This controller is somewhat special, as it only reconciles if triggered manually.

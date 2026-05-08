@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega/gstruct"
 	. "github.com/openmcp-project/controller-utils/pkg/testing/matchers"
 
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -913,6 +914,194 @@ var _ = Describe("HelmDeployment Controller", func() {
 			Expect(ok).To(BeTrue(), "the error should implement ReasonableError")
 			return rerr.Reason()
 		}, Equal(cconst.ReasonConfigurationProblem)))
+	})
+
+	It("should copy secrets correctly", func() {
+		env, cq, fakeClients := defaultTestSetup("testdata", "test-05")
+
+		hd := &helmv1alpha1.HelmDeployment{}
+		hd.Name = "hd-0"
+		hd.Namespace = "default"
+		hdreq := testutils.RequestFromObject(hd)
+
+		Eventually(func(g Gomega) {
+			// reconcile a cluster, if requested
+			if cq.Size() > 0 {
+				cluster := cq.Poll()
+				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			// reconcile HelmDeployment
+			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
+			g.Expect(err).ToNot(HaveOccurred())
+			// mock flux source and HelmRelease readiness
+			mockAllFluxResourcesReady(g, env)
+			// at one point, the HelmDeployment should not be requeued anymore
+			g.Expect(rr.RequeueAfter).To(BeZero())
+			// verify that no more clusters are queued for reconciliation
+			g.Expect(cq.Size()).To(Equal(0))
+		}).Should(Succeed())
+
+		secrets := &corev1.SecretList{}
+		Expect(env.Client(platform).List(env.Ctx, secrets)).To(Succeed())
+		Expect(secrets.Items).To(ContainElements(
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("secret-1"),
+					"Namespace": Equal("test-0"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-1",
+						helmv1alpha1.GroupName + "/source-namespace": "default",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("secret-1"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("copied-secret-2"),
+					"Namespace": Equal("test-0"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-2",
+						helmv1alpha1.GroupName + "/source-namespace": "default",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("secret-2"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("secret-cfg-1"),
+					"Namespace": Equal("test-0"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-cfg-1",
+						helmv1alpha1.GroupName + "/source-namespace": "openmcp-system",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("secret-cfg-1"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("copied-secret-cfg-2"),
+					"Namespace": Equal("test-0"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-cfg-2",
+						helmv1alpha1.GroupName + "/source-namespace": "openmcp-system",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("secret-cfg-2"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("secret-overwrite"),
+					"Namespace": Equal("test-0"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-overwrite",
+						helmv1alpha1.GroupName + "/source-namespace": "default",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("overwritten"),
+				}),
+			}),
+		))
+		// verify that no secret was created in the other cluster's namespace
+		Expect(secrets.Items).ToNot(ContainElement(
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Namespace": Equal("test-1"),
+				}),
+			}),
+		))
+
+		// verify that secrets were created on cluster-0
+		cluster0client := fakeClients["test-0/cluster-0"]
+		Expect(cluster0client).ToNot(BeNil())
+		cluster0Secrets := &corev1.SecretList{}
+		Expect(cluster0client.List(env.Ctx, cluster0Secrets)).To(Succeed())
+		Expect(cluster0Secrets.Items).To(ContainElements(
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("secret-3"),
+					"Namespace": Equal("helm"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-3",
+						helmv1alpha1.GroupName + "/source-namespace": "default",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("secret-3"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("copied-secret-4"),
+					"Namespace": Equal("helm"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-4",
+						helmv1alpha1.GroupName + "/source-namespace": "default",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("secret-4"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("secret-cfg-3"),
+					"Namespace": Equal("helm"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-cfg-3",
+						helmv1alpha1.GroupName + "/source-namespace": "openmcp-system",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("secret-cfg-3"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("copied-secret-cfg-4"),
+					"Namespace": Equal("helm"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-cfg-4",
+						helmv1alpha1.GroupName + "/source-namespace": "openmcp-system",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("secret-cfg-4"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Name":      Equal("secret-overwrite"),
+					"Namespace": Equal("helm"),
+					"Labels": Equal(map[string]string{
+						openmcpconst.ManagedByLabel:                  providerName + "." + helm.ControllerName,
+						helmv1alpha1.GroupName + "/source-name":      "secret-overwrite",
+						helmv1alpha1.GroupName + "/source-namespace": "default",
+					}),
+				}),
+				"Data": Equal(map[string][]byte{
+					"value": []byte("overwritten"),
+				}),
+			}),
+		))
 	})
 
 })

@@ -27,6 +27,7 @@ import (
 	"github.com/openmcp-project/controller-utils/pkg/controller/smartrequeue"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
+	"github.com/openmcp-project/controller-utils/pkg/pairs"
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
@@ -88,6 +89,8 @@ type ReconcileResult struct {
 	SourceKind string
 	// Selector is the resolved selector for this HelmDeployment.
 	Selector *clustersv1alpha1.IdentityLabelPurposeSelector
+	// SecretsToCopy contains a definition of which secrets need to be copied where for this HelmDeployment.
+	SecretsToCopy *SecretsToCopy
 	// Config is the provider configuration.
 	Config *helmv1alpha1.HelmDeployerConfig
 }
@@ -180,11 +183,46 @@ func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// determine selector definition for this HelmDeployment
-	var err error
-	rr.Selector, err = hd.Spec.Selector.Resolve(rr.Config)
+	sel, secretsToCopyFromRef, err := hd.Spec.Selector.Resolve(rr.Config)
 	if err != nil {
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error resolving selector for HelmDeployment '%s/%s': %w", hd.Namespace, hd.Name, err), cconst.ReasonConfigurationProblem)
 		return rr
+	}
+	rr.Selector = sel
+
+	// identify secrets that need to be copied
+	rr.SecretsToCopy = NewSecretsToCopy()
+	if secretsToCopyFromRef != nil {
+		for _, secretCopy := range secretsToCopyFromRef.ToPlatformCluster {
+			tName := secretCopy.Source.Name
+			if secretCopy.Target != nil && secretCopy.Target.Name != "" {
+				tName = secretCopy.Target.Name
+			}
+			rr.SecretsToCopy.CopyToPlatformCluster(c.ProviderNamespace, pairs.New(secretCopy.Source.Name, tName))
+		}
+		for _, secretCopy := range secretsToCopyFromRef.ToTargetCluster {
+			tName := secretCopy.Source.Name
+			if secretCopy.Target != nil && secretCopy.Target.Name != "" {
+				tName = secretCopy.Target.Name
+			}
+			rr.SecretsToCopy.CopyToTargetCluster(c.ProviderNamespace, pairs.New(secretCopy.Source.Name, tName))
+		}
+	}
+	if hd.Spec.SecretsToCopy != nil {
+		for _, secretCopy := range hd.Spec.SecretsToCopy.ToPlatformCluster {
+			tName := secretCopy.Source.Name
+			if secretCopy.Target != nil && secretCopy.Target.Name != "" {
+				tName = secretCopy.Target.Name
+			}
+			rr.SecretsToCopy.CopyToPlatformCluster(hd.Namespace, pairs.New(secretCopy.Source.Name, tName))
+		}
+		for _, secretCopy := range hd.Spec.SecretsToCopy.ToTargetCluster {
+			tName := secretCopy.Source.Name
+			if secretCopy.Target != nil && secretCopy.Target.Name != "" {
+				tName = secretCopy.Target.Name
+			}
+			rr.SecretsToCopy.CopyToTargetCluster(hd.Namespace, pairs.New(secretCopy.Source.Name, tName))
+		}
 	}
 
 	expectedLabels := map[string]string{
@@ -251,21 +289,34 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 				}
 			}
 
-			ar, err := c.cr.GetAccessRequestForCluster(ctx, &cluster)
+			ar, access, err := c.cr.GetAccessForCluster(ctx, &cluster)
 			if err != nil {
-				errs.Append(errutils.WithReason(fmt.Errorf("error getting AccessRequest for Cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonInternalError))
-				createCon(cct, metav1.ConditionFalse, helmv1alpha1.ReasonClusterAccessNotAvailable, fmt.Sprintf("Error getting AccessRequest for Cluster: %s", err.Error()))
+				errs.Append(errutils.WithReason(fmt.Errorf("error getting access for Cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonInternalError))
+				createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonClusterAccessNotAvailable, fmt.Sprintf("Error getting access for Cluster: %s", err.Error()))
 				c.enqueueCluster(&cluster) // trigger reconciliation of the cluster with the cluster controller to fix the AccessRequest
 				continue
 			}
 			if ar == nil {
-				clog.Debug("Waiting for AccessRequest to become available")
-				createCon(cct, metav1.ConditionFalse, helmv1alpha1.ReasonClusterAccessNotAvailable, "Waiting for AccessRequest to become available")
+				clog.Debug("Waiting for access to become available")
+				createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonClusterAccessNotAvailable, "Waiting for access to become available")
 				c.enqueueCluster(&cluster) // trigger reconciliation of the cluster with the cluster controller to create the AccessRequest
 				continue
 			}
 
-			// TODO: secret management
+			// manage secrets
+			sci := rr.SecretsToCopy.List(cluster.Namespace, rr.Object.Spec.Namespace)
+			if len(sci) > 0 {
+				clog.Debug("Copying secrets", "count", len(sci))
+				smErrs := c.ManageSecrets(ctx, access.Client(), map[string]string{openmcpconst.ManagedByLabel: expectedLabels[openmcpconst.ManagedByLabel]}, sci...) // label can neither include cluster nor HelmDeployment identity, since secrets are shared within the same namespace
+				if rerr := smErrs.Aggregate(); rerr != nil {
+					errs.Append(errutils.Errorf("error managing secrets for cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
+					createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonClusterAccessNotAvailable, fmt.Sprintf("Error managing secrets for cluster '%s/%s': [%s] %s", cluster.Namespace, cluster.Name, rerr.Reason(), rerr.Error()))
+					continue
+				}
+			} else {
+				clog.Debug("No secrets need to be copied")
+			}
+
 			requeueRequired, rerr := c.deployHelmChartSource(ctx, &cluster, expectedLabelsForCluster, rr, createConForCluster)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error creating/updating helm chart source for cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
@@ -292,7 +343,6 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 			}
 			clog.Debug("Successfully created/updated helm chart source and HelmRelease")
 		} else {
-			// TODO: secret management
 			remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(ctx, expectedLabelsForCluster, cluster.Namespace, createCon)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error deleting HelmRelease for Cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
@@ -325,6 +375,7 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 	return rr
 }
 
+// nolint:gocyclo
 func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr ReconcileResult, expectedLabels map[string]string) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 

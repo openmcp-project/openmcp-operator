@@ -193,6 +193,11 @@ func (in *HelmDeploymentSpec) DeepCopyInto(out *HelmDeploymentSpec) {
 		*out = new(SelectorOrReference)
 		(*in).DeepCopyInto(*out)
 	}
+	if in.SecretsToCopy != nil {
+		in, out := &in.SecretsToCopy, &out.SecretsToCopy
+		*out = new(SecretsToCopy)
+		(*in).DeepCopyInto(*out)
+	}
 	if in.HelmValues != nil {
 		in, out := &in.HelmValues, &out.HelmValues
 		*out = new(apiextensionsv1.JSON)

@@ -47,6 +47,8 @@ type SelectorDefinition struct {
 	*clustersv1alpha1.IdentityLabelPurposeSelector `json:",inline"`
 
 	// SecretsToCopy defines which secrets should be copied when this selector is used for a HelmDeployment.
+	// References here refer to secrets in the provider namespace.
+	// TO BE REFACTORED: We want to move secret copying logic into its own controller at some point.
 	// +optional
 	SecretsToCopy *SecretsToCopy `json:"secretsToCopy,omitempty"`
 }

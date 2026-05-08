@@ -29,4 +29,5 @@ const (
 	ReasonHelmReleaseDeletionFailed         = "HelmReleaseDeletionFailed"
 	ReasonWaitingForHelmChartSourceDeletion = "WaitingForHelmChartSourceDeletion"
 	ReasonHelmChartSourceDeletionFailed     = "HelmChartSourceDeletionFailed"
+	ReasonTargetClusterInteractionProblem   = "TargetClusterInteractionProblem"
 )

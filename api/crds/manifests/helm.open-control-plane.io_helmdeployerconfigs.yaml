@@ -166,8 +166,10 @@ spec:
                       type: array
                       x-kubernetes-list-type: atomic
                     secretsToCopy:
-                      description: SecretsToCopy defines which secrets should be copied
-                        when this selector is used for a HelmDeployment.
+                      description: |-
+                        SecretsToCopy defines which secrets should be copied when this selector is used for a HelmDeployment.
+                        References here refer to secrets in the provider namespace.
+                        TO BE REFACTORED: We want to move secret copying logic into its own controller at some point.
                       properties:
                         toPlatformCluster:
                           description: |-
