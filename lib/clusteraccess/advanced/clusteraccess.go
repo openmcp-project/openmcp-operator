@@ -21,6 +21,7 @@ import (
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	maputils "github.com/openmcp-project/controller-utils/pkg/collections/maps"
+	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
@@ -51,6 +52,7 @@ type ClusterAccessReconciler interface {
 	// Note that the implementation might depend on these labels to identify the resources it created,
 	// so changing them might lead to unexpected behavior. They also must be unique within the context of this reconciler.
 	// Use with caution.
+	// Note that all label values are put through a function which replaces a part of them with a unique and deterministic hash if they exceed the maximum allowed length for Kubernetes label values.
 	WithManagedLabels(gen ManagedLabelGenerator) ClusterAccessReconciler
 
 	// Access returns an internal Cluster object granting access to the cluster for the specified request with the specified id.
@@ -133,6 +135,18 @@ type FakingCallback func(ctx context.Context, platformClusterClient client.Clien
 // The third return value can be nil, or it can contain additional labels to be set on the created resources.
 type ManagedLabelGenerator func(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string, map[string]string)
 
+func ensureManagedLabelLength(gen ManagedLabelGenerator) ManagedLabelGenerator {
+	return func(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string, map[string]string) {
+		mb, mp, add := gen(controllerName, req, reg)
+		mb = ctrlutils.ShortenToXCharactersUnsafe(mb, ctrlutils.K8sMaxNameLength)
+		mp = ctrlutils.ShortenToXCharactersUnsafe(mp, ctrlutils.K8sMaxNameLength)
+		for k, v := range add {
+			add[k] = ctrlutils.ShortenToXCharactersUnsafe(v, ctrlutils.K8sMaxNameLength)
+		}
+		return mb, mp, add
+	}
+}
+
 func DefaultManagedLabelGenerator(controllerName string, req reconcile.Request, reg ClusterRegistration) (string, string, map[string]string) {
 	sb := strings.Builder{}
 	if req.Namespace != "" {
@@ -178,7 +192,7 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 		ridLock:               &sync.RWMutex{},
 		interval:              5 * time.Second,
 		registrations:         map[string]ClusterRegistration{},
-		managedBy:             DefaultManagedLabelGenerator,
+		managedBy:             ensureManagedLabelLength(DefaultManagedLabelGenerator),
 	}
 }
 
@@ -677,7 +691,7 @@ func (r *reconcilerImpl) WithManagedLabels(gen ManagedLabelGenerator) ClusterAcc
 	if gen == nil {
 		gen = DefaultManagedLabelGenerator
 	}
-	r.managedBy = gen
+	r.managedBy = ensureManagedLabelLength(gen)
 	return r
 }
 

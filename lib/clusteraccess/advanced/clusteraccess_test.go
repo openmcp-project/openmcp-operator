@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -573,6 +574,58 @@ var _ = Describe("Advanced Cluster Access", func() {
 		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedByLabel, "my-managed-by"))
 		Expect(ar.Labels).To(HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, "my-purpose"))
 		Expect(ar.Labels).To(HaveKeyWithValue("custom-label", "custom-value"))
+	})
+
+	It("should prevent label values from being too long (default managed label generator)", func() {
+		env := defaultTestSetup("testdata", "test-01")
+		rec := defaultClusterAccessReconciler(env, "foo")
+		rec.Register(advanced.ExistingClusterRequest("foobar", "fb", advanced.StaticReferenceGenerator(&commonapi.ObjectReference{
+			Name:      "cr-01",
+			Namespace: "test",
+		})).WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build())
+		req := testutils.RequestFromStrings("this-is-an-absolutely-very-long-namespace-name", "this-is-an-absolutely-very-long-name")
+
+		Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
+
+		// check AccessRequest
+		ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
+		namespace, err := advanced.DefaultNamespaceGenerator(req)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ar.Namespace).To(Equal(namespace))
+		Expect(ar.Labels).To(HaveKey(openmcpconst.ManagedByLabel))
+		Expect(len(ar.Labels[openmcpconst.ManagedByLabel])).To(BeNumerically("<=", 63))
+		Expect(ar.Labels).To(HaveKey(openmcpconst.ManagedPurposeLabel))
+		Expect(len(ar.Labels[openmcpconst.ManagedPurposeLabel])).To(BeNumerically("<=", 63))
+	})
+
+	It("should prevent label values from being too long (custom managed label generator)", func() {
+		env := defaultTestSetup("testdata", "test-01")
+		rec := defaultClusterAccessReconciler(env, "foo").WithManagedLabels(func(controllerName string, req reconcile.Request, reg advanced.ClusterRegistration) (string, string, map[string]string) {
+			return strings.Repeat("my-managed-by", 6), strings.Repeat("my-purpose", 8), map[string]string{"custom-label": strings.Repeat("custom-value", 7)}
+		})
+		rec.Register(advanced.ExistingClusterRequest("foobar", "fb", advanced.StaticReferenceGenerator(&commonapi.ObjectReference{
+			Name:      "cr-01",
+			Namespace: "test",
+		})).WithTokenAccess(&clustersv1alpha1.TokenConfig{}).Build())
+		req := testutils.RequestFromStrings("bar", "baz")
+
+		Eventually(expectNoRequeue(env.Ctx, rec, req, false)).Should(Succeed())
+
+		// check AccessRequest
+		ar, err := rec.AccessRequest(env.Ctx, req, "foobar")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ar.Name).To(Equal(advanced.StableRequestName("foo", req, "fb")))
+		namespace, err := advanced.DefaultNamespaceGenerator(req)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(ar.Namespace).To(Equal(namespace))
+		Expect(ar.Labels).To(HaveKey(openmcpconst.ManagedByLabel))
+		Expect(len(ar.Labels[openmcpconst.ManagedByLabel])).To(BeNumerically("<=", 63))
+		Expect(ar.Labels).To(HaveKey(openmcpconst.ManagedPurposeLabel))
+		Expect(len(ar.Labels[openmcpconst.ManagedPurposeLabel])).To(BeNumerically("<=", 63))
+		Expect(ar.Labels).To(HaveKey("custom-label"))
+		Expect(len(ar.Labels["custom-label"])).To(BeNumerically("<=", 63))
 	})
 
 	It("should requeue if the ClusterRequest or AccessRequest is not yet ready", func() {
