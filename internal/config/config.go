@@ -35,10 +35,10 @@ type Config struct {
 	AccessRequest *AccessRequestConfig `json:"accessRequest,omitempty"`
 
 	// ManagedControlPlane is the configuration for the MCP controller.
-	ManagedControlPlane *ManagedControlPlaneConfig `json:"managedControlPlane,omitempty"`
+	ManagedControlPlane *ManagedControlPlaneConfig `json:"managedControlPlane,omitempty" instantiate:"true"`
 
 	// HelmDeployer is the configuration for the Helm deployer controller.
-	HelmDeployer *HelmDeployerConfig `json:"helmDeployer,omitempty"`
+	HelmDeployer *HelmDeployerConfig `json:"helmDeployer,omitempty" instantiate:"true"`
 }
 
 type SchedulerConfigGetter func(ctx context.Context) (*SchedulerConfig, error)
@@ -193,20 +193,20 @@ type actionType string
 // It uses reflection to find the fields and their types, and calls the appropriate method on each field.
 func (c *Config) perform(action actionType) error {
 	v := reflect.ValueOf(c)
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		v = v.Elem()
 	}
 	var intfType reflect.Type
 	var funcName string
 	switch action {
 	case defaulting:
-		intfType = reflect.TypeOf((*Defaultable)(nil)).Elem()
+		intfType = reflect.TypeFor[Defaultable]()
 		funcName = "Default"
 	case validation:
-		intfType = reflect.TypeOf((*Validatable)(nil)).Elem()
+		intfType = reflect.TypeFor[Validatable]()
 		funcName = "Validate"
 	case completion:
-		intfType = reflect.TypeOf((*Completable)(nil)).Elem()
+		intfType = reflect.TypeFor[Completable]()
 		funcName = "Complete"
 	default:
 		return fmt.Errorf("internal error: unknown action '%s'", action)
@@ -215,8 +215,13 @@ func (c *Config) perform(action actionType) error {
 	for i := range v.NumField() {
 		sField := v.Field(i)
 		if (sField.Kind() == reflect.Slice || sField.Kind() == reflect.Map || sField.Kind() == reflect.Pointer) && sField.IsNil() {
-			// skip fields with nil values
-			continue
+			// skip fields with nil values, unless they have an 'instantiate:"true"' tag
+			structField := v.Type().Field(i)
+			if structField.Tag.Get("instantiate") == "true" {
+				sField.Set(reflect.New(sField.Type().Elem()))
+			} else {
+				continue
+			}
 		}
 		if sField.CanInterface() {
 			var method reflect.Value

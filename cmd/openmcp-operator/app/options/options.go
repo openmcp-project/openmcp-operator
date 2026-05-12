@@ -99,11 +99,14 @@ func (o *PersistentOptions) resolveConfig(ctx context.Context) (*config.Config, 
 		if err != nil {
 			return nil, fmt.Errorf("error loading config from ConfigMap: %w", err)
 		}
-	} else if len(o.ConfigPaths) > 0 { // fall back to loading from file monunt
+	} else if len(o.ConfigPaths) > 0 { // fall back to loading from file mount
 		cfg, err = config.LoadFromFiles(o.ConfigPaths...)
 		if err != nil {
 			return nil, fmt.Errorf("error loading config from files: %w", err)
 		}
+	}
+	if cfg == nil {
+		cfg = &config.Config{}
 	}
 
 	// Validate and complete the config
