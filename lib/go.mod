@@ -6,7 +6,7 @@ replace github.com/openmcp-project/openmcp-operator/api => ../api
 
 require (
 	github.com/onsi/ginkgo/v2 v2.28.1
-	github.com/onsi/gomega v1.39.1
+	github.com/onsi/gomega v1.40.0
 	github.com/openmcp-project/controller-utils v0.27.1
 	github.com/openmcp-project/openmcp-operator/api v0.19.1
 	k8s.io/api v0.35.3
