@@ -32,19 +32,15 @@ func (c *HelmDeploymentController) ManageSecrets(ctx context.Context, targetClus
 	errs := errutils.NewReasonableErrorList()
 
 	alreadyCopied := sets.New[string]()
-	keepOnPlatform := sets.New[string]()
-	keepOnTarget := sets.New[string]()
 	for _, sc := range secretsToCopy {
 		var cl client.Client
 		var clusterFailReason string
 		switch sc.Cluster {
 		case ToPlatformCluster:
 			cl = c.PlatformCluster.Client()
-			keepOnPlatform.Insert(sc.Target.NamespacedName().String())
 			clusterFailReason = cconst.ReasonPlatformClusterInteractionProblem
 		case ToTargetCluster:
 			cl = targetClusterClient
-			keepOnTarget.Insert(sc.Target.NamespacedName().String())
 			clusterFailReason = helmv1alpha1.ReasonTargetClusterInteractionProblem
 		default:
 			errs.Append(errutils.WithReason(fmt.Errorf("invalid target cluster '%s' for secret copy instruction (copying from '%s' to '%s')", sc.Cluster, sc.Source.NamespacedName().String(), sc.Target.NamespacedName().String()), cconst.ReasonConfigurationProblem))
@@ -88,6 +84,10 @@ func (c *HelmDeploymentController) ManageSecrets(ctx context.Context, targetClus
 			for key, eVal := range expectedSecretLabels {
 				aVal := tarSec.Labels[key]
 				if aVal != eVal {
+					if expectedSecretLabels[helmv1alpha1.GroupName+"/source-name"] == sc.Source.Name && expectedSecretLabels[helmv1alpha1.GroupName+"/source-namespace"] == sc.Source.Namespace {
+						clog.Info("Secret is maintained by another HelmDeployment, but uses the same source, ignoring conflict")
+						continue
+					}
 					errs.Append(errutils.WithReason(fmt.Errorf("unable to update secret '%s' on %s cluster: label '%s' has value '%s', expected '%s'", sc.Target.NamespacedName().String(), string(sc.Cluster), key, aVal, eVal), cconst.ReasonConfigurationProblem))
 					continue
 				}
