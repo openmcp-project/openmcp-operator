@@ -7,10 +7,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/openmcp-project/controller-utils/pkg/collections"
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
 	"github.com/openmcp-project/controller-utils/pkg/pairs"
@@ -30,6 +32,16 @@ func (c *HelmDeploymentController) ManageSecrets(ctx context.Context, targetClus
 	log := logging.FromContextOrDiscard(ctx)
 	log.Debug("Starting secret management")
 	errs := errutils.NewReasonableErrorList()
+
+	// create namespace(s), if missing
+	targetNamespacesList := &corev1.NamespaceList{}
+	if err := targetClusterClient.List(ctx, targetNamespacesList); err != nil {
+		errs.Append(errutils.WithReason(fmt.Errorf("unable to list target cluster namespaces: %w", err), helmv1alpha1.ReasonTargetClusterInteractionProblem))
+		return errs
+	}
+	targetNamespaces := sets.New(collections.ProjectSliceToSlice(targetNamespacesList.Items, func(ns corev1.Namespace) string {
+		return ns.Name
+	})...)
 
 	alreadyCopied := sets.New[string]()
 	for _, sc := range secretsToCopy {
@@ -55,6 +67,18 @@ func (c *HelmDeploymentController) ManageSecrets(ctx context.Context, targetClus
 		if alreadyCopied.Has(alreadyCopiedID) {
 			clog.Debug("Skipping secret copying, because this secret was already copied")
 			continue
+		}
+		if sc.Cluster == ToTargetCluster && !targetNamespaces.Has(sc.Target.Namespace) {
+			clog.Debug("Creating missing namespace on target cluster")
+			if err := cl.Create(ctx, &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: sc.Target.Namespace,
+				},
+			}); err != nil {
+				errs.Append(errutils.WithReason(fmt.Errorf("unable to create namespace '%s' on target cluster: %w", sc.Target.Namespace, err), helmv1alpha1.ReasonTargetClusterInteractionProblem))
+				continue
+			}
+			targetNamespaces.Insert(sc.Target.Namespace)
 		}
 		alreadyCopied.Insert(alreadyCopiedID)
 		expectedSecretLabels := maps.Clone(expectedLabels)
