@@ -47,6 +47,7 @@ type HelmDeploymentSpec struct {
 	// +kubebuilder:validation:Type=object
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
+	// +optional
 	HelmValues *apiextensionsv1.JSON `json:"helmValues"`
 }
 

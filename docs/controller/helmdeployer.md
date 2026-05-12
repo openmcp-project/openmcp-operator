@@ -71,6 +71,11 @@ spec:
   namespace: helm
   selector: # optional, cluster selector
     ref: mcp-and-workload
+  helmValues: # optional, structure depends on chart
+    my-helm-value: '<cluster.name>'
+    my-other-helm-value:
+      this-is-nested: '<environment>'
+      this-is-too: foo
   secretsToCopy: # optional
     toPlatformCluster: # optional
     - source:
@@ -107,6 +112,19 @@ When referencing a selector definition, reconciliation will result in an error i
 
 > [!CAUTION]
 > The `spec.selector` field is optional and an empty selector will match every `Cluster`.
+
+#### Helm Values
+
+The values for the helm chart can be passed via `spec.helmValues`.
+
+Since some parts of the helm values could potentially depend on dynamic variables, such as the name of the `Cluster` the chart is deployed onto, the following string replacements will be applied to the values before they are passed to the chart:
+- `<provider.name>` => name of the helm deployer `PlatformService` resource
+- `<provider.namespace>` => namespace of the helm deployer `PlatformService` resource
+- `<environment>` => environment name of the operator
+- `<helm.name>` => name of the `HelmDeployment`
+- `<helm.namespace>` => namespace of the `HelmDeployment`
+- `<cluster.name>` => name of the `Cluster` the chart is deployed onto
+- `<cluster.namespace>` => namespace of the `Cluster` the chart is deployed onto
 
 #### Secret Copying
 
