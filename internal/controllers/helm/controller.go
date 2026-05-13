@@ -140,10 +140,10 @@ func (c *HelmDeploymentController) Reconcile(ctx context.Context, req ctrl.Reque
 	return res, err
 }
 
-func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Request) ReconcileResult {
+func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Request) *ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 
-	rr := ReconcileResult{}
+	rr := &ReconcileResult{}
 	rr.SmartRequeue = ctrlutils.SR_NO_REQUEUE // we don't need to requeue by default
 
 	// get HelmDeployment resource
@@ -151,7 +151,7 @@ func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Reque
 	if err := c.PlatformCluster.Client().Get(ctx, req.NamespacedName, hd); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Resource not found")
-			return ReconcileResult{}
+			return &ReconcileResult{}
 		}
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to get resource '%s' from cluster: %w", req.String(), err), cconst.ReasonPlatformClusterInteractionProblem)
 		return rr
@@ -164,7 +164,7 @@ func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Reque
 			switch op {
 			case openmcpconst.OperationAnnotationValueIgnore:
 				log.Info("Ignoring resource due to ignore operation annotation")
-				return ReconcileResult{}
+				return &ReconcileResult{}
 			case openmcpconst.OperationAnnotationValueReconcile:
 				log.Debug("Removing reconcile operation annotation from resource")
 				if err := ctrlutils.EnsureAnnotation(ctx, c.PlatformCluster.Client(), hd, openmcpconst.OperationAnnotation, "", true, ctrlutils.DELETE); err != nil {
@@ -236,15 +236,15 @@ func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	if hd.DeletionTimestamp.IsZero() {
-		rr = c.handleCreateOrUpdate(ctx, rr, expectedLabels)
+		c.handleCreateOrUpdate(ctx, rr, expectedLabels)
 	} else {
-		rr = c.handleDelete(ctx, rr, expectedLabels)
+		c.handleDelete(ctx, rr, expectedLabels)
 	}
 
 	return rr
 }
 
-func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr ReconcileResult, expectedLabels map[string]string) ReconcileResult {
+func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr *ReconcileResult, expectedLabels map[string]string) {
 	log := logging.FromContextOrPanic(ctx)
 
 	createCon := ctrlutils.GenerateCreateConditionFunc(&rr.ReconcileResult)
@@ -255,7 +255,7 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 		log.Info("Adding finalizer to HelmDeployment")
 		if err := c.PlatformCluster.Client().Patch(ctx, rr.Object, client.MergeFrom(old)); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to add finalizer to HelmDeployment '%s/%s': %w", rr.Object.Namespace, rr.Object.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-			return rr
+			return
 		}
 	}
 
@@ -263,7 +263,7 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 	cl := &clustersv1alpha1.ClusterList{}
 	if err := c.PlatformCluster.Client().List(ctx, cl); err != nil {
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to list Clusters from platform cluster: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
-		return rr
+		return
 	}
 
 	errs := errutils.NewReasonableErrorList()
@@ -381,11 +381,10 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 	}
 
 	rr.ReconcileError = errs.Aggregate()
-	return rr
 }
 
 // nolint:gocyclo
-func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr ReconcileResult, expectedLabels map[string]string) ReconcileResult {
+func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr *ReconcileResult, expectedLabels map[string]string) {
 	log := logging.FromContextOrPanic(ctx)
 
 	createCon := ctrlutils.GenerateCreateConditionFunc(&rr.ReconcileResult)
@@ -402,7 +401,7 @@ func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr Reconcil
 	} else if len(remainingHelmReleases)+len(remainingHelmChartSources) > 0 {
 		log.Debug("Waiting for HelmReleases and/or HelmChartSources to be deleted", "remainingHelmReleases", len(remainingHelmReleases), "remainingHelmChartSources", len(remainingHelmChartSources))
 		rr.SmartRequeue = ctrlutils.SR_BACKOFF
-		return rr
+		return
 	}
 
 	// remove this helm deployment's finalizer from all clusters, unless that cluster's identity is still referenced
@@ -420,7 +419,7 @@ func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr Reconcil
 	cl := &clustersv1alpha1.ClusterList{}
 	if err := c.PlatformCluster.Client().List(ctx, cl); err != nil {
 		rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to list Clusters from platform cluster: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
-		return rr
+		return
 	}
 	for _, cluster := range cl.Items {
 		if !slices.Contains(cluster.Finalizers, rr.Object.Finalizer()) {
@@ -468,12 +467,11 @@ func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr Reconcil
 			log.Info("Removing finalizer from HelmDeployment")
 			if err := c.PlatformCluster.Client().Patch(ctx, rr.Object, client.MergeFrom(old)); err != nil {
 				rr.ReconcileError = errutils.WithReason(fmt.Errorf("unable to remove finalizer from HelmDeployment '%s/%s': %w", rr.Object.Namespace, rr.Object.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
-				return rr
+				return
 			}
 			rr.Object = nil // otherwise we will get an error trying to update the non-existing HelmDeployment's status
 		}
 	}
-	return rr
 }
 
 // expected arguments: either (<clusterNamespace>, <clusterName>) or ("<clusterNamespace>/<clusterName>")

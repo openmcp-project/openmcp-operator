@@ -29,8 +29,9 @@ import (
 )
 
 // deployHelmChartSource deploys the configured Flux source (HelmRepository, GitRepository, OCIRepository) into the Cluster namespace.
+// It also sets the source kind in the ReconcileResult.
 // The first return value specifies whether a requeue is required (because the source is not ready yet).
-func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cluster *clustersv1alpha1.Cluster, expectedLabels map[string]string, rr ReconcileResult, createConForCluster func(status metav1.ConditionStatus, reason, message string)) (bool, errutils.ReasonableError) {
+func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cluster *clustersv1alpha1.Cluster, expectedLabels map[string]string, rr *ReconcileResult, createConForCluster func(status metav1.ConditionStatus, reason, message string)) (bool, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// deploy Flux Source
@@ -54,7 +55,6 @@ func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cl
 		return false, errutils.WithReason(fmt.Errorf("error listing existing OCIRepository resources in target namespace '%s': %w", cluster.Namespace, err), clusterconst.ReasonPlatformClusterInteractionProblem)
 	}
 	toBeDeleted := []client.Object{}
-	var sourceKind string
 	// determine which type of source to create and which existing sources to delete
 	if rr.Object.Spec.ChartSource.Helm != nil {
 		fluxSource = &fluxsourcev1.HelmRepository{}
@@ -66,7 +66,7 @@ func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cl
 			helmRepo.Spec = *rr.Object.Spec.ChartSource.Helm.DeepCopy()
 			return nil
 		}
-		sourceKind = helmv1alpha1.SourceKindHelmRepository
+		rr.SourceKind = helmv1alpha1.SourceKindHelmRepository
 		for i := range existingHelm.Items {
 			obj := &existingHelm.Items[i]
 			if obj.GetName() != sourceName {
@@ -86,7 +86,7 @@ func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cl
 
 			return nil
 		}
-		sourceKind = helmv1alpha1.SourceKindGitRepository
+		rr.SourceKind = helmv1alpha1.SourceKindGitRepository
 		for i := range existingGit.Items {
 			obj := &existingGit.Items[i]
 			if obj.GetName() != sourceName {
@@ -105,7 +105,7 @@ func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cl
 			ociRepo.Spec = *rr.Object.Spec.ChartSource.OCI.DeepCopy()
 			return nil
 		}
-		sourceKind = helmv1alpha1.SourceKindOCIRepository
+		rr.SourceKind = helmv1alpha1.SourceKindOCIRepository
 		for i := range existingOCI.Items {
 			obj := &existingOCI.Items[i]
 			if obj.GetName() != sourceName {
@@ -119,17 +119,17 @@ func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cl
 	}
 	fluxSource.SetName(sourceName)
 	fluxSource.SetNamespace(cluster.Namespace)
-	log.Info("Creating or updating Flux source", "kind", sourceKind, "sourceName", fluxSource.GetName(), "sourceNamespace", fluxSource.GetNamespace())
+	log.Info("Creating or updating Flux source", "kind", rr.SourceKind, "sourceName", fluxSource.GetName(), "sourceNamespace", fluxSource.GetNamespace())
 	if _, err := controllerutil.CreateOrUpdate(ctx, c.PlatformCluster.Client(), fluxSource, func() error {
 		if err := controllerutil.SetOwnerReference(cluster, fluxSource, c.PlatformCluster.Scheme()); err != nil {
-			createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonHelmChartSourceDeploymentFailed, fmt.Sprintf("Error setting owner reference on %s '%s/%s': %s", sourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err.Error()))
-			return fmt.Errorf("error setting owner reference on %s '%s/%s': %w", sourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err)
+			createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonHelmChartSourceDeploymentFailed, fmt.Sprintf("Error setting owner reference on %s '%s/%s': %s", rr.SourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err.Error()))
+			return fmt.Errorf("error setting owner reference on %s '%s/%s': %w", rr.SourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err)
 		}
 		fluxSource.SetLabels(maputils.Merge(fluxSource.GetLabels(), expectedLabels))
 		return setSpec(fluxSource)
 	}); err != nil {
-		createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonHelmChartSourceDeploymentFailed, fmt.Sprintf("Error creating or updating %s '%s/%s': %s", sourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err.Error()))
-		return false, errutils.WithReason(fmt.Errorf("error creating or updating %s '%s/%s': %w", sourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err), clusterconst.ReasonPlatformClusterInteractionProblem)
+		createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonHelmChartSourceDeploymentFailed, fmt.Sprintf("Error creating or updating %s '%s/%s': %s", rr.SourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err.Error()))
+		return false, errutils.WithReason(fmt.Errorf("error creating or updating %s '%s/%s': %w", rr.SourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err), clusterconst.ReasonPlatformClusterInteractionProblem)
 	}
 	// delete obsolete sources
 	for _, obj := range toBeDeleted {
@@ -143,11 +143,11 @@ func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cl
 	}
 
 	if err := c.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(fluxSource), fluxSource); err != nil {
-		return false, errutils.WithReason(fmt.Errorf("error getting %s '%s/%s' to check for readiness: %w", sourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err), clusterconst.ReasonPlatformClusterInteractionProblem)
+		return false, errutils.WithReason(fmt.Errorf("error getting %s '%s/%s' to check for readiness: %w", rr.SourceKind, fluxSource.GetNamespace(), fluxSource.GetName(), err), clusterconst.ReasonPlatformClusterInteractionProblem)
 	}
 	readyCon := getReadyCondition(fluxSource)
 	if readyCon == nil || readyCon.Status != metav1.ConditionTrue || readyCon.ObservedGeneration != fluxSource.GetGeneration() {
-		createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonWaitingForHelmChartSourceHealthy, fmt.Sprintf("%s '%s/%s' is not ready yet", sourceKind, fluxSource.GetNamespace(), fluxSource.GetName()))
+		createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonWaitingForHelmChartSourceHealthy, fmt.Sprintf("%s '%s/%s' is not ready yet", rr.SourceKind, fluxSource.GetNamespace(), fluxSource.GetName()))
 		return true, nil
 	}
 
@@ -158,7 +158,7 @@ func (c *HelmDeploymentController) deployHelmChartSource(ctx context.Context, cl
 // deployHelmRelease deploys the HelmRelease to install external-dns onto the Cluster.
 // It expects 'Config', 'AccessRequest', and 'SourceKind' to be set in the given ReconcileResult.
 // The first return value specifies whether a requeue is required (because the release is not ready yet).
-func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluster *clustersv1alpha1.Cluster, ar *clustersv1alpha1.AccessRequest, expectedLabels map[string]string, rr ReconcileResult, createConForCluster func(status metav1.ConditionStatus, reason, message string)) (bool, errutils.ReasonableError) {
+func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluster *clustersv1alpha1.Cluster, ar *clustersv1alpha1.AccessRequest, expectedLabels map[string]string, rr *ReconcileResult, createConForCluster func(status metav1.ConditionStatus, reason, message string)) (bool, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	hr := &fluxhelmv2.HelmRelease{}
