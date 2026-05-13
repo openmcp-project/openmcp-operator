@@ -1,0 +1,30 @@
+apiVersion: helm.open-control-plane.io/v1alpha1
+kind: HelmDeployerConfig
+metadata:
+  name: helmdeploy
+spec:
+  selectorDefinitions:
+    single:
+      matchPurposes:
+      - operator: ContainsAll
+        values:
+        - single
+      secretsToCopy:
+        toPlatformCluster:
+        - source:
+            name: secret-cfg-1
+        - source:
+            name: secret-cfg-2
+          target:
+            name: copied-secret-cfg-2
+        - source:
+            name: secret-overwrite
+        toTargetCluster:
+        - source:
+            name: secret-cfg-3
+        - source:
+            name: secret-cfg-4
+          target:
+            name: copied-secret-cfg-4
+        - source:
+            name: secret-overwrite

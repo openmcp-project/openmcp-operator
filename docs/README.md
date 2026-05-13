@@ -5,6 +5,7 @@
 
 - [AccessRequest Controller](controller/accessrequest.md)
 - [Deployment Controllers](controller/deployment.md)
+- [HelmDeployer](controller/helmdeployer.md)
 - [ManagedControlPlane v2](controller/managedcontrolplane.md)
 - [Cluster Scheduler](controller/scheduler.md)
 

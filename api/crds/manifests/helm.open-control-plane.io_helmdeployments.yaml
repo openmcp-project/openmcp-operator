@@ -1,0 +1,907 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    openmcp.cloud/cluster: platform
+  name: helmdeployments.helm.open-control-plane.io
+spec:
+  group: helm.open-control-plane.io
+  names:
+    kind: HelmDeployment
+    listKind: HelmDeploymentList
+    plural: helmdeployments
+    shortNames:
+    - hd
+    - hdeploy
+    - helmdeploy
+    singular: helmdeployment
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            properties:
+              chartSource:
+                description: ChartSource is the source of the helm chart.
+                properties:
+                  chartName:
+                    description: |-
+                      ChartName specifies the name of the chart.
+                      Can be omitted for oci sources, required for git and helm sources.
+                      For git sources, this is the path within the git repository to the chart.
+                      For helm sources, append the version to the chart name using '@', e.g. 'external-dns@1.10.0' or omit for latest version.
+                    type: string
+                  git:
+                    description: |-
+                      GitRepositorySpec specifies the required configuration to produce an
+                      Artifact for a Git repository.
+                    properties:
+                      ignore:
+                        description: |-
+                          Ignore overrides the set of excluded patterns in the .sourceignore format
+                          (which is the same as .gitignore). If not provided, a default will be used,
+                          consult the documentation for your version to find out what those are.
+                        type: string
+                      include:
+                        description: |-
+                          Include specifies a list of GitRepository resources which Artifacts
+                          should be included in the Artifact produced for this GitRepository.
+                        items:
+                          description: |-
+                            GitRepositoryInclude specifies a local reference to a GitRepository which
+                            Artifact (sub-)contents must be included, and where they should be placed.
+                          properties:
+                            fromPath:
+                              description: |-
+                                FromPath specifies the path to copy contents from, defaults to the root
+                                of the Artifact.
+                              type: string
+                            repository:
+                              description: |-
+                                GitRepositoryRef specifies the GitRepository which Artifact contents
+                                must be included.
+                              properties:
+                                name:
+                                  description: Name of the referent.
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            toPath:
+                              description: |-
+                                ToPath specifies the path to copy contents to, defaults to the name of
+                                the GitRepositoryRef.
+                              type: string
+                          required:
+                          - repository
+                          type: object
+                        type: array
+                      interval:
+                        description: |-
+                          Interval at which the GitRepository URL is checked for updates.
+                          This interval is approximate and may be subject to jitter to ensure
+                          efficient use of resources.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                        type: string
+                      provider:
+                        description: |-
+                          Provider used for authentication, can be 'azure', 'github', 'generic'.
+                          When not specified, defaults to 'generic'.
+                        enum:
+                        - generic
+                        - azure
+                        - github
+                        type: string
+                      proxySecretRef:
+                        description: |-
+                          ProxySecretRef specifies the Secret containing the proxy configuration
+                          to use while communicating with the Git server.
+                        properties:
+                          name:
+                            description: Name of the referent.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      recurseSubmodules:
+                        description: |-
+                          RecurseSubmodules enables the initialization of all submodules within
+                          the GitRepository as cloned from the URL, using their default settings.
+                        type: boolean
+                      ref:
+                        description: |-
+                          Reference specifies the Git reference to resolve and monitor for
+                          changes, defaults to the 'master' branch.
+                        properties:
+                          branch:
+                            description: Branch to check out, defaults to 'master'
+                              if no other field is defined.
+                            type: string
+                          commit:
+                            description: |-
+                              Commit SHA to check out, takes precedence over all reference fields.
+
+                              This can be combined with Branch to shallow clone the branch, in which
+                              the commit is expected to exist.
+                            type: string
+                          name:
+                            description: |-
+                              Name of the reference to check out; takes precedence over Branch, Tag and SemVer.
+
+                              It must be a valid Git reference: https://git-scm.com/docs/git-check-ref-format#_description
+                              Examples: "refs/heads/main", "refs/tags/v0.1.0", "refs/pull/420/head", "refs/merge-requests/1/head"
+                            type: string
+                          semver:
+                            description: SemVer tag expression to check out, takes
+                              precedence over Tag.
+                            type: string
+                          tag:
+                            description: Tag to check out, takes precedence over Branch.
+                            type: string
+                        type: object
+                      secretRef:
+                        description: |-
+                          SecretRef specifies the Secret containing authentication credentials for
+                          the GitRepository.
+                          For HTTPS repositories the Secret must contain 'username' and 'password'
+                          fields for basic auth or 'bearerToken' field for token auth.
+                          For SSH repositories the Secret must contain 'identity'
+                          and 'known_hosts' fields.
+                        properties:
+                          name:
+                            description: Name of the referent.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      serviceAccountName:
+                        description: |-
+                          ServiceAccountName is the name of the Kubernetes ServiceAccount used to
+                          authenticate to the GitRepository. This field is only supported for 'azure' provider.
+                        type: string
+                      sparseCheckout:
+                        description: |-
+                          SparseCheckout specifies a list of directories to checkout when cloning
+                          the repository. If specified, only these directories are included in the
+                          Artifact produced for this GitRepository.
+                        items:
+                          type: string
+                        type: array
+                      suspend:
+                        description: |-
+                          Suspend tells the controller to suspend the reconciliation of this
+                          GitRepository.
+                        type: boolean
+                      timeout:
+                        default: 60s
+                        description: Timeout for Git operations like cloning, defaults
+                          to 60s.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m))+$
+                        type: string
+                      url:
+                        description: URL specifies the Git repository URL, it can
+                          be an HTTP/S or SSH address.
+                        pattern: ^(http|https|ssh)://.*$
+                        type: string
+                      verify:
+                        description: |-
+                          Verification specifies the configuration to verify the Git commit
+                          signature(s).
+                        properties:
+                          mode:
+                            default: HEAD
+                            description: |-
+                              Mode specifies which Git object(s) should be verified.
+
+                              The variants "head" and "HEAD" both imply the same thing, i.e. verify
+                              the commit that the HEAD of the Git repository points to. The variant
+                              "head" solely exists to ensure backwards compatibility.
+                            enum:
+                            - head
+                            - HEAD
+                            - Tag
+                            - TagAndHEAD
+                            type: string
+                          secretRef:
+                            description: |-
+                              SecretRef specifies the Secret containing the public keys of trusted Git
+                              authors.
+                            properties:
+                              name:
+                                description: Name of the referent.
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - secretRef
+                        type: object
+                    required:
+                    - interval
+                    - url
+                    type: object
+                    x-kubernetes-validations:
+                    - message: serviceAccountName can only be set when provider is
+                        'azure'
+                      rule: '!has(self.serviceAccountName) || (has(self.provider)
+                        && self.provider == ''azure'')'
+                  helm:
+                    description: |-
+                      HelmRepositorySpec specifies the required configuration to produce an
+                      Artifact for a Helm repository index YAML.
+                    properties:
+                      accessFrom:
+                        description: |-
+                          AccessFrom specifies an Access Control List for allowing cross-namespace
+                          references to this object.
+                          NOTE: Not implemented, provisional as of https://github.com/fluxcd/flux2/pull/2092
+                        properties:
+                          namespaceSelectors:
+                            description: |-
+                              NamespaceSelectors is the list of namespace selectors to which this ACL applies.
+                              Items in this list are evaluated using a logical OR operation.
+                            items:
+                              description: |-
+                                NamespaceSelector selects the namespaces to which this ACL applies.
+                                An empty map of MatchLabels matches all namespaces in a cluster.
+                              properties:
+                                matchLabels:
+                                  additionalProperties:
+                                    type: string
+                                  description: |-
+                                    MatchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                                    map is equivalent to an element of matchExpressions, whose key field is "key", the
+                                    operator is "In", and the values array contains only "value". The requirements are ANDed.
+                                  type: object
+                              type: object
+                            type: array
+                        required:
+                        - namespaceSelectors
+                        type: object
+                      certSecretRef:
+                        description: |-
+                          CertSecretRef can be given the name of a Secret containing
+                          either or both of
+
+                          - a PEM-encoded client certificate (`tls.crt`) and private
+                          key (`tls.key`);
+                          - a PEM-encoded CA certificate (`ca.crt`)
+
+                          and whichever are supplied, will be used for connecting to the
+                          registry. The client cert and key are useful if you are
+                          authenticating with a certificate; the CA cert is useful if
+                          you are using a self-signed server certificate. The Secret must
+                          be of type `Opaque` or `kubernetes.io/tls`.
+
+                          It takes precedence over the values specified in the Secret referred
+                          to by `.spec.secretRef`.
+                        properties:
+                          name:
+                            description: Name of the referent.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      insecure:
+                        description: |-
+                          Insecure allows connecting to a non-TLS HTTP container registry.
+                          This field is only taken into account if the .spec.type field is set to 'oci'.
+                        type: boolean
+                      interval:
+                        description: |-
+                          Interval at which the HelmRepository URL is checked for updates.
+                          This interval is approximate and may be subject to jitter to ensure
+                          efficient use of resources.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                        type: string
+                      passCredentials:
+                        description: |-
+                          PassCredentials allows the credentials from the SecretRef to be passed
+                          on to a host that does not match the host as defined in URL.
+                          This may be required if the host of the advertised chart URLs in the
+                          index differ from the defined URL.
+                          Enabling this should be done with caution, as it can potentially result
+                          in credentials getting stolen in a MITM-attack.
+                        type: boolean
+                      provider:
+                        default: generic
+                        description: |-
+                          Provider used for authentication, can be 'aws', 'azure', 'gcp' or 'generic'.
+                          This field is optional, and only taken into account if the .spec.type field is set to 'oci'.
+                          When not specified, defaults to 'generic'.
+                        enum:
+                        - generic
+                        - aws
+                        - azure
+                        - gcp
+                        type: string
+                      secretRef:
+                        description: |-
+                          SecretRef specifies the Secret containing authentication credentials
+                          for the HelmRepository.
+                          For HTTP/S basic auth the secret must contain 'username' and 'password'
+                          fields.
+                          Support for TLS auth using the 'certFile' and 'keyFile', and/or 'caFile'
+                          keys is deprecated. Please use `.spec.certSecretRef` instead.
+                        properties:
+                          name:
+                            description: Name of the referent.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      suspend:
+                        description: |-
+                          Suspend tells the controller to suspend the reconciliation of this
+                          HelmRepository.
+                        type: boolean
+                      timeout:
+                        description: |-
+                          Timeout is used for the index fetch operation for an HTTPS helm repository,
+                          and for remote OCI Repository operations like pulling for an OCI helm
+                          chart by the associated HelmChart.
+                          Its default value is 60s.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m))+$
+                        type: string
+                      type:
+                        description: |-
+                          Type of the HelmRepository.
+                          When this field is set to  "oci", the URL field value must be prefixed with "oci://".
+                        enum:
+                        - default
+                        - oci
+                        type: string
+                      url:
+                        description: |-
+                          URL of the Helm repository, a valid URL contains at least a protocol and
+                          host.
+                        pattern: ^(http|https|oci)://.*$
+                        type: string
+                    required:
+                    - url
+                    type: object
+                  oci:
+                    description: OCIRepositorySpec defines the desired state of OCIRepository
+                    properties:
+                      certSecretRef:
+                        description: |-
+                          CertSecretRef can be given the name of a Secret containing
+                          either or both of
+
+                          - a PEM-encoded client certificate (`tls.crt`) and private
+                          key (`tls.key`);
+                          - a PEM-encoded CA certificate (`ca.crt`)
+
+                          and whichever are supplied, will be used for connecting to the
+                          registry. The client cert and key are useful if you are
+                          authenticating with a certificate; the CA cert is useful if
+                          you are using a self-signed server certificate. The Secret must
+                          be of type `Opaque` or `kubernetes.io/tls`.
+                        properties:
+                          name:
+                            description: Name of the referent.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      ignore:
+                        description: |-
+                          Ignore overrides the set of excluded patterns in the .sourceignore format
+                          (which is the same as .gitignore). If not provided, a default will be used,
+                          consult the documentation for your version to find out what those are.
+                        type: string
+                      insecure:
+                        description: Insecure allows connecting to a non-TLS HTTP
+                          container registry.
+                        type: boolean
+                      interval:
+                        description: |-
+                          Interval at which the OCIRepository URL is checked for updates.
+                          This interval is approximate and may be subject to jitter to ensure
+                          efficient use of resources.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                        type: string
+                      layerSelector:
+                        description: |-
+                          LayerSelector specifies which layer should be extracted from the OCI artifact.
+                          When not specified, the first layer found in the artifact is selected.
+                        properties:
+                          mediaType:
+                            description: |-
+                              MediaType specifies the OCI media type of the layer
+                              which should be extracted from the OCI Artifact. The
+                              first layer matching this type is selected.
+                            type: string
+                          operation:
+                            description: |-
+                              Operation specifies how the selected layer should be processed.
+                              By default, the layer compressed content is extracted to storage.
+                              When the operation is set to 'copy', the layer compressed content
+                              is persisted to storage as it is.
+                            enum:
+                            - extract
+                            - copy
+                            type: string
+                        type: object
+                      provider:
+                        default: generic
+                        description: |-
+                          The provider used for authentication, can be 'aws', 'azure', 'gcp' or 'generic'.
+                          When not specified, defaults to 'generic'.
+                        enum:
+                        - generic
+                        - aws
+                        - azure
+                        - gcp
+                        type: string
+                      proxySecretRef:
+                        description: |-
+                          ProxySecretRef specifies the Secret containing the proxy configuration
+                          to use while communicating with the container registry.
+                        properties:
+                          name:
+                            description: Name of the referent.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      ref:
+                        description: |-
+                          The OCI reference to pull and monitor for changes,
+                          defaults to the latest tag.
+                        properties:
+                          digest:
+                            description: |-
+                              Digest is the image digest to pull, takes precedence over SemVer.
+                              The value should be in the format 'sha256:<HASH>'.
+                            type: string
+                          semver:
+                            description: |-
+                              SemVer is the range of tags to pull selecting the latest within
+                              the range, takes precedence over Tag.
+                            type: string
+                          semverFilter:
+                            description: SemverFilter is a regex pattern to filter
+                              the tags within the SemVer range.
+                            type: string
+                          tag:
+                            description: Tag is the image tag to pull, defaults to
+                              latest.
+                            type: string
+                        type: object
+                      secretRef:
+                        description: |-
+                          SecretRef contains the secret name containing the registry login
+                          credentials to resolve image metadata.
+                          The secret must be of type kubernetes.io/dockerconfigjson.
+                        properties:
+                          name:
+                            description: Name of the referent.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      serviceAccountName:
+                        description: |-
+                          ServiceAccountName is the name of the Kubernetes ServiceAccount used to authenticate
+                          the image pull if the service account has attached pull secrets. For more information:
+                          https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#add-imagepullsecrets-to-a-service-account
+                        type: string
+                      suspend:
+                        description: This flag tells the controller to suspend the
+                          reconciliation of this source.
+                        type: boolean
+                      timeout:
+                        default: 60s
+                        description: The timeout for remote OCI Repository operations
+                          like pulling, defaults to 60s.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m))+$
+                        type: string
+                      url:
+                        description: |-
+                          URL is a reference to an OCI artifact repository hosted
+                          on a remote container registry.
+                        pattern: ^oci://.*$
+                        type: string
+                      verify:
+                        description: |-
+                          Verify contains the secret name containing the trusted public keys
+                          used to verify the signature and specifies which provider to use to check
+                          whether OCI image is authentic.
+                        properties:
+                          matchOIDCIdentity:
+                            description: |-
+                              MatchOIDCIdentity specifies the identity matching criteria to use
+                              while verifying an OCI artifact which was signed using Cosign keyless
+                              signing. The artifact's identity is deemed to be verified if any of the
+                              specified matchers match against the identity.
+                            items:
+                              description: |-
+                                OIDCIdentityMatch specifies options for verifying the certificate identity,
+                                i.e. the issuer and the subject of the certificate.
+                              properties:
+                                issuer:
+                                  description: |-
+                                    Issuer specifies the regex pattern to match against to verify
+                                    the OIDC issuer in the Fulcio certificate. The pattern must be a
+                                    valid Go regular expression.
+                                  type: string
+                                subject:
+                                  description: |-
+                                    Subject specifies the regex pattern to match against to verify
+                                    the identity subject in the Fulcio certificate. The pattern must
+                                    be a valid Go regular expression.
+                                  type: string
+                              required:
+                              - issuer
+                              - subject
+                              type: object
+                            type: array
+                          provider:
+                            default: cosign
+                            description: Provider specifies the technology used to
+                              sign the OCI Artifact.
+                            enum:
+                            - cosign
+                            - notation
+                            type: string
+                          secretRef:
+                            description: |-
+                              SecretRef specifies the Kubernetes Secret containing the
+                              trusted public keys.
+                            properties:
+                              name:
+                                description: Name of the referent.
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - provider
+                        type: object
+                    required:
+                    - interval
+                    - url
+                    type: object
+                type: object
+                x-kubernetes-validations:
+                - message: chartName must be set if git is used as source
+                  rule: '(has(self.git) || has(self.helm)) ? (has(self.chartName)
+                    && size(self.chartName) > 0) : true'
+                - message: exactly one of the fields in [helm git oci] must be set
+                  rule: '[has(self.helm),has(self.git),has(self.oci)].filter(x,x==true).size()
+                    == 1'
+              helmValues:
+                description: |-
+                  HelmValues are the helm values to deploy external-dns with, if the purpose selector matches.
+                  There are a few special strings which will be replaced before creating the HelmRelease:
+                  - <provider.name> will be replaced with the provider name resource.
+                  - <provider.namespace> will be replaced with the namespace that hosts the platform service.
+                  - <environment> will be replaced with the environment name of the operator.
+                  - <helm.name> will be replaced with the name of the HelmDeployment.
+                  - <helm.namespace> will be replaced with the namespace of the HelmDeployment.
+                  - <cluster.name> will be replaced with the name of the reconciled Cluster.
+                  - <cluster.namespace> will be replaced with the namespace of the reconciled Cluster.
+                type: object
+                x-kubernetes-preserve-unknown-fields: true
+              namespace:
+                description: |-
+                  Namespace is the namespace on the target cluster to use for the helm deployment.
+                  If secrets are copied onto the target cluster, they will be copied into this namespace.
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              secretsToCopy:
+                description: |-
+                  SecretsToCopy defines which secrets should be copied for this HelmDeployment.
+                  This is in addition to any secrets to copy specified in a referenced selector definition in the provider config.
+                  If there are overlapping definitions, the secrets specified here take precedence.
+                  Opposed to secret references in the provider config, references here refer to secrets in the same namespace as the HelmDeployment.
+                  TO BE REFACTORED: We want to move secret copying logic into its own controller at some point.
+                properties:
+                  toPlatformCluster:
+                    description: |-
+                      ToPlatformCluster lists secrets from the provider namespace that should be copied into the cluster's namespace on the platform cluster.
+                      This is useful e.g. for pull secrets for the helm chart registry.
+                    items:
+                      description: |-
+                        SecretCopy defines the name of the secret to copy and the name of the copied secret.
+                        If target is nil or target.name is empty, the secret will be copied with the same name as the source secret.
+                      properties:
+                        source:
+                          description: |-
+                            Source references the source secret to copy.
+                            It has to be in the namespace the provider pod is running in.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        target:
+                          description: |-
+                            Target is the name of the copied secret.
+                            If not set, the secret will be copied with the same name as the source secret.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      required:
+                      - source
+                      type: object
+                    type: array
+                  toTargetCluster:
+                    description: |-
+                      ToTargetCluster lists secrets from the provider namespace that should be copied onto the target cluster.
+                      The secrets will end up in the namespace that is defined in the HelmDeployment's spec.
+                      This allows propagating secrets that are required by the helm chart to the target cluster.
+                    items:
+                      description: |-
+                        SecretCopy defines the name of the secret to copy and the name of the copied secret.
+                        If target is nil or target.name is empty, the secret will be copied with the same name as the source secret.
+                      properties:
+                        source:
+                          description: |-
+                            Source references the source secret to copy.
+                            It has to be in the namespace the provider pod is running in.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        target:
+                          description: |-
+                            Target is the name of the copied secret.
+                            If not set, the secret will be copied with the same name as the source secret.
+                          properties:
+                            name:
+                              default: ""
+                              description: |-
+                                Name of the referent.
+                                This field is effectively required, but due to backwards compatibility is
+                                allowed to be empty. Instances of this type with an empty value here are
+                                almost certainly wrong.
+                                More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                      required:
+                      - source
+                      type: object
+                    type: array
+                type: object
+              selector:
+                description: |-
+                  Selector can select based on identity, purposes and/or labels of a Cluster.
+                  It can also reference a selector definition from the provider config.
+                  An empty selector matches all Clusters.
+                properties:
+                  matchExpressions:
+                    description: matchExpressions is a list of label selector requirements.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        key:
+                          description: key is the label key that the selector applies
+                            to.
+                          type: string
+                        operator:
+                          description: |-
+                            operator represents a key's relationship to a set of values.
+                            Valid operators are In, NotIn, Exists and DoesNotExist.
+                          type: string
+                        values:
+                          description: |-
+                            values is an array of string values. If the operator is In or NotIn,
+                            the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                            the values array must be empty. This array is replaced during a strategic
+                            merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - key
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchIdentities:
+                    description: |-
+                      MatchIdentities contains a list of object references and matches only the objects with the given identities.
+                      If this selector is nil, all objects match.
+                      If this selector is not nil, but the list is empty, no objects match.
+                      If not nil, all other selector fields are ignored and only the identities are matched.
+                    items:
+                      description: ObjectReference is a reference to an object in
+                        any namespace.
+                      properties:
+                        name:
+                          description: Name is the name of the object.
+                          type: string
+                        namespace:
+                          description: Namespace is the namespace of the object.
+                          type: string
+                      required:
+                      - name
+                      - namespace
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  matchLabels:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                      map is equivalent to an element of matchExpressions, whose key field is "key", the
+                      operator is "In", and the values array contains only "value". The requirements are ANDed.
+                    type: object
+                  matchPurposes:
+                    description: |-
+                      MatchPurposes contains a list of purpose selector requirements.
+                      An empty or nil list matches all objects.
+                      Duplicate purposes within a single requirement are ignored.
+                      The requirements are ANDed.
+                    items:
+                      description: |-
+                        A label selector requirement is a selector that contains values, a key, and an operator that
+                        relates the key and values.
+                      properties:
+                        operator:
+                          description: |-
+                            Operator represents how the list of purposes is matched against the values.
+                            Valid operators are: 'ContainsAll', 'ContainsAny', 'ContainsNone', 'Equals'.
+                          type: string
+                        values:
+                          description: |-
+                            Values is an array of string values.
+                            An empty or nil array will match no objects for 'ContainsAll' and 'ContainsAny',
+                            all objects for 'ContainsNone', and only objects with no purposes for 'Equals'.
+                            This array is replaced during a strategic merge patch.
+                          items:
+                            type: string
+                          type: array
+                          x-kubernetes-list-type: atomic
+                      required:
+                      - operator
+                      type: object
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  ref:
+                    description: |-
+                      Reference can be used to reference a selector defined in the provider config.
+                      If set together with the inline selector, the inline selector takes precedence and the reference is ignored.
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+            required:
+            - chartSource
+            - namespace
+            type: object
+          status:
+            properties:
+              conditions:
+                description: Conditions contains the conditions.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the generation of this resource
+                  that was last reconciled by the controller.
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the current phase of the resource.
+                type: string
+            required:
+            - observedGeneration
+            - phase
+            type: object
+        type: object
+    selectableFields:
+    - jsonPath: .status.phase
+    served: true
+    storage: true
+    subresources:
+      status: {}

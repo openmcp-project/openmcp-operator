@@ -1,0 +1,15 @@
+apiVersion: helm.open-control-plane.io/v1alpha1
+kind: HelmDeployment
+metadata:
+  name: hd-1
+  namespace: default
+spec:
+  chartSource:
+    oci:
+      url: "oci://example.org/repo/charts"
+      interval: 10m
+  selector:
+    matchPurposes:
+    - operator: ContainsAll
+      values:
+      - single
