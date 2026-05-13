@@ -58,7 +58,7 @@ func (c *HelmDeploymentController) ManageSecrets(ctx context.Context, targetClus
 			errs.Append(errutils.WithReason(fmt.Errorf("invalid target cluster '%s' for secret copy instruction (copying from '%s' to '%s')", sc.Cluster, sc.Source.NamespacedName().String(), sc.Target.NamespacedName().String()), cconst.ReasonConfigurationProblem))
 			continue
 		}
-		clog := log.WithValues("source", sc.Source.NamespacedName().String(), "target", sc.Target.NamespacedName().String(), "cluster", string(sc.Cluster))
+		clog := log.WithValues("source", sc.Source.NamespacedName().String(), "target", sc.Target.NamespacedName().String(), "secretCopyTarget", string(sc.Cluster))
 		if sc.Cluster == ToPlatformCluster && sc.Source.Name == sc.Target.Name && sc.Source.Namespace == sc.Target.Namespace {
 			clog.Debug("Skipping secret copying, because source and target are identical")
 			continue

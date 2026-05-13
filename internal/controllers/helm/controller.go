@@ -102,7 +102,7 @@ func (c *HelmDeploymentController) Reconcile(ctx context.Context, req ctrl.Reque
 
 	rr := c.reconcile(ctx, req)
 
-	return ctrlutils.NewOpenMCPStatusUpdaterBuilder[*helmv1alpha1.HelmDeployment]().
+	res, err := ctrlutils.NewOpenMCPStatusUpdaterBuilder[*helmv1alpha1.HelmDeployment]().
 		WithNestedStruct("Status").
 		WithConditionUpdater(false).
 		WithConditionEvents(c.eventRecorder, conditions.EventPerNewStatus).
@@ -133,6 +133,11 @@ func (c *HelmDeploymentController) Reconcile(ctx context.Context, req ctrl.Reque
 		}).
 		Build().
 		UpdateStatus(ctx, c.PlatformCluster.Client(), rr.ReconcileResult)
+
+	if err == nil && res.RequeueAfter > 0 {
+		log.Info("Requeuing request", "requeueAfter", res.RequeueAfter, "reconcileAt", time.Now().Add(res.RequeueAfter).Format(time.RFC3339))
+	}
+	return res, err
 }
 
 func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Request) ReconcileResult {
@@ -265,6 +270,7 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 	for _, cluster := range cl.Items {
 		cID := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
 		clog := log.WithValues("cluster", cID)
+		cctx := logging.NewContext(ctx, clog)
 		cct := clusterConType(cluster.Namespace, cluster.Name)
 
 		expectedLabelsForCluster := maps.Clone(expectedLabels)
@@ -283,13 +289,13 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 			oldCluster := cluster.DeepCopy()
 			if controllerutil.AddFinalizer(&cluster, rr.Object.Finalizer()) {
 				clog.Debug("Adding finalizer to Cluster")
-				if err := c.PlatformCluster.Client().Patch(ctx, &cluster, client.MergeFrom(oldCluster)); err != nil {
+				if err := c.PlatformCluster.Client().Patch(cctx, &cluster, client.MergeFrom(oldCluster)); err != nil {
 					errs.Append(errutils.WithReason(fmt.Errorf("unable to add finalizer to Cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem))
 					continue
 				}
 			}
 
-			ar, access, err := c.cr.GetAccessForCluster(ctx, &cluster)
+			ar, access, err := c.cr.GetAccessForCluster(cctx, &cluster)
 			if err != nil {
 				errs.Append(errutils.WithReason(fmt.Errorf("error getting access for Cluster '%s/%s': %w", cluster.Namespace, cluster.Name, err), cconst.ReasonInternalError))
 				createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonClusterAccessNotAvailable, fmt.Sprintf("Error getting access for Cluster: %s", err.Error()))
@@ -297,7 +303,7 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 				continue
 			}
 			if ar == nil {
-				clog.Debug("Waiting for access to become available")
+				clog.Info("Waiting for access to become available")
 				createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonClusterAccessNotAvailable, "Waiting for access to become available")
 				c.enqueueCluster(&cluster) // trigger reconciliation of the cluster with the cluster controller to create the AccessRequest
 				continue
@@ -306,8 +312,8 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 			// manage secrets
 			sci := rr.SecretsToCopy.List(cluster.Namespace, rr.Object.Spec.Namespace)
 			if len(sci) > 0 {
-				clog.Debug("Copying secrets", "count", len(sci))
-				smErrs := c.ManageSecrets(ctx, access.Client(), map[string]string{openmcpconst.ManagedByLabel: expectedLabels[openmcpconst.ManagedByLabel]}, sci...) // label can neither include cluster nor HelmDeployment identity, since secrets are shared within the same namespace
+				clog.Info("Copying secrets", "count", len(sci))
+				smErrs := c.ManageSecrets(cctx, access.Client(), map[string]string{openmcpconst.ManagedByLabel: expectedLabels[openmcpconst.ManagedByLabel]}, sci...) // label can neither include cluster nor HelmDeployment identity, since secrets are shared within the same namespace
 				if rerr := smErrs.Aggregate(); rerr != nil {
 					errs.Append(errutils.Errorf("error managing secrets for cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
 					createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonClusterAccessNotAvailable, fmt.Sprintf("Error managing secrets for cluster '%s/%s': [%s] %s", cluster.Namespace, cluster.Name, rerr.Reason(), rerr.Error()))
@@ -317,7 +323,8 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 				clog.Debug("No secrets need to be copied")
 			}
 
-			requeueRequired, rerr := c.deployHelmChartSource(ctx, &cluster, expectedLabelsForCluster, rr, createConForCluster)
+			log.Info("Creating/updating helm chart source")
+			requeueRequired, rerr := c.deployHelmChartSource(cctx, &cluster, expectedLabelsForCluster, rr, createConForCluster)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error creating/updating helm chart source for cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
 				continue
@@ -329,7 +336,8 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 				clog.Debug("Waiting for helm chart source to become healthy")
 				continue
 			}
-			requeueRequired, rerr = c.deployHelmRelease(ctx, &cluster, ar, expectedLabelsForCluster, rr, createConForCluster)
+			log.Info("Creating/updating HelmRelease")
+			requeueRequired, rerr = c.deployHelmRelease(cctx, &cluster, ar, expectedLabelsForCluster, rr, createConForCluster)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error creating/updating HelmRelease for cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
 				continue
@@ -341,15 +349,15 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 				clog.Debug("Waiting for HelmRelease to become healthy")
 				continue
 			}
-			clog.Debug("Successfully created/updated helm chart source and HelmRelease")
+			log.Info("Successfully created/updated helm chart source and HelmRelease")
 		} else {
-			remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(ctx, expectedLabelsForCluster, cluster.Namespace, createCon)
+			remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(cctx, expectedLabelsForCluster, cluster.Namespace, createCon)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error deleting HelmRelease for Cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
 				continue
 			}
 			clog.Debug("Successfully deleted HelmReleases")
-			remainingHelmChartSources, rerr := c.deleteMultipleHelmChartSources(ctx, expectedLabelsForCluster, cluster.Namespace, remainingHelmReleases, createCon)
+			remainingHelmChartSources, rerr := c.deleteMultipleHelmChartSources(cctx, expectedLabelsForCluster, cluster.Namespace, remainingHelmReleases, createCon)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error deleting HelmChartSources for Cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
 				continue
@@ -364,7 +372,7 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 			oldCluster := cluster.DeepCopy()
 			if controllerutil.RemoveFinalizer(&cluster, rr.Object.Finalizer()) {
 				clog.Debug("Removing finalizer from Cluster")
-				if err := c.PlatformCluster.Client().Patch(ctx, &cluster, client.MergeFrom(oldCluster)); err != nil {
+				if err := c.PlatformCluster.Client().Patch(cctx, &cluster, client.MergeFrom(oldCluster)); err != nil {
 					errs.Append(errutils.WithReason(fmt.Errorf("unable to remove finalizer '%s' from Cluster '%s/%s': %w", rr.Object.Finalizer(), cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem))
 					continue
 				}
@@ -372,6 +380,7 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 		}
 	}
 
+	rr.ReconcileError = errs.Aggregate()
 	return rr
 }
 
