@@ -119,18 +119,20 @@ var _ = Describe("HelmDeployment Controller", func() {
 			MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-0",
-						helmv1alpha1.ClusterNameLabel:    "cluster-0",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-0",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "cluster-0",
 					}),
 				}),
 			}),
 			MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-0",
-						helmv1alpha1.ClusterNameLabel:    "cluster-1",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-0",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "cluster-1",
 					}),
 				}),
 			}),
@@ -640,9 +642,10 @@ var _ = Describe("HelmDeployment Controller", func() {
 			MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-2",
-						helmv1alpha1.ClusterNameLabel:    "cluster-0",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-2",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "cluster-0",
 					}),
 				}),
 			}),
@@ -689,18 +692,20 @@ var _ = Describe("HelmDeployment Controller", func() {
 			MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-2",
-						helmv1alpha1.ClusterNameLabel:    "cluster-0",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-2",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "cluster-0",
 					}),
 				}),
 			}),
 			MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-2",
-						helmv1alpha1.ClusterNameLabel:    "cluster-1",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-2",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "cluster-1",
 					}),
 				}),
 			}),
@@ -745,9 +750,10 @@ var _ = Describe("HelmDeployment Controller", func() {
 			MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-2",
-						helmv1alpha1.ClusterNameLabel:    "cluster-1",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-2",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "cluster-1",
 					}),
 				}),
 			}),
@@ -795,9 +801,10 @@ var _ = Describe("HelmDeployment Controller", func() {
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Namespace": Equal("bar"),
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-0",
-						helmv1alpha1.ClusterNameLabel:    "foo",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-0",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "foo",
 					}),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
@@ -823,9 +830,10 @@ var _ = Describe("HelmDeployment Controller", func() {
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Namespace": Equal("qwer"),
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-0",
-						helmv1alpha1.ClusterNameLabel:    "asdf",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-0",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "asdf",
 					}),
 				}),
 				"Spec": MatchFields(IgnoreExtras, Fields{
@@ -883,9 +891,10 @@ var _ = Describe("HelmDeployment Controller", func() {
 			MatchFields(IgnoreExtras, Fields{
 				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
 					"Labels": Equal(map[string]string{
-						openmcpconst.ManagedByLabel:      providerName + "." + helm.ControllerName,
-						openmcpconst.ManagedPurposeLabel: "default.hd-0",
-						helmv1alpha1.ClusterNameLabel:    "cluster-0",
+						openmcpconst.ManagedByLabel:               providerName + "." + helm.ControllerName,
+						helmv1alpha1.HelmDeploymentNameLabel:      "hd-0",
+						helmv1alpha1.HelmDeploymentNamespaceLabel: "default",
+						helmv1alpha1.ClusterNameLabel:             "cluster-0",
 					}),
 				}),
 			}),

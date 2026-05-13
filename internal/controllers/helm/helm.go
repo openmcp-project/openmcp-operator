@@ -202,7 +202,7 @@ func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluste
 			}
 		}
 		// release information
-		hr.Spec.ReleaseName = fmt.Sprintf("%s/%s", rr.Object.Namespace, rr.Object.Name)
+		hr.Spec.ReleaseName = ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s--%s--%s", rr.Object.Namespace, rr.Object.Name, ctrlutils.NameHashSHAKE128Base32(rr.Object.Namespace, rr.Object.Name)), ctrlutils.K8sMaxNameLength)
 		hr.Spec.TargetNamespace = rr.Object.Spec.Namespace
 		hr.Spec.StorageNamespace = rr.Object.Spec.Namespace
 		// values

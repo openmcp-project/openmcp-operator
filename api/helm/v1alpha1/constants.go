@@ -18,6 +18,11 @@ const (
 	// The cluster namespace does not need an label, as it is always the same one as the resource with the ClusterNameLabel.
 	ClusterNameLabel = GroupName + "/cluster-name"
 
+	// HelmDeploymentNameLabel is the label key that identifies the name of the HelmDeployment associated with a HelmRelease or HelmChartSource.
+	HelmDeploymentNameLabel = GroupName + "/helmdeployment-name"
+	// HelmDeploymentNamespaceLabel is the label key that identifies the namespace of the HelmDeployment associated with a HelmRelease or HelmChartSource.
+	HelmDeploymentNamespaceLabel = GroupName + "/helmdeployment-namespace"
+
 	ReasonClusterAccessNotAvailable         = "ClusterAccessNotAvailable"
 	ReasonFluxResourcesDeployedAndHealthy   = "FluxResourcesDeployedAndHealthy"
 	ReasonWaitingForHelmReleaseHealthy      = "WaitingForHelmReleaseHealthy"

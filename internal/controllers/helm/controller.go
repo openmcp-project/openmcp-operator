@@ -231,8 +231,9 @@ func (c *HelmDeploymentController) reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	expectedLabels := map[string]string{
-		openmcpconst.ManagedByLabel:      ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s.%s", c.ProviderName, ControllerName), ctrlutils.K8sMaxNameLength),
-		openmcpconst.ManagedPurposeLabel: ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s.%s", rr.Object.Namespace, rr.Object.Name), ctrlutils.K8sMaxNameLength),
+		openmcpconst.ManagedByLabel:               ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s.%s", c.ProviderName, ControllerName), ctrlutils.K8sMaxNameLength),
+		helmv1alpha1.HelmDeploymentNameLabel:      rr.Object.Name,
+		helmv1alpha1.HelmDeploymentNamespaceLabel: rr.Object.Namespace,
 	}
 
 	if hd.DeletionTimestamp.IsZero() {
