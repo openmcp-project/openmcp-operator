@@ -82,8 +82,6 @@ func defaultTestSetup(testDirPathSegments ...string) (*testutils.ComplexEnvironm
 		envB.WithInitObjectPath(onboarding, append(testDirPathSegments, onboarding)...)
 	}
 	env := envB.Build()
-	_, ok := env.Reconciler(mcpRec).(*managedcontrolplane.ManagedControlPlaneReconciler)
-	Expect(ok).To(BeTrue(), "Reconciler is not of type ManagedControlPlaneReconciler")
 	return env, cfg.ManagedControlPlane
 }
 

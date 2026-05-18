@@ -46,8 +46,6 @@ func defaultTestSetup(testDirPathSegments ...string) (*testutils.Environment, *c
 		Expect(err).ToNot(HaveOccurred())
 		return r
 	}).Build()
-	_, ok := env.Reconciler().(*scheduler.ClusterScheduler)
-	Expect(ok).To(BeTrue(), "Reconciler is not of type ClusterScheduler")
 	return env, cfg.Scheduler
 }
 

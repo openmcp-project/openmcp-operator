@@ -80,7 +80,7 @@ func TestHelmDeploymentClusterController(platformCluster *clusters.Cluster, prov
 	res, _ := newHelmDeploymentClusterController(platformCluster, providerName)
 	res.trigger = nil
 	res.car.WithFakingCallback(advanced.FakingCallback_WaitingForAccessRequestReadiness, advanced.FakeAccessRequestReadiness())
-	res.car.WithFakingCallback(advanced.FakingCallback_WaitingForAccessRequestDeletion, advanced.FakeAccessRequestDeletion(nil, nil))
+	res.car.WithFakingCallback(advanced.FakingCallback_WaitingForAccessRequestDeletion, advanced.FakeAccessRequestDeletion([]string{"clusterprovider"}, nil))
 	res.car.WithFakeClientGenerator(func(ctx context.Context, kcfgData []byte, scheme *runtime.Scheme, additionalData ...any) (client.Client, error) {
 		cID, ok := strings.CutPrefix(string(kcfgData), "fake:cluster:")
 		if !ok {
@@ -163,7 +163,7 @@ func (c *HelmDeploymentClusterController) reconcile(ctx context.Context, req ctr
 		as = accessStatusDeletingButRequired
 		log.Info("Access is required again, but deletion has already been triggered, cluster will be requeued after deletion has finished")
 	}
-	if (cluster.DeletionTimestamp.IsZero() || hdoc.Len() > 0) && (!isKnown || (as != accessStatusInDeletion && as != accessStatusDeletingButRequired)) {
+	if hdoc.Len() > 0 && (!isKnown || (as != accessStatusInDeletion && as != accessStatusDeletingButRequired)) {
 		// Access is required as long as the cluster is not being deleted and there are matching HelmDeployments.
 		// In addition, even when the cluster is in deletion, access has to be kept ready until all HelmDeployments have been removed from the cluster.
 		// The only exception is if deletion of the AccessRequest has already been triggered, then it needs to be removed completely (and potentially re-created afterwards).
@@ -172,7 +172,7 @@ func (c *HelmDeploymentClusterController) reconcile(ctx context.Context, req ctr
 			v = logging.INFO
 			c.clustersWithAccess[cID] = accessStatusWaiting
 		}
-		log.Log(v, "Ensuring cluster access", "requiredByCount", hdoc.Len(), "requiredByUIDs", sets.List(hdoc))
+		log.Log(v, "Ensuring cluster access", "requiredByCount", hdoc.Len(), "requiredByUIDs", sets.List(hdoc), "isClusterWithAccess", isKnown)
 
 		old := cluster.DeepCopy()
 		if controllerutil.AddFinalizer(cluster, helmv1alpha1.AccessFinalizer) {

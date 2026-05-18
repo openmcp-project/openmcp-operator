@@ -352,13 +352,13 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 			}
 			log.Info("Successfully created/updated helm chart source and HelmRelease")
 		} else {
-			remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(cctx, expectedLabelsForCluster, cluster.Namespace, createCon)
+			remainingHelmReleases, rerr := c.deleteMultipleHelmReleases(ctx, expectedLabelsForCluster, cluster.Namespace, createCon) // use ctx here instead of cctx, because the method will figure out the cluster itself (duplicate key otherwise)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error deleting HelmRelease for Cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
 				continue
 			}
 			clog.Debug("Successfully deleted HelmReleases")
-			remainingHelmChartSources, rerr := c.deleteMultipleHelmChartSources(cctx, expectedLabelsForCluster, cluster.Namespace, remainingHelmReleases, createCon)
+			remainingHelmChartSources, rerr := c.deleteMultipleHelmChartSources(ctx, expectedLabelsForCluster, cluster.Namespace, remainingHelmReleases, createCon) // use ctx here instead of cctx, because the method will figure out the cluster itself (duplicate key otherwise)
 			if rerr != nil {
 				errs.Append(errutils.Errorf("error deleting HelmChartSources for Cluster '%s/%s': %w", rerr, cluster.Namespace, cluster.Name, rerr))
 				continue
@@ -377,6 +377,8 @@ func (c *HelmDeploymentController) handleCreateOrUpdate(ctx context.Context, rr 
 					errs.Append(errutils.WithReason(fmt.Errorf("unable to remove finalizer '%s' from Cluster '%s/%s': %w", rr.Object.Finalizer(), cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem))
 					continue
 				}
+				// if the finalizer was just removed, enqueue the cluster to potentially remove the AccessRequest (unless still required by other HelmDeployments)
+				c.enqueueCluster(&cluster)
 			}
 		}
 	}
@@ -438,6 +440,8 @@ func (c *HelmDeploymentController) handleDelete(ctx context.Context, rr *Reconci
 				errs.Append(errutils.WithReason(fmt.Errorf("unable to remove finalizer '%s' from Cluster '%s/%s': %w", rr.Object.Finalizer(), cluster.Namespace, cluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem))
 				continue
 			}
+			// if the finalizer was just removed, enqueue the cluster to potentially remove the AccessRequest (unless still required by other HelmDeployments)
+			c.enqueueCluster(&cluster)
 		}
 	}
 

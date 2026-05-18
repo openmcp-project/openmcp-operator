@@ -59,7 +59,7 @@ func defaultTestSetup(testDirPathSegments ...string) (*testutils.ComplexEnvironm
 		WithReconcilerConstructor(hdRec, func(clients ...client.Client) reconcile.Reconciler {
 			clusterReconciler := helm.TestHelmDeploymentClusterController(clusters.NewTestClusterFromClient(platform, clients[0]), providerName, fakeClients)
 			injectClusterReconciler = func(env *testutils.ComplexEnvironment) {
-				env.Reconcilers[cRec] = clusterReconciler
+				env.Reconcilers[cRec] = testutils.WrapReconcilerWithLoggingMetadata(cRec, clusterReconciler)
 			}
 			return helm.TestHelmDeploymentController(clusters.NewTestClusterFromClient(platform, clients[0]), providerName, providerNamespace, environment, clusterReconciler, clusterReconcileQueue)
 		}, platform).
@@ -94,23 +94,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hd.Namespace = "default"
 		hdreq := testutils.RequestFromObject(hd)
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// list HelmReleases
 		hrList := &fluxhelmv2.HelmReleaseList{}
@@ -183,23 +167,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hd.Namespace = "default"
 		hdreq := testutils.RequestFromObject(hd)
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// list HelmReleases
 		hrList := &fluxhelmv2.HelmReleaseList{}
@@ -229,23 +197,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		}
 		Expect(env.Client(platform).Create(env.Ctx, newCluster)).To(Succeed())
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// list HelmReleases
 		Expect(env.Client(platform).List(env.Ctx, hrList)).To(Succeed())
@@ -352,23 +304,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hd.Namespace = "default"
 		hdreq := testutils.RequestFromObject(hd)
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(hd), hd)).To(Succeed())
 		Expect(hd.Finalizers).To(ContainElements(helmv1alpha1.Finalizer))
 
@@ -441,23 +377,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hd.Namespace = "default"
 		hdreq := testutils.RequestFromObject(hd)
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// mock finalizers on the flux resources to simulate flux behavior
 		oci := &fluxsourcev1.OCIRepository{}
@@ -535,23 +455,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hd.Namespace = "default"
 		hdreq := testutils.RequestFromObject(hd)
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// mock finalizers on the flux resources to simulate flux behavior
 		oci := &fluxsourcev1.OCIRepository{}
@@ -617,23 +521,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hd.Namespace = "default"
 		hdreq := testutils.RequestFromObject(hd)
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// list HelmReleases
 		hrList := &fluxhelmv2.HelmReleaseList{}
@@ -656,6 +544,18 @@ var _ = Describe("HelmDeployment Controller", func() {
 		Expect(hd.Status.Conditions).To(ConsistOf(
 			MatchCondition(TestCondition().WithType("Cluster.default_cluster-0").WithStatus(metav1.ConditionTrue)),
 		))
+		// verify that there is one AccessRequest for cluster-0 and none for cluster-1
+		arList := &clustersv1alpha1.AccessRequestList{}
+		Expect(env.Client(platform).List(env.Ctx, arList, client.MatchingLabels{
+			openmcpconst.ManagedByLabel: providerName + "." + helm.ControllerName,
+		})).To(Succeed())
+		Expect(arList.Items).To(ConsistOf(
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Labels": HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, "cluster-0"),
+				}),
+			}),
+		))
 
 		// add label to cluster-1 to make it match the HelmDeployment selector
 		cluster1 := &clustersv1alpha1.Cluster{}
@@ -668,23 +568,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		cluster1.Labels["helm.open-control-plane.io/target"] = "true"
 		Expect(env.Client(platform).Update(env.Ctx, cluster1)).To(Succeed())
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// list HelmReleases
 		Expect(env.Client(platform).List(env.Ctx, hrList)).To(Succeed())
@@ -717,6 +601,22 @@ var _ = Describe("HelmDeployment Controller", func() {
 			MatchCondition(TestCondition().WithType("Cluster.default_cluster-0").WithStatus(metav1.ConditionTrue)),
 			MatchCondition(TestCondition().WithType("Cluster.default_cluster-1").WithStatus(metav1.ConditionTrue)),
 		))
+		// verify that there are AccessRequests for cluster-0 and cluster-1
+		Expect(env.Client(platform).List(env.Ctx, arList, client.MatchingLabels{
+			openmcpconst.ManagedByLabel: providerName + "." + helm.ControllerName,
+		})).To(Succeed())
+		Expect(arList.Items).To(ConsistOf(
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Labels": HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, "cluster-0"),
+				}),
+			}),
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Labels": HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, "cluster-1"),
+				}),
+			}),
+		))
 
 		// remove label from cluster-0 to make it not match the HelmDeployment selector anymore
 		cluster0 := &clustersv1alpha1.Cluster{}
@@ -726,23 +626,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		delete(cluster0.Labels, "helm.open-control-plane.io/target")
 		Expect(env.Client(platform).Update(env.Ctx, cluster0)).To(Succeed())
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// list HelmReleases
 		Expect(env.Client(platform).List(env.Ctx, hrList)).To(Succeed())
@@ -764,6 +648,17 @@ var _ = Describe("HelmDeployment Controller", func() {
 		Expect(hd.Status.Conditions).To(ConsistOf(
 			MatchCondition(TestCondition().WithType("Cluster.default_cluster-1").WithStatus(metav1.ConditionTrue)),
 		))
+		// verify that there is only an AccessRequest for cluster-1 and none for cluster-0
+		Expect(env.Client(platform).List(env.Ctx, arList, client.MatchingLabels{
+			openmcpconst.ManagedByLabel: providerName + "." + helm.ControllerName,
+		})).To(Succeed())
+		Expect(arList.Items).To(ConsistOf(
+			MatchFields(IgnoreExtras, Fields{
+				"ObjectMeta": MatchFields(IgnoreExtras, Fields{
+					"Labels": HaveKeyWithValue(openmcpconst.ManagedPurposeLabel, "cluster-1"),
+				}),
+			}),
+		))
 	})
 
 	It("should correctly replace the special key words when creating the HelmRelease", func() {
@@ -775,23 +670,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hdreq := testutils.RequestFromObject(hd)
 		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(hd), hd)).To(Succeed())
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// list HelmReleases
 		hrList := &fluxhelmv2.HelmReleaseList{}
@@ -866,23 +745,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hd.Namespace = "default"
 		hdreq := testutils.RequestFromObject(hd)
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		// list HelmReleases
 		hrList := &fluxhelmv2.HelmReleaseList{}
@@ -933,23 +796,7 @@ var _ = Describe("HelmDeployment Controller", func() {
 		hd.Namespace = "default"
 		hdreq := testutils.RequestFromObject(hd)
 
-		Eventually(func(g Gomega) {
-			// reconcile a cluster, if requested
-			if cq.Size() > 0 {
-				cluster := cq.Poll()
-				_, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
-				g.Expect(err).ToNot(HaveOccurred())
-			}
-			// reconcile HelmDeployment
-			rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, hdreq)
-			g.Expect(err).ToNot(HaveOccurred())
-			// mock flux source and HelmRelease readiness
-			mockAllFluxResourcesReady(g, env)
-			// at one point, the HelmDeployment should not be requeued anymore
-			g.Expect(rr.RequeueAfter).To(BeZero())
-			// verify that no more clusters are queued for reconciliation
-			g.Expect(cq.Size()).To(Equal(0))
-		}).Should(Succeed())
+		mimicControllers(env, hdreq, cq)
 
 		secrets := &corev1.SecretList{}
 		Expect(env.Client(platform).List(env.Ctx, secrets)).To(Succeed())
@@ -1150,4 +997,33 @@ func mockAllFluxResourcesReady(g Gomega, env *testutils.ComplexEnvironment, opts
 		})
 		g.ExpectWithOffset(1, env.Client(platform).Status().Update(env.Ctx, res)).To(Succeed())
 	}
+}
+
+// mimicControllers mocks the behavior of multiple controllers:
+// - it reconciles the HelmDeployment with the corresponding controller
+// - it reconciles any clusters that have been queued for reconciliation with the corresponding controller
+// - it mocks the flux controllers by setting the Ready condition to True for all flux resources
+// It expects the system to eventually stabilize and will fail if either the HelmDeployment or any clusters keep being requeued.
+func mimicControllers(env *testutils.ComplexEnvironment, req reconcile.Request, cq collections.Queue[*clustersv1alpha1.Cluster]) {
+	EventuallyWithOffset(1, func(g Gomega) {
+		// reconcile HelmDeployment
+		rr, err := env.Reconciler(hdRec).Reconcile(env.Ctx, req)
+		g.Expect(err).ToNot(HaveOccurred(), "reconciling the HelmDeployment should not return an error")
+		// mock flux source and HelmRelease readiness
+		mockAllFluxResourcesReady(g, env)
+		// reconcile all clusters, if requested, but don't handle their requeues
+		cqs := cq.Size()
+		for range cqs {
+			cluster := cq.Poll()
+			crr, err := env.Reconciler(cRec).Reconcile(env.Ctx, testutils.RequestFromObject(cluster))
+			g.Expect(err).ToNot(HaveOccurred(), "reconciling the Cluster should not return an error")
+			if crr.RequeueAfter > 0 {
+				g.Expect(cq.Push(cluster)).To(Succeed())
+			}
+		}
+		// at one point, the HelmDeployment should not be requeued anymore
+		g.Expect(rr.RequeueAfter).To(BeZero(), "the HelmDeployment should not be requeued anymore")
+		// at one point, no more clusters should be queued for reconciliation
+		g.Expect(cq.Size()).To(Equal(0), "no more clusters should be queued for reconciliation")
+	}).Should(Succeed())
 }

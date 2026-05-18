@@ -229,9 +229,8 @@ var _ = Describe("ClusterAccessReconciler", func() {
 				g.Expect(reconcileResult.RequeueAfter).To(BeZero(), "reconcile should finish without requeue eventually")
 			}).Should(Succeed())
 
-			// cast to ClusterAccessReconciler to access the reconcilerImpl methods
-			reconciler, ok := env.Reconciler().(clusteraccess.Reconciler) // nolint:staticcheck
-			Expect(ok).To(BeTrue(), "reconcilerImpl should be of type ClusterAccessReconciler")
+			reconciler, err := testutils.ReconcilerAs[clusteraccess.Reconciler](env)
+			Expect(err).ToNot(HaveOccurred(), "reconcilerImpl should be of type ClusterAccessReconciler")
 
 			mcpCluster, err := reconciler.MCPCluster(env.Ctx, request)
 			Expect(err).ToNot(HaveOccurred(), "should not return an error when getting MCP cluster")
@@ -287,9 +286,8 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			// reconcile again to process the granted access request
 			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 
-			// cast to ClusterAccessReconciler to access the reconcilerImpl methods
-			reconciler, ok := env.Reconciler().(clusteraccess.Reconciler) // nolint:staticcheck
-			Expect(ok).To(BeTrue(), "reconcilerImpl should be of type ClusterAccessReconciler")
+			reconciler, err := testutils.ReconcilerAs[clusteraccess.Reconciler](env)
+			Expect(err).ToNot(HaveOccurred(), "reconcilerImpl should be of type ClusterAccessReconciler")
 
 			mcpCluster, err := reconciler.MCPCluster(env.Ctx, request)
 			Expect(err).ToNot(HaveOccurred(), "should not return an error when getting MCP cluster")
