@@ -10,7 +10,7 @@ The HelmDeployer platform service searches for a `HelmDeployerConfig` resource w
 apiVersion: helm.open-control-plane.io/v1alpha1
 kind: HelmDeployerConfig
 metadata:
-  name: helmdeploy
+  name: helmdeployer
 spec:
   helmReleaseReconciliationIntervals: # optional
     default: 1h # optional, defaults to 1h
