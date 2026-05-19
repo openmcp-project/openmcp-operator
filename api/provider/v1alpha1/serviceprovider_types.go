@@ -59,7 +59,7 @@ type ServiceProviderList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ServiceProvider{}, &ServiceProviderList{})
+	RegisterToSchemeBuilder(&ServiceProvider{}, &ServiceProviderList{})
 }
 
 func ServiceProviderGKV() schema.GroupVersionKind {

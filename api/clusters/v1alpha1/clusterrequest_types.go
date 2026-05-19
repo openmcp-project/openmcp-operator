@@ -82,7 +82,7 @@ type ClusterRequestList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ClusterRequest{}, &ClusterRequestList{})
+	RegisterToSchemeBuilder(&ClusterRequest{}, &ClusterRequestList{})
 }
 
 // FinalizerForCluster returns the finalizer that is used to mark that a specific request has pointed to a specific cluster.

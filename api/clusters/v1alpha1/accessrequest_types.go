@@ -137,5 +137,5 @@ type AccessRequestList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&AccessRequest{}, &AccessRequestList{})
+	RegisterToSchemeBuilder(&AccessRequest{}, &AccessRequestList{})
 }

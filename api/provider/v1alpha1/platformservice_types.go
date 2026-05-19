@@ -59,7 +59,7 @@ type PlatformServiceList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&PlatformService{}, &PlatformServiceList{})
+	RegisterToSchemeBuilder(&PlatformService{}, &PlatformServiceList{})
 }
 
 func PlatformServiceGKV() schema.GroupVersionKind {

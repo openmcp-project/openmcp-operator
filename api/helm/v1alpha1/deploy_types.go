@@ -104,7 +104,7 @@ type HelmDeploymentList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&HelmDeployment{}, &HelmDeploymentList{})
+	RegisterToSchemeBuilder(&HelmDeployment{}, &HelmDeploymentList{})
 }
 
 // Finalizer returns the HelmDeployment-specific finalizer string.

@@ -97,7 +97,7 @@ type HelmDeployerConfigList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&HelmDeployerConfig{}, &HelmDeployerConfigList{})
+	RegisterToSchemeBuilder(&HelmDeployerConfig{}, &HelmDeployerConfigList{})
 }
 
 func (h *HelmReleaseReconciliationIntervalConfig) IntervalForSourceKind(sourceKind string) metav1.Duration {

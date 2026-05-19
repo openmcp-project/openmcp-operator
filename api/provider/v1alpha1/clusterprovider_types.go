@@ -59,7 +59,7 @@ type ClusterProviderList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ClusterProvider{}, &ClusterProviderList{})
+	RegisterToSchemeBuilder(&ClusterProvider{}, &ClusterProviderList{})
 }
 
 func ClusterProviderGKV() schema.GroupVersionKind {
