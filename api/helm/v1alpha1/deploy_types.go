@@ -48,7 +48,7 @@ type HelmDeploymentSpec struct {
 	// +kubebuilder:validation:Schemaless
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
-	HelmValues *apiextensionsv1.JSON `json:"helmValues"`
+	HelmValues *apiextensionsv1.JSON `json:"helmValues,omitempty"`
 }
 
 type SelectorOrReference struct {
@@ -63,7 +63,7 @@ type SelectorOrReference struct {
 // ChartSource defines the source of the helm chart in form of a Flux source.
 // Exactly one of 'HelmRepository', 'GitRepository' or 'OCIRepository' must be set.
 // +kubebuilder:validation:ExactlyOneOf=helm;git;oci
-// +kubebuilder:validation:XValidation:rule="(has(self.git) || has(self.helm)) ? (has(self.chartName) && size(self.chartName) > 0) : true", message="chartName must be set if git is used as source"
+// +kubebuilder:validation:XValidation:rule="(has(self.git) || has(self.helm)) ? (has(self.chartName) && size(self.chartName) > 0) : true", message="chartName must be set for git and helm sources"
 type ChartSource struct {
 	// ChartName specifies the name of the chart.
 	// Can be omitted for oci sources, required for git and helm sources.
