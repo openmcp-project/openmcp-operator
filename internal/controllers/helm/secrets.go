@@ -105,12 +105,17 @@ func (c *HelmDeploymentController) ManageSecrets(ctx context.Context, targetClus
 		}
 		// if target secret exists, validate that it has the correct labels, otherwise we are not allowed to overwrite it
 		if exists {
+			invalid := false
 			for key, eVal := range expectedSecretLabels {
 				aVal := tarSec.Labels[key]
 				if aVal != eVal {
 					errs.Append(errutils.WithReason(fmt.Errorf("unable to update secret '%s' on %s cluster: label '%s' has value '%s', expected '%s'", sc.Target.NamespacedName().String(), string(sc.Cluster), key, aVal, eVal), cconst.ReasonConfigurationProblem))
-					continue
+					invalid = true
+					break
 				}
+			}
+			if invalid {
+				continue
 			}
 		}
 		// update secret
