@@ -6,8 +6,12 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
+	fluxhelmv2 "github.com/fluxcd/helm-controller/api/v2"
+	fluxsourcev1 "github.com/fluxcd/source-controller/api/v1"
+
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
+	helmv1alpha1 "github.com/openmcp-project/openmcp-operator/api/helm/v1alpha1"
 	providerv1alpha1 "github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 )
 
@@ -24,6 +28,9 @@ func InstallOperatorAPIsPlatform(scheme *runtime.Scheme) *runtime.Scheme {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(providerv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(helmv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(fluxsourcev1.AddToScheme(scheme))
+	utilruntime.Must(fluxhelmv2.AddToScheme(scheme))
 
 	return scheme
 }

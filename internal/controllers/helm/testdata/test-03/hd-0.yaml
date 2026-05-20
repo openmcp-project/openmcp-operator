@@ -1,0 +1,20 @@
+apiVersion: helm.open-control-plane.io/v1alpha1
+kind: HelmDeployment
+metadata:
+  name: hd-0
+  namespace: default
+spec:
+  chartSource:
+    oci:
+      url: "oci://example.org/repo/charts"
+      interval: 10m
+  namespace: special
+  helmValues:
+    provider.name: "<provider.name>"
+    provider.namespace: "<provider.namespace>"
+    environment: "<environment>"
+    helm.name: "<helm.name>"
+    helm.namespace: "<helm.namespace>"
+    cluster.name: "<cluster.name>"
+    cluster.namespace: "<cluster.namespace>"
+

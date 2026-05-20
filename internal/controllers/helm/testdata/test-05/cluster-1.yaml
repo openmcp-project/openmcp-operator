@@ -1,0 +1,15 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  finalizers:
+  - provider.clusters.openmcp.cloud/finalizer
+  name: cluster-1
+  namespace: test-1
+spec:
+  kubernetes: {}
+  profile: myprofile
+  purposes:
+  - workload
+  tenancy: Shared
+status:
+  phase: Ready

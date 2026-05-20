@@ -100,7 +100,7 @@ type ClusterList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&Cluster{}, &ClusterList{})
+	RegisterToSchemeBuilder(&Cluster{}, &ClusterList{})
 }
 
 // GetProviderStatus tries to unmarshal the provider status into the given variable.

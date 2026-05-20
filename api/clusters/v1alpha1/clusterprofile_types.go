@@ -51,5 +51,5 @@ type ClusterProfileList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ClusterProfile{}, &ClusterProfileList{})
+	RegisterToSchemeBuilder(&ClusterProfile{}, &ClusterProfileList{})
 }

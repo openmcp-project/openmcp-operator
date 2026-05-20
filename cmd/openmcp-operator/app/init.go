@@ -24,6 +24,7 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	providerv1alpha1 "github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/helm"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
 )
 
@@ -62,11 +63,13 @@ type InitOptions struct {
 }
 
 type RawInitOptions struct {
-	SkipMCPPlatformService bool `json:"skip-mcp-platform-service"`
+	SkipMCPPlatformService  bool `json:"skip-mcp-platform-service"`
+	SkipHelmPlatformService bool `json:"skip-helm-platform-service"`
 }
 
 func (o *InitOptions) AddFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&o.SkipMCPPlatformService, "skip-mcp-platform-service", false, "If true, the PlatformService for the ManagedControlPlane controller will not be created/updated.")
+	cmd.Flags().BoolVar(&o.SkipHelmPlatformService, "skip-helm-platform-service", false, "If true, the PlatformService for the helm deployer will not be created/updated.")
 }
 
 func (o *InitOptions) Complete(ctx context.Context) error {
@@ -94,46 +97,49 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("error creating/updating CRDs: %w", err)
 	}
 
+	// prepare platformservice deployment
+	podName := os.Getenv(apiconst.EnvVariablePodName)
+	if podName == "" {
+		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodName)
+	}
+	podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
+	if podNamespace == "" {
+		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
+	}
+
+	log.Info("Fetching own pod to determine image", "name", podName, "namespace", podNamespace)
+	pod := &corev1.Pod{}
+	pod.Name = podName
+	pod.Namespace = podNamespace
+	if err := o.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+		return fmt.Errorf("error fetching own pod %s/%s: %w", podNamespace, podName, err)
+	}
+	var container *corev1.Container
+	if len(pod.Spec.Containers) == 1 {
+		container = &pod.Spec.Containers[0]
+	} else {
+		for _, c := range pod.Spec.Containers {
+			if c.Name == OpenMCPOperatorName {
+				container = &c
+				break
+			}
+		}
+	}
+	if container == nil {
+		return fmt.Errorf("unable to determine main container from pod %s/%s", podNamespace, podName)
+	}
+	verbosity := "INFO"
+	if log.Enabled(logging.DEBUG) {
+		verbosity = "DEBUG"
+	}
+	pullSecrets := pod.Spec.ImagePullSecrets
+	psToDelete := []providerv1alpha1.PlatformService{}
+
 	// create PlatformService for MCP controller (unless disabled)
 	if o.SkipMCPPlatformService {
 		log.Info("Skipping creation/update of PlatformService for ManagedControlPlane controller")
 	} else {
 		log.Info("Creating/updating PlatformService for ManagedControlPlane controller")
-		podName := os.Getenv(apiconst.EnvVariablePodName)
-		if podName == "" {
-			return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodName)
-		}
-		podNamespace := os.Getenv(apiconst.EnvVariablePodNamespace)
-		if podNamespace == "" {
-			return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
-		}
-
-		log.Info("Fetching own pod to determine image", "name", podName, "namespace", podNamespace)
-		pod := &corev1.Pod{}
-		pod.Name = podName
-		pod.Namespace = podNamespace
-		if err := o.PlatformCluster.Client().Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
-			return fmt.Errorf("error fetching own pod %s/%s: %w", podNamespace, podName, err)
-		}
-		var container *corev1.Container
-		if len(pod.Spec.Containers) == 1 {
-			container = &pod.Spec.Containers[0]
-		} else {
-			for _, c := range pod.Spec.Containers {
-				if c.Name == OpenMCPOperatorName {
-					container = &c
-					break
-				}
-			}
-		}
-		if container == nil {
-			return fmt.Errorf("unable to determine main container from pod %s/%s", podNamespace, podName)
-		}
-		verbosity := "INFO"
-		if log.Enabled(logging.DEBUG) {
-			verbosity = "DEBUG"
-		}
-		pullSecrets := pod.Spec.ImagePullSecrets
 
 		// identify volumes that need to be mounted in order to have the config available
 		configPaths := []string{}
@@ -169,7 +175,6 @@ func (o *InitOptions) Run(ctx context.Context) error {
 			}
 		}
 
-		// create/update PlatformService
 		mcpPSName := o.ProviderName
 		if mcpPSName == "" {
 			mcpPSName = strings.ToLower(managedcontrolplane.ControllerName)
@@ -184,7 +189,6 @@ func (o *InitOptions) Run(ctx context.Context) error {
 			return fmt.Errorf("error listing PlatformServices: %w", err)
 		}
 		var ps *providerv1alpha1.PlatformService
-		psToDelete := []providerv1alpha1.PlatformService{}
 		for _, item := range psl.Items {
 			if item.DeletionTimestamp.IsZero() { // ignore platform services in deletion
 				if item.Name == mcpPSName {
@@ -224,14 +228,66 @@ func (o *InitOptions) Run(ctx context.Context) error {
 		}); err != nil {
 			return fmt.Errorf("error creating/updating PlatformService %s: %w", ps.Name, err)
 		}
-		if len(psToDelete) > 0 {
-			log.Info("Deleting obsolete PlatformServices for ManagedControlPlane controller", "count", len(psToDelete))
-			for _, psDel := range psToDelete {
-				if err := o.PlatformCluster.Client().Delete(ctx, &psDel); err != nil {
-					return fmt.Errorf("error deleting obsolete PlatformService %s: %w", psDel.Name, err)
+	}
+
+	if o.SkipHelmPlatformService {
+		log.Info("Skipping creation/update of HelmDeployer PlatformService")
+	} else {
+		log.Info("Creating/updating HelmDeployer PlatformService")
+		// create/update PlatformService helm
+		psName := strings.ToLower(helm.ControllerName)
+
+		expectedLabels := map[string]string{
+			apiconst.ManagedByLabel: OpenMCPOperatorName,
+			"platformservice." + apiconst.OpenMCPGroupName + "/purpose": helm.ControllerName,
+		}
+		psl := &providerv1alpha1.PlatformServiceList{}
+		if err := o.PlatformCluster.Client().List(ctx, psl, client.MatchingLabels(expectedLabels)); err != nil {
+			return fmt.Errorf("error listing PlatformServices: %w", err)
+		}
+		var ps *providerv1alpha1.PlatformService
+		for _, item := range psl.Items {
+			if item.DeletionTimestamp.IsZero() { // ignore platform services in deletion
+				if item.Name == psName {
+					ps = &item
+				} else {
+					psToDelete = append(psToDelete, item)
 				}
-				log.Info("Deleted obsolete PlatformService", "name", psDel.Name)
 			}
+		}
+		if ps == nil {
+			log.Info("Creating PlatformService for helm deployer", "name", psName)
+			ps = &providerv1alpha1.PlatformService{}
+			ps.Name = psName
+		} else {
+			log.Info("Updating PlatformService for helm deployer", "name", psName)
+		}
+		if _, err := controllerutil.CreateOrUpdate(ctx, o.PlatformCluster.Client(), ps, func() error {
+			ps.Labels = expectedLabels
+			ps.Spec.Image = container.Image
+			ps.Spec.ImagePullSecrets = collections.ProjectSliceToSlice(pullSecrets, func(ref corev1.LocalObjectReference) commonapi.LocalObjectReference {
+				return commonapi.LocalObjectReference{
+					Name: ref.Name,
+				}
+			})
+			ps.Spec.InitCommand = []string{"helm", "init"}
+			ps.Spec.RunCommand = []string{"helm", "run"}
+			ps.Spec.Verbosity = verbosity
+			ps.Spec.RunReplicas = *o.Config.HelmDeployer.PlatformService.Replicas
+			ps.Spec.TopologySpreadConstraints = o.Config.HelmDeployer.PlatformService.TopologySpreadConstraints
+			return nil
+		}); err != nil {
+			return fmt.Errorf("error creating/updating PlatformService %s: %w", ps.Name, err)
+		}
+	}
+
+	if len(psToDelete) > 0 {
+		log.Info("Deleting obsolete PlatformServices", "count", len(psToDelete))
+		for _, psDel := range psToDelete {
+			if err := o.PlatformCluster.Client().Delete(ctx, &psDel); err != nil {
+				return fmt.Errorf("error deleting obsolete PlatformService %s: %w", psDel.Name, err)
+			}
+			log.Info("Deleted obsolete PlatformService", "name", psDel.Name)
 		}
 	}
 

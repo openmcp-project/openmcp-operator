@@ -49,7 +49,7 @@ func (o *PersistentOptions) AddPersistentFlags(cmd *cobra.Command) {
 	o.PlatformCluster.RegisterSingleConfigPathFlag(cmd.PersistentFlags())
 	// environment
 	cmd.PersistentFlags().StringVar(&o.Environment, "environment", "", "Environment name. Required. This is used to distinguish between different environments that are watching the same Onboarding cluster. Must be globally unique.")
-	cmd.PersistentFlags().StringVar(&o.ProviderName, "provider-name", "", "Provider name. Optional for the top-level run and init commands, where it can be used to override the default name for the generated MCP PlatformService. Required for the MCP controller subcommand, where it must match the provider name of the PlatformService in the Platform cluster.")
+	cmd.PersistentFlags().StringVar(&o.ProviderName, "provider-name", "", "Provider name. No effect for the top-level run and init commands, required for the platform service subcommands, where it must match the provider name of the PlatformService in the Platform cluster.")
 	// config
 	cmd.PersistentFlags().StringSliceVar(&o.ConfigPaths, "config", nil, "Paths to the config files (separate with comma or specify flag multiple times). Each path can be a file or directory. In the latter case, all files within with '.yaml', '.yml', and '.json' extensions are evaluated. The config is merged together from the different sources, with later configs overriding earlier ones.")
 	cmd.PersistentFlags().StringVar(&o.ConfigMapName, "configmap-name", "", "Name of the ConfigMap in the platform cluster that contains the configuration. If specified, the configuration will be loaded from this ConfigMap instead of config files.")
@@ -99,11 +99,14 @@ func (o *PersistentOptions) resolveConfig(ctx context.Context) (*config.Config, 
 		if err != nil {
 			return nil, fmt.Errorf("error loading config from ConfigMap: %w", err)
 		}
-	} else if len(o.ConfigPaths) > 0 { // fall back to loading from file monunt
+	} else if len(o.ConfigPaths) > 0 { // fall back to loading from file mount
 		cfg, err = config.LoadFromFiles(o.ConfigPaths...)
 		if err != nil {
 			return nil, fmt.Errorf("error loading config from files: %w", err)
 		}
+	}
+	if cfg == nil {
+		cfg = &config.Config{}
 	}
 
 	// Validate and complete the config

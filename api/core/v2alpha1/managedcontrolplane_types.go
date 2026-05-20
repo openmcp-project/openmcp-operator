@@ -80,5 +80,5 @@ type ManagedControlPlaneV2List struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&ManagedControlPlaneV2{}, &ManagedControlPlaneV2List{})
+	RegisterToSchemeBuilder(&ManagedControlPlaneV2{}, &ManagedControlPlaneV2List{})
 }

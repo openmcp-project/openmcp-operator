@@ -1,0 +1,274 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    openmcp.cloud/cluster: platform
+  name: helmdeployerconfigs.helm.open-control-plane.io
+spec:
+  group: helm.open-control-plane.io
+  names:
+    kind: HelmDeployerConfig
+    listKind: HelmDeployerConfigList
+    plural: helmdeployerconfigs
+    shortNames:
+    - hdcfg
+    singular: helmdeployerconfig
+  scope: Cluster
+  versions:
+  - name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: HelmDeployerConfigSpec defines the desired state of HelmDeployerConfig
+            properties:
+              helmReleaseReconciliationIntervals:
+                description: HelmReleaseReconciliationIntervals specifies the reconciliation
+                  intervals for the HelmReleases deployed by the operator.
+                properties:
+                  default:
+                    description: |-
+                      Default is the default interval in which flux reconciles the HelmRelease resource.
+                      It applies whenever no specific interval is defined.
+                      The default is 1h.
+                    type: string
+                  git:
+                    description: |-
+                      Git is the reconciliation interval for HelmReleases which use a git repository as source.
+                      If not set, the default interval will be used.
+                    type: string
+                  helm:
+                    description: |-
+                      Helm is the reconciliation interval for HelmReleases which use a helm repository as source.
+                      If not set, the default interval will be used.
+                    type: string
+                  oci:
+                    description: |-
+                      OCI is the reconciliation interval for HelmReleases which use an OCI repository as source.
+                      If not set, the default interval will be used.
+                    type: string
+                type: object
+              selectorDefinitions:
+                additionalProperties:
+                  properties:
+                    matchExpressions:
+                      description: matchExpressions is a list of label selector requirements.
+                        The requirements are ANDed.
+                      items:
+                        description: |-
+                          A label selector requirement is a selector that contains values, a key, and an operator that
+                          relates the key and values.
+                        properties:
+                          key:
+                            description: key is the label key that the selector applies
+                              to.
+                            type: string
+                          operator:
+                            description: |-
+                              operator represents a key's relationship to a set of values.
+                              Valid operators are In, NotIn, Exists and DoesNotExist.
+                            type: string
+                          values:
+                            description: |-
+                              values is an array of string values. If the operator is In or NotIn,
+                              the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                              the values array must be empty. This array is replaced during a strategic
+                              merge patch.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - key
+                        - operator
+                        type: object
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    matchIdentities:
+                      description: |-
+                        MatchIdentities contains a list of object references and matches only the objects with the given identities.
+                        If this selector is nil, all objects match.
+                        If this selector is not nil, but the list is empty, no objects match.
+                        If not nil, all other selector fields are ignored and only the identities are matched.
+                      items:
+                        description: ObjectReference is a reference to an object in
+                          any namespace.
+                        properties:
+                          name:
+                            description: Name is the name of the object.
+                            type: string
+                          namespace:
+                            description: Namespace is the namespace of the object.
+                            type: string
+                        required:
+                        - name
+                        - namespace
+                        type: object
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    matchLabels:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                        map is equivalent to an element of matchExpressions, whose key field is "key", the
+                        operator is "In", and the values array contains only "value". The requirements are ANDed.
+                      type: object
+                    matchPurposes:
+                      description: |-
+                        MatchPurposes contains a list of purpose selector requirements.
+                        An empty or nil list matches all objects.
+                        Duplicate purposes within a single requirement are ignored.
+                        The requirements are ANDed.
+                      items:
+                        description: |-
+                          A label selector requirement is a selector that contains values, a key, and an operator that
+                          relates the key and values.
+                        properties:
+                          operator:
+                            description: |-
+                              Operator represents how the list of purposes is matched against the values.
+                              Valid operators are: 'ContainsAll', 'ContainsAny', 'ContainsNone', 'Equals'.
+                            type: string
+                          values:
+                            description: |-
+                              Values is an array of string values.
+                              An empty or nil array will match no objects for 'ContainsAll' and 'ContainsAny',
+                              all objects for 'ContainsNone', and only objects with no purposes for 'Equals'.
+                              This array is replaced during a strategic merge patch.
+                            items:
+                              type: string
+                            type: array
+                            x-kubernetes-list-type: atomic
+                        required:
+                        - operator
+                        type: object
+                      type: array
+                      x-kubernetes-list-type: atomic
+                    secretsToCopy:
+                      description: |-
+                        SecretsToCopy defines which secrets should be copied when this selector is used for a HelmDeployment.
+                        References here refer to secrets in the provider namespace.
+                        TO BE REFACTORED: We want to move secret copying logic into its own controller at some point.
+                      properties:
+                        toPlatformCluster:
+                          description: |-
+                            ToPlatformCluster lists secrets from the provider namespace that should be copied into the cluster's namespace on the platform cluster.
+                            This is useful e.g. for pull secrets for the helm chart registry.
+                          items:
+                            description: |-
+                              SecretCopy defines the name of the secret to copy and the name of the copied secret.
+                              If target is nil or target.name is empty, the secret will be copied with the same name as the source secret.
+                            properties:
+                              source:
+                                description: |-
+                                  Source references the source secret to copy.
+                                  It has to be in the namespace the provider pod is running in.
+                                properties:
+                                  name:
+                                    default: ""
+                                    description: |-
+                                      Name of the referent.
+                                      This field is effectively required, but due to backwards compatibility is
+                                      allowed to be empty. Instances of this type with an empty value here are
+                                      almost certainly wrong.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              target:
+                                description: |-
+                                  Target is the name of the copied secret.
+                                  If not set, the secret will be copied with the same name as the source secret.
+                                properties:
+                                  name:
+                                    default: ""
+                                    description: |-
+                                      Name of the referent.
+                                      This field is effectively required, but due to backwards compatibility is
+                                      allowed to be empty. Instances of this type with an empty value here are
+                                      almost certainly wrong.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                type: object
+                                x-kubernetes-map-type: atomic
+                            required:
+                            - source
+                            type: object
+                          type: array
+                        toTargetCluster:
+                          description: |-
+                            ToTargetCluster lists secrets from the provider namespace that should be copied onto the target cluster.
+                            The secrets will end up in the namespace that is defined in the HelmDeployment's spec.
+                            This allows propagating secrets that are required by the helm chart to the target cluster.
+                          items:
+                            description: |-
+                              SecretCopy defines the name of the secret to copy and the name of the copied secret.
+                              If target is nil or target.name is empty, the secret will be copied with the same name as the source secret.
+                            properties:
+                              source:
+                                description: |-
+                                  Source references the source secret to copy.
+                                  It has to be in the namespace the provider pod is running in.
+                                properties:
+                                  name:
+                                    default: ""
+                                    description: |-
+                                      Name of the referent.
+                                      This field is effectively required, but due to backwards compatibility is
+                                      allowed to be empty. Instances of this type with an empty value here are
+                                      almost certainly wrong.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              target:
+                                description: |-
+                                  Target is the name of the copied secret.
+                                  If not set, the secret will be copied with the same name as the source secret.
+                                properties:
+                                  name:
+                                    default: ""
+                                    description: |-
+                                      Name of the referent.
+                                      This field is effectively required, but due to backwards compatibility is
+                                      allowed to be empty. Instances of this type with an empty value here are
+                                      almost certainly wrong.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                type: object
+                                x-kubernetes-map-type: atomic
+                            required:
+                            - source
+                            type: object
+                          type: array
+                      type: object
+                  type: object
+                  x-kubernetes-map-type: atomic
+                description: SelectorDefinitions is a list of selector definitions
+                  that can be referenced from HelmDeployments.
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
