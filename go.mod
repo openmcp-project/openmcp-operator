@@ -15,8 +15,8 @@ require (
 	github.com/onsi/ginkgo/v2 v2.29.0
 	github.com/onsi/gomega v1.41.0
 	github.com/openmcp-project/controller-utils v0.29.0
-	github.com/openmcp-project/openmcp-operator/api v0.19.1
-	github.com/openmcp-project/openmcp-operator/lib v0.19.1
+	github.com/openmcp-project/openmcp-operator/api v0.20.0
+	github.com/openmcp-project/openmcp-operator/lib v0.20.0
 	github.com/spf13/cobra v1.10.2
 	k8s.io/api v0.36.1
 	k8s.io/apimachinery v0.36.1
