@@ -6,6 +6,8 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	fluxhelmv2 "github.com/fluxcd/helm-controller/api/v2"
+	"github.com/fluxcd/pkg/apis/kustomize"
 	fluxv1 "github.com/fluxcd/source-controller/api/v1"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
@@ -35,7 +37,7 @@ type HelmDeploymentSpec struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	Namespace string `json:"namespace"`
 
-	// HelmValues are the helm values to deploy external-dns with, if the purpose selector matches.
+	// HelmValues are the helm values to deploy the chart with.
 	// There are a few special strings which will be replaced before creating the HelmRelease:
 	// - <provider.name> will be replaced with the provider name resource.
 	// - <provider.namespace> will be replaced with the namespace that hosts the platform service.
@@ -49,6 +51,70 @@ type HelmDeploymentSpec struct {
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +optional
 	HelmValues *apiextensionsv1.JSON `json:"helmValues,omitempty"`
+
+	// Interval at which to reconcile the Helm release.
+	// It can be used to overwrite the default reconciliation interval specified in the provider config.
+	// Inherited from HelmRelease spec.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
+	// +optional
+	Interval *metav1.Duration `json:"interval,omitempty"`
+
+	// ReleaseName used for the Helm release.
+	// Defaults to <namespace>--<name>--<hash> (shortened to 63 characters) if not set.
+	// Inherited from HelmRelease spec.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=53
+	// +optional
+	ReleaseName string `json:"releaseName,omitempty"`
+
+	// Timeout to set for the HelmRelease.
+	// Flux defaults this to 5 minutes, if not overwritten here.
+	// Inherited from HelmRelease spec.
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Pattern="^([0-9]+(\\.[0-9]+)?(ms|s|m|h))+$"
+	// +optional
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+
+	// Install allows to overwrite the default install options for the HelmRelease.
+	// Inherited from HelmRelease spec.
+	// +optional
+	Install *fluxhelmv2.Install `json:"install,omitempty"`
+
+	// Upgrade allows to overwrite the default upgrade options for the HelmRelease.
+	// Inherited from HelmRelease spec.
+	// +optional
+	Upgrade *fluxhelmv2.Upgrade `json:"upgrade,omitempty"`
+
+	// Test allows to overwrite the default test options for the HelmRelease.
+	// Inherited from HelmRelease spec.
+	// +optional
+	Test *fluxhelmv2.Test `json:"test,omitempty"`
+
+	// Rollback allows to overwrite the default rollback options for the HelmRelease.
+	// Inherited from HelmRelease spec.
+	// +optional
+	Rollback *fluxhelmv2.Rollback `json:"rollback,omitempty"`
+
+	// Uninstall allows to overwrite the default uninstall options for the HelmRelease.
+	// Inherited from HelmRelease spec.
+	// +optional
+	Uninstall *fluxhelmv2.Uninstall `json:"uninstall,omitempty"`
+
+	// CommonMetadata allows to specify common metadata for the HelmRelease, e.g. labels and annotations.
+	// Inherited from HelmRelease spec.
+	// +optional
+	CommonMetadata *fluxhelmv2.CommonMetadata `json:"commonMetadata,omitempty"`
+
+	// WaitStrategy allows to specify the HelmRelease's wait strategy.
+	// Inherited from HelmRelease spec.
+	// +optional
+	WaitStrategy *fluxhelmv2.WaitStrategy `json:"waitStrategy,omitempty"`
+
+	// HealthCheckExprs allows to specify custom health checks for the HelmRelease.
+	// Inherited from HelmRelease spec.
+	// +optional
+	HealthCheckExprs []kustomize.CustomHealthCheck `json:"healthCheckExprs,omitempty"`
 }
 
 type SelectorOrReference struct {

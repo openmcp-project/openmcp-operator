@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	fluxhelmv2 "github.com/fluxcd/helm-controller/api/v2"
+	"github.com/fluxcd/pkg/apis/kustomize"
 	fluxmeta "github.com/fluxcd/pkg/apis/meta"
 	fluxsourcev1 "github.com/fluxcd/source-controller/api/v1"
 
@@ -202,7 +203,11 @@ func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluste
 			}
 		}
 		// release information
-		hr.Spec.ReleaseName = ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s--%s--%s", rr.Object.Namespace, rr.Object.Name, ctrlutils.NameHashSHAKE128Base32(rr.Object.Namespace, rr.Object.Name)), ctrlutils.K8sMaxNameLength)
+		if len(rr.Object.Spec.ReleaseName) > 0 {
+			hr.Spec.ReleaseName = rr.Object.Spec.ReleaseName
+		} else {
+			hr.Spec.ReleaseName = ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s--%s--%s", rr.Object.Namespace, rr.Object.Name, ctrlutils.NameHashSHAKE128Base32(rr.Object.Namespace, rr.Object.Name)), ctrlutils.K8sMaxNameLength)
+		}
 		hr.Spec.TargetNamespace = rr.Object.Spec.Namespace
 		hr.Spec.StorageNamespace = rr.Object.Spec.Namespace
 		// values
@@ -218,26 +223,6 @@ func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluste
 			values = strings.ReplaceAll(values, fmt.Sprintf("%scluster.name%s", "\\u003c", "\\u003e"), cluster.Name)
 			hr.Spec.Values = &apiextensionsv1.JSON{Raw: []byte(values)}
 		}
-		// install configuration
-		if hr.Spec.Install == nil {
-			hr.Spec.Install = &fluxhelmv2.Install{
-				CreateNamespace: true,
-			}
-		}
-		hr.Spec.Install.CRDs = fluxhelmv2.CreateReplace
-		if hr.Spec.Install.Remediation == nil {
-			hr.Spec.Install.Remediation = &fluxhelmv2.InstallRemediation{}
-		}
-		hr.Spec.Install.Remediation.Retries = 3
-		// upgrade configuration
-		if hr.Spec.Upgrade == nil {
-			hr.Spec.Upgrade = &fluxhelmv2.Upgrade{}
-		}
-		hr.Spec.Upgrade.CRDs = fluxhelmv2.CreateReplace
-		if hr.Spec.Upgrade.Remediation == nil {
-			hr.Spec.Upgrade.Remediation = &fluxhelmv2.UpgradeRemediation{}
-		}
-		hr.Spec.Upgrade.Remediation.Retries = 3
 		// reference Cluster kubeconfig
 		hr.Spec.KubeConfig = &fluxmeta.KubeConfigReference{
 			SecretRef: &fluxmeta.SecretKeyReference{
@@ -245,8 +230,24 @@ func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluste
 				Key:  clustersv1alpha1.SecretKeyKubeconfig,
 			},
 		}
-		// deploy interval
-		hr.Spec.Interval = rr.Config.Spec.HelmReleaseReconciliationIntervals.IntervalForSourceKind(rr.SourceKind)
+		// forward configuration to helm release
+		if rr.Object.Spec.Interval != nil {
+			hr.Spec.Interval = *rr.Object.Spec.Interval.DeepCopy()
+		} else {
+			hr.Spec.Interval = rr.Config.Spec.HelmReleaseReconciliationIntervals.IntervalForSourceKind(rr.SourceKind)
+		}
+		hr.Spec.Timeout = rr.Object.Spec.Timeout.DeepCopy()
+		hr.Spec.Install = rr.Object.Spec.Install.DeepCopy()
+		hr.Spec.Upgrade = rr.Object.Spec.Upgrade.DeepCopy()
+		hr.Spec.Test = rr.Object.Spec.Test.DeepCopy()
+		hr.Spec.Rollback = rr.Object.Spec.Rollback.DeepCopy()
+		hr.Spec.Uninstall = rr.Object.Spec.Uninstall.DeepCopy()
+		hr.Spec.CommonMetadata = rr.Object.Spec.CommonMetadata.DeepCopy()
+		hr.Spec.WaitStrategy = rr.Object.Spec.WaitStrategy.DeepCopy()
+		if len(rr.Object.Spec.HealthCheckExprs) > 0 {
+			hr.Spec.HealthCheckExprs = make([]kustomize.CustomHealthCheck, len(rr.Object.Spec.HealthCheckExprs))
+			copy(hr.Spec.HealthCheckExprs, rr.Object.Spec.HealthCheckExprs)
+		}
 		return nil
 	}); err != nil {
 		createConForCluster(metav1.ConditionFalse, helmv1alpha1.ReasonHelmReleaseDeploymentFailed, fmt.Sprintf("Error creating or updating HelmRelease '%s/%s': %s", hr.Namespace, hr.Name, err.Error()))

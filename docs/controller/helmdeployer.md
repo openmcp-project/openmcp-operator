@@ -76,6 +76,17 @@ spec:
     my-other-helm-value:
       this-is-nested: '<environment>'
       this-is-too: foo
+  interval: 5m # optional, can be used to overwrite default from provider config
+  releaseName: <...> # optional, can be used to overwrite default release name
+  timeout: 5m # optional, forwarded to HelmRelease spec
+  install: <...> # optional, forwarded to HelmRelease spec
+  upgrade: <...> # optional, forwarded to HelmRelease spec
+  test: <...> # optional, forwarded to HelmRelease spec
+  rollback: <...> # optional, forwarded to HelmRelease spec
+  uninstall: <...> # optional, forwarded to HelmRelease spec
+  commonMetadata: <...> # optional, forwarded to HelmRelease spec
+  waitStrategy: <...> # optional, forwarded to HelmRelease spec
+  healthCheckExprs: <...> # optional, forwarded to HelmRelease spec
   secretsToCopy: # optional
     toPlatformCluster: # optional
     - source:
@@ -125,6 +136,10 @@ Since some parts of the helm values could potentially depend on dynamic variable
 - `<helm.namespace>` => namespace of the `HelmDeployment`
 - `<cluster.name>` => name of the `Cluster` the chart is deployed onto
 - `<cluster.namespace>` => namespace of the `Cluster` the chart is deployed onto
+
+#### HelmRelease Specification
+
+The fields `interval`, `releaseName`, `timeout`, `install`, `upgrade`, `test`, `rollback`, `uninstall`, `commonMetadata`, `waitStrategy`, and `healthCheckExprs` are taken over from the spec of flux' `HelmRelease` resource and will be forwarded to their corresponding sections in the generated `HelmRelease`. `interval` and `releaseName` will be defaulted by the helm deployer, if not set, everything else is passed over as-is, leaving the defaulting to flux.
 
 #### Secret Copying
 

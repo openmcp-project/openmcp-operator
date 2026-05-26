@@ -597,9 +597,59 @@ spec:
                 - message: exactly one of the fields in [helm git oci] must be set
                   rule: '[has(self.helm),has(self.git),has(self.oci)].filter(x,x==true).size()
                     == 1'
+              commonMetadata:
+                description: |-
+                  CommonMetadata allows to specify common metadata for the HelmRelease, e.g. labels and annotations.
+                  Inherited from HelmRelease spec.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Annotations to be added to the object's metadata.
+                    type: object
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: Labels to be added to the object's metadata.
+                    type: object
+                type: object
+              healthCheckExprs:
+                description: |-
+                  HealthCheckExprs allows to specify custom health checks for the HelmRelease.
+                  Inherited from HelmRelease spec.
+                items:
+                  description: CustomHealthCheck defines the health check for custom
+                    resources.
+                  properties:
+                    apiVersion:
+                      description: APIVersion of the custom resource under evaluation.
+                      type: string
+                    current:
+                      description: |-
+                        Current is the CEL expression that determines if the status
+                        of the custom resource has reached the desired state.
+                      type: string
+                    failed:
+                      description: |-
+                        Failed is the CEL expression that determines if the status
+                        of the custom resource has failed to reach the desired state.
+                      type: string
+                    inProgress:
+                      description: |-
+                        InProgress is the CEL expression that determines if the status
+                        of the custom resource has not yet reached the desired state.
+                      type: string
+                    kind:
+                      description: Kind of the custom resource under evaluation.
+                      type: string
+                  required:
+                  - apiVersion
+                  - current
+                  type: object
+                type: array
               helmValues:
                 description: |-
-                  HelmValues are the helm values to deploy external-dns with, if the purpose selector matches.
+                  HelmValues are the helm values to deploy the chart with.
                   There are a few special strings which will be replaced before creating the HelmRelease:
                   - <provider.name> will be replaced with the provider name resource.
                   - <provider.namespace> will be replaced with the namespace that hosts the platform service.
@@ -610,12 +660,225 @@ spec:
                   - <cluster.namespace> will be replaced with the namespace of the reconciled Cluster.
                 type: object
                 x-kubernetes-preserve-unknown-fields: true
+              install:
+                description: |-
+                  Install allows to overwrite the default install options for the HelmRelease.
+                  Inherited from HelmRelease spec.
+                properties:
+                  crds:
+                    description: |-
+                      CRDs upgrade CRDs from the Helm Chart's crds directory according
+                      to the CRD upgrade policy provided here. Valid values are `Skip`,
+                      `Create` or `CreateReplace`. Default is `Create` and if omitted
+                      CRDs are installed but not updated.
+
+                      Skip: do neither install nor replace (update) any CRDs.
+
+                      Create: new CRDs are created, existing CRDs are neither updated nor deleted.
+
+                      CreateReplace: new CRDs are created, existing CRDs are updated (replaced)
+                      but not deleted.
+
+                      By default, CRDs are applied (installed) during Helm install action.
+                      With this option users can opt in to CRD replace existing CRDs on Helm
+                      install actions, which is not (yet) natively supported by Helm.
+                      https://helm.sh/docs/chart_best_practices/custom_resource_definitions.
+                    enum:
+                    - Skip
+                    - Create
+                    - CreateReplace
+                    type: string
+                  createNamespace:
+                    description: |-
+                      CreateNamespace tells the Helm install action to create the
+                      HelmReleaseSpec.TargetNamespace if it does not exist yet.
+                      On uninstall, the namespace will not be garbage collected.
+                    type: boolean
+                  disableHooks:
+                    description: DisableHooks prevents hooks from running during the
+                      Helm install action.
+                    type: boolean
+                  disableOpenAPIValidation:
+                    description: |-
+                      DisableOpenAPIValidation prevents the Helm install action from validating
+                      rendered templates against the Kubernetes OpenAPI Schema.
+                    type: boolean
+                  disableSchemaValidation:
+                    description: |-
+                      DisableSchemaValidation prevents the Helm install action from validating
+                      the values against the JSON Schema.
+                    type: boolean
+                  disableTakeOwnership:
+                    description: |-
+                      DisableTakeOwnership disables taking ownership of existing resources
+                      during the Helm install action. Defaults to false.
+                    type: boolean
+                  disableWait:
+                    description: |-
+                      DisableWait disables the waiting for resources to be ready after a Helm
+                      install has been performed.
+                    type: boolean
+                  disableWaitForJobs:
+                    description: |-
+                      DisableWaitForJobs disables waiting for jobs to complete after a Helm
+                      install has been performed.
+                    type: boolean
+                  remediation:
+                    description: |-
+                      Remediation holds the remediation configuration for when the Helm install
+                      action for the HelmRelease fails. The default is to not perform any action.
+                    properties:
+                      ignoreTestFailures:
+                        description: |-
+                          IgnoreTestFailures tells the controller to skip remediation when the Helm
+                          tests are run after an install action but fail. Defaults to
+                          'Test.IgnoreFailures'.
+                        type: boolean
+                      remediateLastFailure:
+                        description: |-
+                          RemediateLastFailure tells the controller to remediate the last failure, when
+                          no retries remain. Defaults to 'false'.
+                        type: boolean
+                      retries:
+                        description: |-
+                          Retries is the number of retries that should be attempted on failures before
+                          bailing. Remediation, using an uninstall, is performed between each attempt.
+                          Defaults to '0', a negative integer equals to unlimited retries.
+                        type: integer
+                    type: object
+                  replace:
+                    description: |-
+                      Replace tells the Helm install action to re-use the 'ReleaseName', but only
+                      if that name is a deleted release which remains in the history.
+                    type: boolean
+                  serverSideApply:
+                    description: |-
+                      ServerSideApply enables server-side apply for resources during install.
+                      Defaults to true (or false when UseHelm3Defaults feature gate is enabled).
+                    type: boolean
+                  skipCRDs:
+                    description: |-
+                      SkipCRDs tells the Helm install action to not install any CRDs. By default,
+                      CRDs are installed if not already present.
+
+                      Deprecated use CRD policy (`crds`) attribute with value `Skip` instead.
+                    type: boolean
+                  strategy:
+                    description: |-
+                      Strategy defines the install strategy to use for this HelmRelease.
+                      Defaults to 'RemediateOnFailure', or 'RetryOnFailure' when the
+                      DefaultToRetryOnFailure feature gate is enabled.
+                    properties:
+                      name:
+                        description: Name of the install strategy.
+                        enum:
+                        - RemediateOnFailure
+                        - RetryOnFailure
+                        type: string
+                      retryInterval:
+                        description: |-
+                          RetryInterval is the interval at which to retry a failed install.
+                          Can be used only when Name is set to RetryOnFailure.
+                          Defaults to '5m'.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                        type: string
+                    required:
+                    - name
+                    type: object
+                    x-kubernetes-validations:
+                    - message: .retryInterval cannot be set when .name is 'RemediateOnFailure'
+                      rule: '!has(self.retryInterval) || self.name != ''RemediateOnFailure'''
+                  timeout:
+                    description: |-
+                      Timeout is the time to wait for any individual Kubernetes operation (like
+                      Jobs for hooks) during the performance of a Helm install action. Defaults to
+                      'HelmReleaseSpec.Timeout'.
+                    pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                    type: string
+                type: object
+              interval:
+                description: |-
+                  Interval at which to reconcile the Helm release.
+                  It can be used to overwrite the default reconciliation interval specified in the provider config.
+                  Inherited from HelmRelease spec.
+                pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                type: string
               namespace:
                 description: |-
                   Namespace is the namespace on the target cluster to use for the helm deployment.
                   If secrets are copied onto the target cluster, they will be copied into this namespace.
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                 type: string
+              releaseName:
+                description: |-
+                  ReleaseName used for the Helm release.
+                  Defaults to <namespace>--<name>--<hash> (shortened to 63 characters) if not set.
+                  Inherited from HelmRelease spec.
+                maxLength: 53
+                minLength: 1
+                type: string
+              rollback:
+                description: |-
+                  Rollback allows to overwrite the default rollback options for the HelmRelease.
+                  Inherited from HelmRelease spec.
+                properties:
+                  cleanupOnFail:
+                    description: |-
+                      CleanupOnFail allows deletion of new resources created during the Helm
+                      rollback action when it fails.
+                    type: boolean
+                  disableHooks:
+                    description: DisableHooks prevents hooks from running during the
+                      Helm rollback action.
+                    type: boolean
+                  disableWait:
+                    description: |-
+                      DisableWait disables the waiting for resources to be ready after a Helm
+                      rollback has been performed.
+                    type: boolean
+                  disableWaitForJobs:
+                    description: |-
+                      DisableWaitForJobs disables waiting for jobs to complete after a Helm
+                      rollback has been performed.
+                    type: boolean
+                  force:
+                    description: |-
+                      Force forces resource updates through a replacement strategy
+                      that avoids 3-way merge conflicts on client-side apply.
+                      This field is ignored for server-side apply (which always
+                      forces conflicts with other field managers).
+                    type: boolean
+                  recreate:
+                    description: |-
+                      Recreate performs pod restarts for any managed workloads.
+
+                      Deprecated: This behavior was deprecated in Helm 3:
+                        - Deprecation: https://github.com/helm/helm/pull/6463
+                        - Removal: https://github.com/helm/helm/pull/31023
+                      After helm-controller was upgraded to the Helm 4 SDK,
+                      this field is no longer functional and will print a
+                      warning if set to true. It will also be removed in a
+                      future release.
+                    type: boolean
+                  serverSideApply:
+                    description: |-
+                      ServerSideApply enables server-side apply for resources during rollback.
+                      Can be "enabled", "disabled", or "auto".
+                      When "auto", server-side apply usage will be based on the release's previous usage.
+                      Defaults to "auto".
+                    enum:
+                    - enabled
+                    - disabled
+                    - auto
+                    type: string
+                  timeout:
+                    description: |-
+                      Timeout is the time to wait for any individual Kubernetes operation (like
+                      Jobs for hooks) during the performance of a Helm rollback action. Defaults to
+                      'HelmReleaseSpec.Timeout'.
+                    pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                    type: string
+                type: object
               secretsToCopy:
                 description: |-
                   SecretsToCopy defines which secrets should be copied for this HelmDeployment.
@@ -823,6 +1086,261 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              test:
+                description: |-
+                  Test allows to overwrite the default test options for the HelmRelease.
+                  Inherited from HelmRelease spec.
+                properties:
+                  enable:
+                    description: |-
+                      Enable enables Helm test actions for this HelmRelease after an Helm install
+                      or upgrade action has been performed.
+                    type: boolean
+                  filters:
+                    description: Filters is a list of tests to run or exclude from
+                      running.
+                    items:
+                      description: Filter holds the configuration for individual Helm
+                        test filters.
+                      properties:
+                        exclude:
+                          description: Exclude specifies whether the named test should
+                            be excluded.
+                          type: boolean
+                        name:
+                          description: Name is the name of the test.
+                          maxLength: 253
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  ignoreFailures:
+                    description: |-
+                      IgnoreFailures tells the controller to skip remediation when the Helm tests
+                      are run but fail. Can be overwritten for tests run after install or upgrade
+                      actions in 'Install.IgnoreTestFailures' and 'Upgrade.IgnoreTestFailures'.
+                    type: boolean
+                  timeout:
+                    description: |-
+                      Timeout is the time to wait for any individual Kubernetes operation during
+                      the performance of a Helm test action. Defaults to 'HelmReleaseSpec.Timeout'.
+                    pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                    type: string
+                type: object
+              timeout:
+                description: |-
+                  Timeout to set for the HelmRelease.
+                  Flux defaults this to 5 minutes, if not overwritten here.
+                  Inherited from HelmRelease spec.
+                pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                type: string
+              uninstall:
+                description: |-
+                  Uninstall allows to overwrite the default uninstall options for the HelmRelease.
+                  Inherited from HelmRelease spec.
+                properties:
+                  deletionPropagation:
+                    default: background
+                    description: |-
+                      DeletionPropagation specifies the deletion propagation policy when
+                      a Helm uninstall is performed.
+                    enum:
+                    - background
+                    - foreground
+                    - orphan
+                    type: string
+                  disableHooks:
+                    description: DisableHooks prevents hooks from running during the
+                      Helm rollback action.
+                    type: boolean
+                  disableWait:
+                    description: |-
+                      DisableWait disables waiting for all the resources to be deleted after
+                      a Helm uninstall is performed.
+                    type: boolean
+                  keepHistory:
+                    description: |-
+                      KeepHistory tells Helm to remove all associated resources and mark the
+                      release as deleted, but retain the release history.
+                    type: boolean
+                  timeout:
+                    description: |-
+                      Timeout is the time to wait for any individual Kubernetes operation (like
+                      Jobs for hooks) during the performance of a Helm uninstall action. Defaults
+                      to 'HelmReleaseSpec.Timeout'.
+                    pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                    type: string
+                type: object
+              upgrade:
+                description: |-
+                  Upgrade allows to overwrite the default upgrade options for the HelmRelease.
+                  Inherited from HelmRelease spec.
+                properties:
+                  cleanupOnFail:
+                    description: |-
+                      CleanupOnFail allows deletion of new resources created during the Helm
+                      upgrade action when it fails.
+                    type: boolean
+                  crds:
+                    description: |-
+                      CRDs upgrade CRDs from the Helm Chart's crds directory according
+                      to the CRD upgrade policy provided here. Valid values are `Skip`,
+                      `Create` or `CreateReplace`. Default is `Skip` and if omitted
+                      CRDs are neither installed nor upgraded.
+
+                      Skip: do neither install nor replace (update) any CRDs.
+
+                      Create: new CRDs are created, existing CRDs are neither updated nor deleted.
+
+                      CreateReplace: new CRDs are created, existing CRDs are updated (replaced)
+                      but not deleted.
+
+                      By default, CRDs are not applied during Helm upgrade action. With this
+                      option users can opt-in to CRD upgrade, which is not (yet) natively supported by Helm.
+                      https://helm.sh/docs/chart_best_practices/custom_resource_definitions.
+                    enum:
+                    - Skip
+                    - Create
+                    - CreateReplace
+                    type: string
+                  disableHooks:
+                    description: DisableHooks prevents hooks from running during the
+                      Helm upgrade action.
+                    type: boolean
+                  disableOpenAPIValidation:
+                    description: |-
+                      DisableOpenAPIValidation prevents the Helm upgrade action from validating
+                      rendered templates against the Kubernetes OpenAPI Schema.
+                    type: boolean
+                  disableSchemaValidation:
+                    description: |-
+                      DisableSchemaValidation prevents the Helm upgrade action from validating
+                      the values against the JSON Schema.
+                    type: boolean
+                  disableTakeOwnership:
+                    description: |-
+                      DisableTakeOwnership disables taking ownership of existing resources
+                      during the Helm upgrade action. Defaults to false.
+                    type: boolean
+                  disableWait:
+                    description: |-
+                      DisableWait disables the waiting for resources to be ready after a Helm
+                      upgrade has been performed.
+                    type: boolean
+                  disableWaitForJobs:
+                    description: |-
+                      DisableWaitForJobs disables waiting for jobs to complete after a Helm
+                      upgrade has been performed.
+                    type: boolean
+                  force:
+                    description: |-
+                      Force forces resource updates through a replacement strategy
+                      that avoids 3-way merge conflicts on client-side apply.
+                      This field is ignored for server-side apply (which always
+                      forces conflicts with other field managers).
+                    type: boolean
+                  preserveValues:
+                    description: |-
+                      PreserveValues will make Helm reuse the last release's values and merge in
+                      overrides from 'Values'. Setting this flag makes the HelmRelease
+                      non-declarative.
+                    type: boolean
+                  remediation:
+                    description: |-
+                      Remediation holds the remediation configuration for when the Helm upgrade
+                      action for the HelmRelease fails. The default is to not perform any action.
+                    properties:
+                      ignoreTestFailures:
+                        description: |-
+                          IgnoreTestFailures tells the controller to skip remediation when the Helm
+                          tests are run after an upgrade action but fail.
+                          Defaults to 'Test.IgnoreFailures'.
+                        type: boolean
+                      remediateLastFailure:
+                        description: |-
+                          RemediateLastFailure tells the controller to remediate the last failure, when
+                          no retries remain. Defaults to 'false' unless 'Retries' is greater than 0.
+                        type: boolean
+                      retries:
+                        description: |-
+                          Retries is the number of retries that should be attempted on failures before
+                          bailing. Remediation, using 'Strategy', is performed between each attempt.
+                          Defaults to '0', a negative integer equals to unlimited retries.
+                        type: integer
+                      strategy:
+                        description: Strategy to use for failure remediation. Defaults
+                          to 'rollback'.
+                        enum:
+                        - rollback
+                        - uninstall
+                        type: string
+                    type: object
+                  serverSideApply:
+                    description: |-
+                      ServerSideApply enables server-side apply for resources during upgrade.
+                      Can be "enabled", "disabled", or "auto".
+                      When "auto", server-side apply usage will be based on the release's previous usage.
+                      Defaults to "auto".
+                    enum:
+                    - enabled
+                    - disabled
+                    - auto
+                    type: string
+                  strategy:
+                    description: |-
+                      Strategy defines the upgrade strategy to use for this HelmRelease.
+                      Defaults to 'RemediateOnFailure', or 'RetryOnFailure' when the
+                      DefaultToRetryOnFailure feature gate is enabled.
+                    properties:
+                      name:
+                        description: Name of the upgrade strategy.
+                        enum:
+                        - RemediateOnFailure
+                        - RetryOnFailure
+                        type: string
+                      retryInterval:
+                        description: |-
+                          RetryInterval is the interval at which to retry a failed upgrade.
+                          Can be used only when Name is set to RetryOnFailure.
+                          Defaults to '5m'.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                        type: string
+                    required:
+                    - name
+                    type: object
+                    x-kubernetes-validations:
+                    - message: .retryInterval can only be set when .name is 'RetryOnFailure'
+                      rule: '!has(self.retryInterval) || self.name == ''RetryOnFailure'''
+                  timeout:
+                    description: |-
+                      Timeout is the time to wait for any individual Kubernetes operation (like
+                      Jobs for hooks) during the performance of a Helm upgrade action. Defaults to
+                      'HelmReleaseSpec.Timeout'.
+                    pattern: ^([0-9]+(\.[0-9]+)?(ms|s|m|h))+$
+                    type: string
+                type: object
+              waitStrategy:
+                description: |-
+                  WaitStrategy allows to specify the HelmRelease's wait strategy.
+                  Inherited from HelmRelease spec.
+                properties:
+                  name:
+                    description: |-
+                      Name is Helm's wait strategy for waiting for applied resources to
+                      become ready. One of 'poller' or 'legacy'. The 'poller' strategy uses
+                      kstatus to poll resource statuses, while the 'legacy' strategy uses
+                      Helm v3's waiting logic.
+                      Defaults to 'poller', or to 'legacy' when UseHelm3Defaults feature
+                      gate is enabled.
+                    enum:
+                    - poller
+                    - legacy
+                    type: string
+                required:
+                - name
+                type: object
             required:
             - chartSource
             - namespace

@@ -1,0 +1,40 @@
+apiVersion: helm.open-control-plane.io/v1alpha1
+kind: HelmDeployment
+metadata:
+  name: hd-0
+  namespace: default
+spec:
+  chartSource:
+    oci:
+      url: "oci://example.org/repo/charts"
+      interval: 10m
+  selector:
+    matchPurposes:
+    - operator: ContainsAll
+      values:
+      - single
+  namespace: helm
+  interval: 5m
+  releaseName: my-release
+  timeout: 3m
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    remediation:
+      retries: 3
+  test:
+    enable: true
+  rollback:
+    timeout: 2m
+  uninstall:
+    timeout: 2m
+  commonMetadata:
+    labels:
+      app: my-app
+  waitStrategy:
+    name: poller
+  healthCheckExprs:
+  - apiVersion: apps/v1
+    kind: Deployment
+    current: "health.isHealthy(self)"
