@@ -11,8 +11,8 @@ replace (
 
 require (
 	dario.cat/mergo v1.0.2
-	github.com/fluxcd/pkg/apis/meta v1.28.0
 	github.com/fluxcd/pkg/apis/kustomize v1.18.0
+	github.com/fluxcd/pkg/apis/meta v1.28.0
 	github.com/onsi/ginkgo/v2 v2.29.0
 	github.com/onsi/gomega v1.41.0
 	github.com/openmcp-project/controller-utils v0.29.0
