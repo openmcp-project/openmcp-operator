@@ -5,6 +5,8 @@
 package v1alpha1
 
 import (
+	v2 "github.com/fluxcd/helm-controller/api/v2"
+	"github.com/fluxcd/pkg/apis/kustomize"
 	apiv1 "github.com/fluxcd/source-controller/api/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -202,6 +204,56 @@ func (in *HelmDeploymentSpec) DeepCopyInto(out *HelmDeploymentSpec) {
 		in, out := &in.HelmValues, &out.HelmValues
 		*out = new(apiextensionsv1.JSON)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.Interval != nil {
+		in, out := &in.Interval, &out.Interval
+		*out = new(v1.Duration)
+		**out = **in
+	}
+	if in.Timeout != nil {
+		in, out := &in.Timeout, &out.Timeout
+		*out = new(v1.Duration)
+		**out = **in
+	}
+	if in.Install != nil {
+		in, out := &in.Install, &out.Install
+		*out = new(v2.Install)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Upgrade != nil {
+		in, out := &in.Upgrade, &out.Upgrade
+		*out = new(v2.Upgrade)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Test != nil {
+		in, out := &in.Test, &out.Test
+		*out = new(v2.Test)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Rollback != nil {
+		in, out := &in.Rollback, &out.Rollback
+		*out = new(v2.Rollback)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.Uninstall != nil {
+		in, out := &in.Uninstall, &out.Uninstall
+		*out = new(v2.Uninstall)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.CommonMetadata != nil {
+		in, out := &in.CommonMetadata, &out.CommonMetadata
+		*out = new(v2.CommonMetadata)
+		(*in).DeepCopyInto(*out)
+	}
+	if in.WaitStrategy != nil {
+		in, out := &in.WaitStrategy, &out.WaitStrategy
+		*out = new(v2.WaitStrategy)
+		**out = **in
+	}
+	if in.HealthCheckExprs != nil {
+		in, out := &in.HealthCheckExprs, &out.HealthCheckExprs
+		*out = make([]kustomize.CustomHealthCheck, len(*in))
+		copy(*out, *in)
 	}
 }
 
