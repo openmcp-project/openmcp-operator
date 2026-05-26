@@ -3,8 +3,8 @@ module github.com/openmcp-project/openmcp-operator/api
 go 1.26.2
 
 require (
-	github.com/fluxcd/helm-controller/api v1.5.4
-	github.com/fluxcd/source-controller/api v1.8.3
+	github.com/fluxcd/helm-controller/api v1.5.5
+	github.com/fluxcd/source-controller/api v1.8.5
 	github.com/openmcp-project/controller-utils v0.29.0
 	k8s.io/api v0.36.1
 	k8s.io/apiextensions-apiserver v0.36.1
