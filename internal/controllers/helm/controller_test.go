@@ -788,6 +788,36 @@ var _ = Describe("HelmDeployment Controller", func() {
 		}, Equal(cconst.ReasonConfigurationProblem)))
 	})
 
+	It("should forward all customizable spec fields to the generated HelmRelease", func() {
+		env, cq, _ := defaultTestSetup("testdata", "test-06")
+
+		hd := &helmv1alpha1.HelmDeployment{}
+		hd.Name = "hd-0"
+		hd.Namespace = "default"
+		hdreq := testutils.RequestFromObject(hd)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(hd), hd)).To(Succeed())
+
+		mimicControllers(env, hdreq, cq)
+
+		// fetch the generated HelmRelease
+		hrList := &fluxhelmv2.HelmReleaseList{}
+		Expect(env.Client(platform).List(env.Ctx, hrList)).To(Succeed())
+		Expect(hrList.Items).To(HaveLen(1))
+		hr := hrList.Items[0]
+
+		Expect(hr.Spec.ReleaseName).To(Equal(hd.Spec.ReleaseName))
+		Expect(hr.Spec.Interval).To(Equal(*hd.Spec.Interval))
+		Expect(hr.Spec.Timeout).To(Equal(hd.Spec.Timeout))
+		Expect(hr.Spec.Install).To(Equal(hd.Spec.Install))
+		Expect(hr.Spec.Upgrade).To(Equal(hd.Spec.Upgrade))
+		Expect(hr.Spec.Test).To(Equal(hd.Spec.Test))
+		Expect(hr.Spec.Rollback).To(Equal(hd.Spec.Rollback))
+		Expect(hr.Spec.Uninstall).To(Equal(hd.Spec.Uninstall))
+		Expect(hr.Spec.CommonMetadata).To(Equal(hd.Spec.CommonMetadata))
+		Expect(hr.Spec.WaitStrategy).To(Equal(hd.Spec.WaitStrategy))
+		Expect(hr.Spec.HealthCheckExprs).To(Equal(hd.Spec.HealthCheckExprs))
+	})
+
 	It("should copy secrets correctly", func() {
 		env, cq, fakeClients := defaultTestSetup("testdata", "test-05")
 
