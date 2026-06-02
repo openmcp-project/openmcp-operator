@@ -206,7 +206,7 @@ func (c *HelmDeploymentController) deployHelmRelease(ctx context.Context, cluste
 		if len(rr.Object.Spec.ReleaseName) > 0 {
 			hr.Spec.ReleaseName = rr.Object.Spec.ReleaseName
 		} else {
-			hr.Spec.ReleaseName = ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s--%s--%s", rr.Object.Namespace, rr.Object.Name, ctrlutils.NameHashSHAKE128Base32(rr.Object.Namespace, rr.Object.Name)), ctrlutils.K8sMaxNameLength)
+			hr.Spec.ReleaseName = ctrlutils.ShortenToXCharactersUnsafe(fmt.Sprintf("%s--%s--%s", rr.Object.Namespace, rr.Object.Name, ctrlutils.NameHashSHAKE128Base32(rr.Object.Namespace, rr.Object.Name)), 53) // flux enforces a max length of 53 for release names
 		}
 		hr.Spec.TargetNamespace = rr.Object.Spec.Namespace
 		hr.Spec.StorageNamespace = rr.Object.Spec.Namespace
