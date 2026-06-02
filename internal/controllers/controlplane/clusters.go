@@ -1,4 +1,4 @@
-package managedcontrolplane
+package controlplane
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
 )
 
-func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2, platformNamespace string) (sets.Set[string], *clustersv1alpha1.Cluster, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteRelatedClusterRequests(ctx context.Context, mcp *corev2alpha1.ControlPlane, platformNamespace string) (sets.Set[string], *clustersv1alpha1.Cluster, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// delete depending cluster requests, if any

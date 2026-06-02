@@ -27,7 +27,7 @@ import (
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/managedcontrolplane"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/controlplane"
 	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 )
 
@@ -242,7 +242,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("environment variable %s is not set", apiconst.EnvVariablePodNamespace)
 	}
 
-	clusterAccessManager := clusteraccess.NewClusterAccessManager(o.PlatformCluster.Client(), managedcontrolplane.ControllerName, providerSystemNamespace)
+	clusterAccessManager := clusteraccess.NewClusterAccessManager(o.PlatformCluster.Client(), controlplane.ControllerName, providerSystemNamespace)
 	clusterAccessManager.WithLogger(&setupLog).
 		WithInterval(10 * time.Second).
 		WithTimeout(30 * time.Minute)
@@ -316,7 +316,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		}
 	}
 
-	mcpRec, err := managedcontrolplane.NewManagedControlPlaneReconciler(o.PlatformCluster, onboardingCluster, mgr.GetEventRecorder(managedcontrolplane.ControllerName), mcpConfigGetter, o.ConfigMapName)
+	mcpRec, err := controlplane.NewManagedControlPlaneReconciler(o.PlatformCluster, onboardingCluster, mgr.GetEventRecorder(controlplane.ControllerName), mcpConfigGetter, o.ConfigMapName)
 	if err != nil {
 		return fmt.Errorf("unable to create managedcontrolplane controller: %w", err)
 	}

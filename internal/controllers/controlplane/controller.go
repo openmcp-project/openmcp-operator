@@ -1,4 +1,4 @@
-package managedcontrolplane
+package controlplane
 
 import (
 	"context"
@@ -69,7 +69,7 @@ type ManagedControlPlaneReconciler struct {
 
 var _ reconcile.Reconciler = &ManagedControlPlaneReconciler{}
 
-type ReconcileResult = ctrlutils.ReconcileResult[*corev2alpha1.ManagedControlPlaneV2]
+type ReconcileResult = ctrlutils.ReconcileResult[*corev2alpha1.ControlPlane]
 
 func (r *ManagedControlPlaneReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	log := logging.FromContextOrPanic(ctx).WithName(ControllerName)
@@ -78,9 +78,9 @@ func (r *ManagedControlPlaneReconciler) Reconcile(ctx context.Context, req recon
 	rr := r.reconcile(ctx, req)
 
 	// status update
-	return ctrlutils.NewOpenMCPStatusUpdaterBuilder[*corev2alpha1.ManagedControlPlaneV2]().
+	return ctrlutils.NewOpenMCPStatusUpdaterBuilder[*corev2alpha1.ControlPlane]().
 		WithNestedStruct("Status").
-		WithPhaseUpdateFunc(func(obj *corev2alpha1.ManagedControlPlaneV2, rr ctrlutils.ReconcileResult[*corev2alpha1.ManagedControlPlaneV2]) (string, error) {
+		WithPhaseUpdateFunc(func(obj *corev2alpha1.ControlPlane, rr ctrlutils.ReconcileResult[*corev2alpha1.ControlPlane]) (string, error) {
 			if rr.Object != nil {
 				if !rr.Object.DeletionTimestamp.IsZero() {
 					return commonapi.StatusPhaseTerminating, nil
@@ -107,7 +107,7 @@ func (r *ManagedControlPlaneReconciler) Reconcile(ctx context.Context, req recon
 func (r *ManagedControlPlaneReconciler) reconcile(ctx context.Context, req reconcile.Request) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	// get ManagedControlPlane resource
-	mcp := &corev2alpha1.ManagedControlPlaneV2{}
+	mcp := &corev2alpha1.ControlPlane{}
 	if err := r.OnboardingCluster.Client().Get(ctx, req.NamespacedName, mcp); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Resource not found")
@@ -146,7 +146,7 @@ func (r *ManagedControlPlaneReconciler) reconcile(ctx context.Context, req recon
 // SetupWithManager sets up the controller with the Manager.
 func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	ctrlBuilder := ctrl.NewControllerManagedBy(mgr).
-		For(&corev2alpha1.ManagedControlPlaneV2{}).
+		For(&corev2alpha1.ControlPlane{}).
 		WithEventFilter(predicate.And(
 			predicate.Or(
 				predicate.GenerationChangedPredicate{},
@@ -170,7 +170,7 @@ func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error
 					return nil
 				}
 				// requeue all ManagedControlPlanes
-				mcpList := &corev2alpha1.ManagedControlPlaneV2List{}
+				mcpList := &corev2alpha1.ControlPlaneList{}
 				if err := r.PlatformCluster.Client().List(ctx, mcpList); err != nil {
 					logging.FromContextOrPanic(ctx).Error(err, "failed to list ManagedControlPlanes for ConfigMap change")
 					return nil
@@ -192,7 +192,7 @@ func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error
 	return ctrlBuilder.Complete(r)
 }
 
-func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) ReconcileResult {
+func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context, mcp *corev2alpha1.ControlPlane) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	log.Info("Handling creation or update of ManagedControlPlane resource")
 
@@ -332,7 +332,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 }
 
 //nolint:gocyclo
-func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *corev2alpha1.ManagedControlPlaneV2) ReconcileResult {
+func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *corev2alpha1.ControlPlane) ReconcileResult {
 	log := logging.FromContextOrPanic(ctx)
 	log.Info("Handling deletion of ManagedControlPlane resource")
 
