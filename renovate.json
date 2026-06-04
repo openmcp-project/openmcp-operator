@@ -33,7 +33,9 @@
     {
       "description": "Automerge submodule update",
       "automerge": true,
-      "matchPackageNames": ["hack/common"]
+      "matchPackageNames": [
+        "hack/common"
+      ]
     },
     {
       "description": "Update and automerge all components from openmcp-project immediately",
@@ -54,6 +56,14 @@
         "github.com/fluxcd/**"
       ],
       "groupName": "fluxcd packages"
+    },
+    {
+      "description": "Group openmcp-project/build submodule and workflow updates",
+      "matchDepNames": [
+        "hack/common",
+        "openmcp-project/build"
+      ],
+      "groupName": "openmcp-project/build"
     }
   ]
 }
