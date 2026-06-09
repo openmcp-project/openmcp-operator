@@ -45,13 +45,60 @@ type ClusterStatus struct {
 
 	// APIServer is the API server endpoint of the cluster.
 	// +optional
+	//
+	// Deprecated: Use Endpoints instead. This field will be removed in a future release.
+	// The APISERVER_ENDPOINT_EXTERNAL and APISERVER_ENDPOINT_INTERNAL constants can be used as identifiers in the Endpoints list to distinguish between externally and internally accessible API server endpoints.
 	APIServer string `json:"apiServer,omitempty"`
 
 	// ProviderStatus is the provider-specific status of the cluster.
 	// x-kubernetes-preserve-unknown-fields: true
 	// +optional
 	ProviderStatus *runtime.RawExtension `json:"providerStatus,omitempty"`
+
+	// Endpoints is a list of endpoints for the cluster.
+	// +optional
+	Endpoints Endpoints `json:"endpoints,omitempty"`
 }
+
+type Endpoint struct {
+	// Name is the identifier of the endpoint.
+	Name string `json:"name"`
+
+	// URL is the endpoint URL.
+	URL string `json:"url"`
+}
+
+type Endpoints []Endpoint
+
+// Get returns the URL of the (first) endpoint with the given name.
+// If it exists, the URL and 'true' are returned, otherwise an empty string and 'false'.
+func (e Endpoints) Get(name string) (string, bool) {
+	for _, endpoint := range e {
+		if endpoint.Name == name {
+			return endpoint.URL, true
+		}
+	}
+	return "", false
+}
+
+// Set sets the URL of the endpoint with the given name.
+// If an endpoint with the given name already exists, its URL is updated, otherwise a new endpoint is added to the list.
+func (e *Endpoints) Set(name, url string) {
+	for i, endpoint := range *e {
+		if endpoint.Name == name {
+			(*e)[i].URL = url
+			return
+		}
+	}
+	*e = append(*e, Endpoint{Name: name, URL: url})
+}
+
+const (
+	// APISERVER_ENDPOINT_EXTERNAL is an identifier which can be used for an externally accessible API server endpoint.
+	APISERVER_ENDPOINT_EXTERNAL string = "apiserver-external"
+	// APISERVER_ENDPOINT_INTERNAL is an identifier which can be used for an internally accessible API server endpoint.
+	APISERVER_ENDPOINT_INTERNAL string = "apiserver-internal"
+)
 
 const (
 	// CLUSTER_PHASE_UNKNOWN represents an unknown status for the cluster.

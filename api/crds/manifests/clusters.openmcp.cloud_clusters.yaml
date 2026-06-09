@@ -123,7 +123,11 @@ spec:
             description: ClusterStatus defines the observed state of Cluster
             properties:
               apiServer:
-                description: APIServer is the API server endpoint of the cluster.
+                description: |-
+                  APIServer is the API server endpoint of the cluster.
+
+                  Deprecated: Use Endpoints instead. This field will be removed in a future release.
+                  The APISERVER_ENDPOINT_EXTERNAL and APISERVER_ENDPOINT_INTERNAL constants can be used as identifiers in the Endpoints list to distinguish between externally and internally accessible API server endpoints.
                 type: string
               conditions:
                 description: Conditions contains the conditions.
@@ -180,6 +184,21 @@ spec:
                   - reason
                   - status
                   - type
+                  type: object
+                type: array
+              endpoints:
+                description: Endpoints is a list of endpoints for the cluster.
+                items:
+                  properties:
+                    name:
+                      description: Name is the identifier of the endpoint.
+                      type: string
+                    url:
+                      description: URL is the endpoint URL.
+                      type: string
+                  required:
+                  - name
+                  - url
                   type: object
                 type: array
               observedGeneration:
