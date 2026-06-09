@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -294,7 +295,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	log.Debug("ClusterRequest is ready", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace)
 	createCon(corev2alpha1.ConditionClusterRequestReady, metav1.ConditionTrue, "", "ClusterRequest is ready")
 
-	// fetch Cluster conditions to display them on the MCP
+	// fetch Cluster conditions and endpoints to display them on the MCP
 	cluster := &clustersv1alpha1.Cluster{}
 	if cr.Status.Cluster == nil {
 		// should not happen if the ClusterRequest is granted
@@ -312,7 +313,15 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	for _, con := range cluster.Status.Conditions {
 		createCon(corev2alpha1.ConditionPrefixClusterCondition+con.Type, con.Status, con.Reason, con.Message)
 	}
-	createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions have been synced to MCP")
+	if mcp.Status.Endpoints == nil {
+		mcp.Status.Endpoints = clustersv1alpha1.Endpoints{}
+	}
+	for _, endpoint := range cluster.Status.Endpoints {
+		if slices.Contains(cfg.ExposedEndpoints, endpoint.Name) {
+			mcp.Status.Endpoints.Set(endpoint.Name, endpoint.URL)
+		}
+	}
+	createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions and endpoints have been synced to MCP")
 
 	// manage AccessRequests
 	allAccessReady, removeConditions, rerr := r.manageAccessRequests(ctx, mcp, platformNamespace, cr, createCon)
@@ -410,11 +419,19 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 		return rr
 	}
 	if primaryCluster != nil {
-		// sync Cluster conditions to the MCP
+		// sync Cluster conditions and endpoints to the MCP
 		for _, con := range primaryCluster.Status.Conditions {
 			createCon(corev2alpha1.ConditionPrefixClusterCondition+con.Type, con.Status, con.Reason, con.Message)
 		}
-		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions have been synced to MCP")
+		if mcp.Status.Endpoints == nil {
+			mcp.Status.Endpoints = clustersv1alpha1.Endpoints{}
+		}
+		for _, endpoint := range primaryCluster.Status.Endpoints {
+			if slices.Contains(cfg.ExposedEndpoints, endpoint.Name) {
+				mcp.Status.Endpoints.Set(endpoint.Name, endpoint.URL)
+			}
+		}
+		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions and endpoints have been synced to MCP")
 	} else {
 		// since this point is only reached if no error occurred during r.deleteRelatedClusterRequests, we can assume that the primaryCluster is nil because it does not exist
 		for _, con := range mcp.Status.Conditions {

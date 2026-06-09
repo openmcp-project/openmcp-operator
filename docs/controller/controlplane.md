@@ -17,6 +17,9 @@ managedControlPlane:
     clientID: my-client-id
     extraScopes:
     - foo
+  exposedEndpoints: # list of endpoint names from the Cluster status which should be forwarded to the MCP status
+  - apiserver-internal
+  - apiserver-external
 ```
 
 The configuration is optional.

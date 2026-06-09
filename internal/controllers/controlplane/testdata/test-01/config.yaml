@@ -5,3 +5,6 @@ managedControlPlane:
     issuer: https://example.com/oidc
     groupsPrefix: 'mygroups:'
     usernamePrefix: 'myuser:'
+  exposedEndpoints:
+  - endpoint-01
+  - endpoint-02

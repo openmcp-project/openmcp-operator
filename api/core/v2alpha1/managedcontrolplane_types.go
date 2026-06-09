@@ -55,6 +55,10 @@ type ControlPlaneStatus struct {
 	// The "default" key is also used if the ClusterProvider does not support OIDC-based access and created a serviceaccount with a token instead.
 	// +optional
 	Access map[string]commonapi.LocalObjectReference `json:"access,omitempty"`
+
+	// Endpoints is a list of exposed Cluster endpoints.
+	// +optional
+	Endpoints clustersv1alpha1.Endpoints `json:"endpoints,omitempty"`
 }
 
 // +kubebuilder:object:root=true

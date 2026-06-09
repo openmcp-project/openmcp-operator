@@ -28,6 +28,10 @@ type ManagedControlPlaneConfig struct {
 
 	// PlatformService specifies the configuration for the ManagedControlPlane platform service.
 	PlatformService PlatformServiceConfig `json:"platformService,omitempty"`
+
+	// ExposedEndpoints lists endpoint names (from the Cluster's status.endpoints) which should be exposed to the MCP's status.
+	// +optional
+	ExposedEndpoints []string `json:"exposedEndpoints,omitempty"`
 }
 
 var _ Defaultable = &HelmDeployerConfig{}

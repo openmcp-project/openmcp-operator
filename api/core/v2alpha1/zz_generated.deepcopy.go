@@ -7,6 +7,7 @@ package v2alpha1
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
+	"github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/api/common"
 )
 
@@ -95,6 +96,11 @@ func (in *ControlPlaneStatus) DeepCopyInto(out *ControlPlaneStatus) {
 		for key, val := range *in {
 			(*out)[key] = val
 		}
+	}
+	if in.Endpoints != nil {
+		in, out := &in.Endpoints, &out.Endpoints
+		*out = make(v1alpha1.Endpoints, len(*in))
+		copy(*out, *in)
 	}
 }
 
