@@ -312,8 +312,9 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	for _, con := range cluster.Status.Conditions {
 		createCon(corev2alpha1.ConditionPrefixClusterCondition+con.Type, con.Status, con.Reason, con.Message)
 	}
+	createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions have been synced to MCP")
 	mcp.Status.Endpoints = cfg.ExposedEndpoints.Apply(cluster.Status.Endpoints)
-	createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions and endpoints have been synced to MCP")
+	log.Debug("Exposing endpoints", "endpoints", mcp.Status.Endpoints)
 
 	// manage AccessRequests
 	allAccessReady, removeConditions, rerr := r.manageAccessRequests(ctx, mcp, platformNamespace, cr, createCon)
@@ -415,8 +416,9 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 		for _, con := range primaryCluster.Status.Conditions {
 			createCon(corev2alpha1.ConditionPrefixClusterCondition+con.Type, con.Status, con.Reason, con.Message)
 		}
+		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions have been synced to MCP")
 		mcp.Status.Endpoints = cfg.ExposedEndpoints.Apply(primaryCluster.Status.Endpoints)
-		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions and endpoints have been synced to MCP")
+		log.Debug("Exposing endpoints", "endpoints", mcp.Status.Endpoints)
 	} else {
 		// since this point is only reached if no error occurred during r.deleteRelatedClusterRequests, we can assume that the primaryCluster is nil because it does not exist
 		for _, con := range mcp.Status.Conditions {

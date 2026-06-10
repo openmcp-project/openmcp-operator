@@ -37,10 +37,6 @@ spec:
       name: Info
       priority: 10
       type: string
-    - jsonPath: .status.apiServer
-      name: APIServer
-      priority: 10
-      type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
