@@ -218,7 +218,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		))
 		Expect(mcp.Status.Endpoints).To(ConsistOf(
 			clustersv1alpha1.Endpoint{
-				Name: "endpoint-01",
+				Name: "primary-endpoint",
 				URL:  "https://endpoint-01.example.com",
 			},
 			clustersv1alpha1.Endpoint{

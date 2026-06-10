@@ -6,5 +6,6 @@ managedControlPlane:
     groupsPrefix: 'mygroups:'
     usernamePrefix: 'myuser:'
   exposedEndpoints:
-  - endpoint-01
-  - endpoint-02
+  - name: endpoint-01
+    renameTo: primary-endpoint
+  - name: endpoint-02

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -313,14 +312,7 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	for _, con := range cluster.Status.Conditions {
 		createCon(corev2alpha1.ConditionPrefixClusterCondition+con.Type, con.Status, con.Reason, con.Message)
 	}
-	if mcp.Status.Endpoints == nil {
-		mcp.Status.Endpoints = clustersv1alpha1.Endpoints{}
-	}
-	for _, endpoint := range cluster.Status.Endpoints {
-		if slices.Contains(cfg.ExposedEndpoints, endpoint.Name) {
-			mcp.Status.Endpoints.Set(endpoint.Name, endpoint.URL)
-		}
-	}
+	mcp.Status.Endpoints = cfg.ExposedEndpoints.Apply(cluster.Status.Endpoints)
 	createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions and endpoints have been synced to MCP")
 
 	// manage AccessRequests
@@ -423,14 +415,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 		for _, con := range primaryCluster.Status.Conditions {
 			createCon(corev2alpha1.ConditionPrefixClusterCondition+con.Type, con.Status, con.Reason, con.Message)
 		}
-		if mcp.Status.Endpoints == nil {
-			mcp.Status.Endpoints = clustersv1alpha1.Endpoints{}
-		}
-		for _, endpoint := range primaryCluster.Status.Endpoints {
-			if slices.Contains(cfg.ExposedEndpoints, endpoint.Name) {
-				mcp.Status.Endpoints.Set(endpoint.Name, endpoint.URL)
-			}
-		}
+		mcp.Status.Endpoints = cfg.ExposedEndpoints.Apply(primaryCluster.Status.Endpoints)
 		createCon(corev2alpha1.ConditionClusterConditionsSynced, metav1.ConditionTrue, "", "Cluster conditions and endpoints have been synced to MCP")
 	} else {
 		// since this point is only reached if no error occurred during r.deleteRelatedClusterRequests, we can assume that the primaryCluster is nil because it does not exist
