@@ -102,8 +102,18 @@ func (o *OIDCProviderConfig) Default() *OIDCProviderConfig {
 	return o
 }
 
-// UsernameGroupsPrefix returns the prefix for usernames and groups for this OIDC provider.
-// It is equivalent to <provider_name> + ":".
-func (o *OIDCProviderConfig) UsernameGroupsPrefix() string {
+// GetGroupsPrefix returns the groups prefix for this OIDC provider.
+func (o *OIDCProviderConfig) GetGroupsPrefix() string {
+	if o.GroupsPrefix != nil {
+		return *o.GroupsPrefix
+	}
+	return o.Name + ":"
+}
+
+// GetUsernamePrefix returns the username prefix for this OIDC provider.
+func (o *OIDCProviderConfig) GetUsernamePrefix() string {
+	if o.UsernamePrefix != nil {
+		return *o.UsernamePrefix
+	}
 	return o.Name + ":"
 }
