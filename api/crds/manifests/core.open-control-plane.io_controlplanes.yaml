@@ -158,6 +158,12 @@ spec:
                                 GroupsClaim is the claim in the OIDC token that contains the groups.
                                 If empty, the default claim "groups" will be used.
                               type: string
+                            groupsPrefix:
+                              description: |-
+                                GroupsPrefix is the prefix for groups for this OIDC provider.
+                                If not specified, it defaults to '<name>:'.
+                                To disable the prefix completely, set it to an empty string.
+                              type: string
                             issuer:
                               description: |-
                                 Issuer is the issuer URL of the OIDC provider.
@@ -262,6 +268,12 @@ spec:
                               description: |-
                                 UsernameClaim is the claim in the OIDC token that contains the username.
                                 If empty, the default claim "sub" will be used.
+                              type: string
+                            usernamePrefix:
+                              description: |-
+                                UsernamePrefix is the prefix for usernames for this OIDC provider.
+                                If not specified, it defaults to '<name>:'.
+                                To disable the prefix completely, set it to an empty string.
                               type: string
                           required:
                           - clientID

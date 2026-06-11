@@ -26,11 +26,23 @@ type OIDCProviderConfig struct {
 	// +kubebuilder:validation:MinLength=1
 	ClientID string `json:"clientID"`
 
+	// GroupsPrefix is the prefix for groups for this OIDC provider.
+	// If not specified, it defaults to '<name>:'.
+	// To disable the prefix completely, set it to an empty string.
+	// +optional
+	GroupsPrefix *string `json:"groupsPrefix,omitempty"`
+
 	// GroupsClaim is the claim in the OIDC token that contains the groups.
 	// If empty, the default claim "groups" will be used.
 	// +kubebuilder:default="groups"
 	// +optional
 	GroupsClaim string `json:"groupsClaim"`
+
+	// UsernamePrefix is the prefix for usernames for this OIDC provider.
+	// If not specified, it defaults to '<name>:'.
+	// To disable the prefix completely, set it to an empty string.
+	// +optional
+	UsernamePrefix *string `json:"usernamePrefix,omitempty"`
 
 	// UsernameClaim is the claim in the OIDC token that contains the username.
 	// If empty, the default claim "sub" will be used.
