@@ -44,6 +44,16 @@
       "minimumReleaseAge": "0 days",
       "automerge": true,
       "enabled": true
+    },
+    {
+      "description": "Group all github.com/fluxcd go packages into one PR",
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchPackageNames": [
+        "github.com/fluxcd/**"
+      ],
+      "groupName": "fluxcd packages"
     }
   ]
 }
