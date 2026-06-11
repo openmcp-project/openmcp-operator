@@ -5,6 +5,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
 
+	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
 )
@@ -28,6 +29,39 @@ type ManagedControlPlaneConfig struct {
 
 	// PlatformService specifies the configuration for the ManagedControlPlane platform service.
 	PlatformService PlatformServiceConfig `json:"platformService,omitempty"`
+
+	// ExposedEndpoints lists endpoint names (from the Cluster's status.endpoints) which should be exposed to the MCP's status.
+	// +optional
+	ExposedEndpoints ExposedEndpoints `json:"exposedEndpoints,omitempty"`
+}
+
+type ExposedEndpoint struct {
+	// Name is the name of the endpoint, as specified in the Cluster's status.endpoints.
+	Name string `json:"name"`
+	// RenameTo can be used to name the endpoint differently in the MCP's status. If empty, the original name is used.
+	// +optional
+	RenameTo string `json:"renameTo,omitempty"`
+}
+
+type ExposedEndpoints []ExposedEndpoint
+
+// Apply filters the given endpoints and applies the renaming specified in the ExposedEndpoints configuration, returning the endpoints that should be exposed in the MCP's status.
+func (e ExposedEndpoints) Apply(endpoints clustersv1alpha1.Endpoints) clustersv1alpha1.Endpoints {
+	result := clustersv1alpha1.Endpoints{}
+	if e == nil || endpoints == nil {
+		return result
+	}
+	for _, ep := range e {
+		if url, ok := endpoints.Get(ep.Name); ok {
+			name := ep.Name
+			if ep.RenameTo != "" {
+				name = ep.RenameTo
+			}
+			result.Set(name, url)
+		}
+	}
+
+	return result
 }
 
 var _ Defaultable = &HelmDeployerConfig{}
@@ -96,6 +130,11 @@ func (c *ManagedControlPlaneConfig) Validate(fldPath *field.Path) error {
 	}
 	if c.ReconcileMCPEveryXDays < 0 {
 		errs = append(errs, field.Invalid(fldPath.Child("reconcileMCPEveryXDays"), c.ReconcileMCPEveryXDays, "reconcile interval must be 0 or greater"))
+	}
+	for i, ep := range c.ExposedEndpoints {
+		if ep.Name == "" {
+			errs = append(errs, field.Required(fldPath.Child("exposedEndpoints").Index(i).Child("name"), "endpoint name must be set"))
+		}
 	}
 	if c.DefaultOIDCProvider != nil {
 		oidcFldPath := fldPath.Child("defaultOIDCProvider")

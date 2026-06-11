@@ -473,6 +473,21 @@ spec:
                   - type
                   type: object
                 type: array
+              endpoints:
+                description: Endpoints is a list of exposed Cluster endpoints.
+                items:
+                  properties:
+                    name:
+                      description: Name is the identifier of the endpoint.
+                      type: string
+                    url:
+                      description: URL is the endpoint URL.
+                      type: string
+                  required:
+                  - name
+                  - url
+                  type: object
+                type: array
               observedGeneration:
                 description: ObservedGeneration is the generation of this resource
                   that was last reconciled by the controller.

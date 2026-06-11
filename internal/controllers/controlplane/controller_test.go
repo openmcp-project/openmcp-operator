@@ -160,6 +160,20 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				ObservedGeneration: 1,
 			},
 		}
+		cluster.Status.Endpoints = []clustersv1alpha1.Endpoint{
+			{
+				Name: "endpoint-01",
+				URL:  "https://endpoint-01.example.com",
+			},
+			{
+				Name: "endpoint-02",
+				URL:  "https://endpoint-02.example.com",
+			},
+			{
+				Name: "secret-endpoint",
+				URL:  "https://secret-endpoint.example.com",
+			},
+		}
 		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
 		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
 		cr.Status.Cluster = &commonapi.ObjectReference{
@@ -173,6 +187,7 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		// - multiple access requests have been created on the platform cluster, one for each configured OIDC provider
 		// - the mcp has conditions that reflect that it is waiting for the access requests (one for each OIDC provider and one overall one)
 		// - the mcp has taken over the conditions from the Cluster resource with a prefix
+		// - the mcp has taken over the exposed endpoints from the Cluster resource
 		// - the mcp should be requeued with a short requeueAfter duration
 		By("second MCP reconciliation")
 		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
@@ -200,6 +215,16 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 			MatchCondition(TestCondition().
 				WithType(corev2alpha1.ConditionClusterConditionsSynced).
 				WithStatus(metav1.ConditionTrue)),
+		))
+		Expect(mcp.Status.Endpoints).To(ConsistOf(
+			clustersv1alpha1.Endpoint{
+				Name: "primary-endpoint",
+				URL:  "https://endpoint-01.example.com",
+			},
+			clustersv1alpha1.Endpoint{
+				Name: "endpoint-02",
+				URL:  "https://endpoint-02.example.com",
+			},
 		))
 		oidcProviders := []commonapi.OIDCProviderConfig{*cfg.DefaultOIDCProvider.DeepCopy()}
 		oidcProviders[0].RoleBindings = mcp.Spec.IAM.OIDC.DefaultProvider.RoleBindings
