@@ -1,6 +1,6 @@
 module github.com/openmcp-project/openmcp-operator/api
 
-go 1.26.2
+go 1.26.4
 
 require (
 	github.com/fluxcd/helm-controller/api v1.5.5
