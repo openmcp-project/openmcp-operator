@@ -25,7 +25,7 @@ require (
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fluxcd/helm-controller/api v1.5.5 // indirect
 	github.com/fluxcd/pkg/apis/acl v0.9.0 // indirect
-	github.com/fluxcd/pkg/apis/kustomize v1.18.0 // indirect
+	github.com/fluxcd/pkg/apis/kustomize v1.19.0 // indirect
 	github.com/fluxcd/pkg/apis/meta v1.25.1 // indirect
 	github.com/fluxcd/source-controller/api v1.8.5 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
