@@ -41,7 +41,6 @@ require (
 	github.com/go-openapi/swag/stringutils v0.26.0 // indirect
 	github.com/go-openapi/swag/typeutils v0.26.0 // indirect
 	github.com/go-openapi/swag/yamlutils v0.26.0 // indirect
-	github.com/goccy/go-yaml v1.19.2 // indirect
 	k8s.io/streaming v0.36.1 // indirect
 )
 
