@@ -11,8 +11,8 @@ replace (
 
 require (
 	dario.cat/mergo v1.0.2
-	github.com/fluxcd/pkg/apis/kustomize v1.18.0
-	github.com/fluxcd/pkg/apis/meta v1.28.0
+	github.com/fluxcd/pkg/apis/kustomize v1.19.0
+	github.com/fluxcd/pkg/apis/meta v1.30.0
 	github.com/onsi/ginkgo/v2 v2.29.0
 	github.com/onsi/gomega v1.41.0
 	github.com/openmcp-project/controller-utils v0.29.0
@@ -46,7 +46,7 @@ require (
 
 require (
 	cel.dev/expr v0.25.2 // indirect
-	github.com/Masterminds/semver/v3 v3.4.0 // indirect
+	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
