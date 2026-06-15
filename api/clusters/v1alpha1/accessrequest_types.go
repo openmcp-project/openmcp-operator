@@ -81,9 +81,14 @@ type PermissionsRequest struct {
 
 	// Namespace is the namespace for which the permissions are requested.
 	// If empty, this will result in a ClusterRole, otherwise in a Role in the respective namespace.
-	// Note that for a Role, the namespace needs to either exist or a permission to create it must be included in the requested permissions (it will be created automatically then), otherwise the request will be rejected.
+	// By default, the namespace will be created automatically if it does not exist unless DisableAutomaticNamespaceCreation is set to true.
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
+
+	// DisableAutomaticNamespaceCreation controls whether the target namespace is auto-created when Namespace is set and does not exist.
+	// Defaults to false.
+	// +optional
+	DisableAutomaticNamespaceCreation bool `json:"disableAutomaticNamespaceCreation,omitempty"`
 
 	// Rules are the requested RBAC rules.
 	Rules []rbacv1.PolicyRule `json:"rules"`
