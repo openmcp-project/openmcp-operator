@@ -1,0 +1,16 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: exclusive
+  namespace: foo
+  uid: dc4b422b-8676-4bc0-951f-7a535d790c04
+  annotations:
+    metadata.open-control-plane.io/annotation: "foo"
+    metadata.open-control-plane.io/annotation2: "foobar"
+    foo.bar.baz/propagate: "false"
+  labels:
+    metadata.open-control-plane.io/label: "bar"
+    metadata.open-control-plane.io/label2: "baz"
+    foo.bar.baz/propagate: "false"
+spec:
+  purpose: exclusive

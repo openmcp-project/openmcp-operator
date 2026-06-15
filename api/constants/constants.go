@@ -3,6 +3,8 @@ package constants
 const (
 	// OpenMCPGroupName is the base API group name for OpenMCP.
 	OpenMCPGroupName = "openmcp.cloud"
+	// OCPGroupName is the new group name.
+	OCPGroupName = "open-control-plane.io"
 
 	// ClusterLabel can be used on CRDs to indicate onto which cluster they should be deployed.
 	ClusterLabel = OpenMCPGroupName + "/cluster"
@@ -58,4 +60,8 @@ const (
 	MetricsPortAnnotation = MetricsPrometheusAnnotation + "/port"
 	// MetricsPathAnnotation defines the metrics path annotation
 	MetricsPathAnnotation = MetricsPrometheusAnnotation + "/path"
+
+	// MetadataAnnotationLabelPrefix is a prefix for metadata annotations/labels.
+	// Annotations and labels with this prefix are propagated between resources in some cases, e.g. from ClusterRequests to the corresponding Cluster resources (for exclusive clusters only).
+	MetadataAnnotationLabelPrefix = "metadata." + OCPGroupName + "/"
 )

@@ -1,0 +1,14 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: shared
+  namespace: foo
+  uid: 4d6aa495-54c0-4df2-bc7b-05b103f02e69
+  annotations:
+    metadata.open-control-plane.io/annotation: "foo"
+    metadata.open-control-plane.io/annotation2: "foobar"
+  labels:
+    metadata.open-control-plane.io/label: "bar"
+    metadata.open-control-plane.io/label2: "baz"
+spec:
+  purpose: shared-twice

@@ -164,8 +164,33 @@ func (r *ClusterScheduler) handleCreateOrUpdate(ctx context.Context, req reconci
 					rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching finalizer '%s' on cluster '%s/%s': %w", fin, existingCluster.Namespace, existingCluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
 					return rr
 				}
+			} else {
+				log.Info("Request already contains a reference to an existing cluster, nothing to do", "clusterName", cr.Status.Cluster.Name, "clusterNamespace", cr.Status.Cluster.Namespace)
 			}
-			log.Info("Request already contains a reference to an existing cluster, nothing to do", "clusterName", cr.Status.Cluster.Name, "clusterNamespace", cr.Status.Cluster.Namespace)
+			// if it's an exclusive cluster, propagate metadata annotations/labels from the ClusterRequest to the Cluster
+			if existingCluster.Spec.Tenancy == clustersv1alpha1.TENANCY_EXCLUSIVE {
+				update := false
+				oldCluster := existingCluster.DeepCopy()
+				for k, expectedValue := range cr.Annotations {
+					if strings.HasPrefix(k, apiconst.MetadataAnnotationLabelPrefix) && existingCluster.Annotations[k] != expectedValue {
+						update = true
+						existingCluster.Annotations[k] = expectedValue
+					}
+				}
+				for k, expectedValue := range cr.Labels {
+					if strings.HasPrefix(k, apiconst.MetadataAnnotationLabelPrefix) && existingCluster.Labels[k] != expectedValue {
+						update = true
+						existingCluster.Labels[k] = expectedValue
+					}
+				}
+				if update {
+					log.Info("Patching Cluster to add missing or outdated metadata annotations/labels", "clusterName", existingCluster.Name, "clusterNamespace", existingCluster.Namespace)
+					if err := r.PlatformCluster.Client().Patch(ctx, existingCluster, client.MergeFrom(oldCluster)); err != nil {
+						rr.ReconcileError = errutils.WithReason(fmt.Errorf("error patching Cluster '%s/%s' to add missing or outdated metadata annotations/labels: %w", existingCluster.Namespace, existingCluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+						return rr
+					}
+				}
+			}
 			return rr
 		} else if !apierrors.IsNotFound(err) {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error checking whether cluster '%s/%s' exists: %w", existingCluster.Namespace, existingCluster.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
@@ -637,6 +662,25 @@ func (r *ClusterScheduler) initializeNewCluster(ctx context.Context, cr *cluster
 		}
 	}
 	cluster.SetAnnotations(cDef.Template.Annotations)
+	if cDef.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_EXCLUSIVE {
+		// propagate metadata annotations/labels for exclusive clusters
+		if cluster.Labels == nil {
+			cluster.Labels = make(map[string]string, len(cr.Labels))
+		}
+		for k, v := range cr.Labels {
+			if strings.HasPrefix(k, apiconst.MetadataAnnotationLabelPrefix) {
+				cluster.Labels[k] = v
+			}
+		}
+		if cluster.Annotations == nil {
+			cluster.Annotations = make(map[string]string, len(cr.Annotations))
+		}
+		for k, v := range cr.Annotations {
+			if strings.HasPrefix(k, apiconst.MetadataAnnotationLabelPrefix) {
+				cluster.Annotations[k] = v
+			}
+		}
+	}
 	cluster.Spec = *cDef.Template.Spec.DeepCopy()
 
 	// set purpose, if not set
