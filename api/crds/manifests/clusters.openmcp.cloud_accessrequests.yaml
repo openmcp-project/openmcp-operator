@@ -198,6 +198,11 @@ spec:
                       It is strongly recommended to set the name field so that the created (Cluster)Roles can be referenced in the RoleBindings field.
                     items:
                       properties:
+                        disableAutomaticNamespaceCreation:
+                          description: |-
+                            DisableAutomaticNamespaceCreation controls whether the target namespace is auto-created when Namespace is set and does not exist.
+                            Defaults to false.
+                          type: boolean
                         name:
                           description: |-
                             Name is an optional name for the (Cluster)Role that will be created for the requested permissions.
@@ -208,7 +213,7 @@ spec:
                           description: |-
                             Namespace is the namespace for which the permissions are requested.
                             If empty, this will result in a ClusterRole, otherwise in a Role in the respective namespace.
-                            Note that for a Role, the namespace needs to either exist or a permission to create it must be included in the requested permissions (it will be created automatically then), otherwise the request will be rejected.
+                            By default, the namespace will be created automatically if it does not exist unless DisableAutomaticNamespaceCreation is set to true.
                           type: string
                         rules:
                           description: Rules are the requested RBAC rules.
@@ -314,6 +319,11 @@ spec:
                       The created serviceaccount will be bound to the created Roles and ClusterRoles.
                     items:
                       properties:
+                        disableAutomaticNamespaceCreation:
+                          description: |-
+                            DisableAutomaticNamespaceCreation controls whether the target namespace is auto-created when Namespace is set and does not exist.
+                            Defaults to false.
+                          type: boolean
                         name:
                           description: |-
                             Name is an optional name for the (Cluster)Role that will be created for the requested permissions.
@@ -324,7 +334,7 @@ spec:
                           description: |-
                             Namespace is the namespace for which the permissions are requested.
                             If empty, this will result in a ClusterRole, otherwise in a Role in the respective namespace.
-                            Note that for a Role, the namespace needs to either exist or a permission to create it must be included in the requested permissions (it will be created automatically then), otherwise the request will be rejected.
+                            By default, the namespace will be created automatically if it does not exist unless DisableAutomaticNamespaceCreation is set to true.
                           type: string
                         rules:
                           description: Rules are the requested RBAC rules.
