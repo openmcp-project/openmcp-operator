@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/fluxcd/helm-controller/api v1.5.5
-	github.com/fluxcd/pkg/apis/kustomize v1.18.0
+	github.com/fluxcd/pkg/apis/kustomize v1.19.0
 	github.com/fluxcd/source-controller/api v1.8.5
 	github.com/openmcp-project/controller-utils v0.29.0
 	k8s.io/api v0.36.1
