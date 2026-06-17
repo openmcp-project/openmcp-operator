@@ -3,6 +3,7 @@ package controlplane
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/events"
-	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -251,8 +251,27 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 	}
 	createCon(corev2alpha1.ConditionMeta, metav1.ConditionTrue, "", "")
 
+	metadataLabels := map[string]string{
+		apiconst.MetadataAnnotationLabelPrefix + "cp-name":      mcp.Name,
+		apiconst.MetadataAnnotationLabelPrefix + "cp-namespace": mcp.Namespace,
+	}
+	// try to fetch the CP's namespace to identify project and workspace, if any
+	cpNs := &corev1.Namespace{}
+	cpNs.Name = mcp.Namespace
+	if err := r.OnboardingCluster.Client().Get(ctx, client.ObjectKeyFromObject(cpNs), cpNs); err != nil {
+		// this is not critical, so just log the error and ignore it
+		log.Error(err, "Failed to get MCP namespace to fetch project and workspace labels", "namespace", mcp.Namespace)
+	} else {
+		// the hard-coded strings are ugly, but we don't want a dependency on the project-workspace operator in here
+		if project, ok := cpNs.Labels["core.openmcp.cloud/project"]; ok {
+			metadataLabels[apiconst.MetadataAnnotationLabelPrefix+"project"] = project
+		}
+		if workspace, ok := cpNs.Labels["core.openmcp.cloud/workspace"]; ok {
+			metadataLabels[apiconst.MetadataAnnotationLabelPrefix+"workspace"] = workspace
+		}
+	}
+
 	// ensure that the ClusterRequest exists
-	// since ClusterRequests are basically immutable, updating them is not required
 	cr := &clustersv1alpha1.ClusterRequest{}
 	cr.Name = mcp.Name
 	cr.Namespace = platformNamespace
@@ -271,9 +290,10 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 
 		log.Info("ClusterRequest not found, creating it", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "purpose", purpose)
 		cr.Labels = mcpLabels
+		maps.Copy(cr.Labels, metadataLabels)
 		cr.Spec = clustersv1alpha1.ClusterRequestSpec{
 			Purpose:                purpose,
-			WaitForClusterDeletion: ptr.To(true),
+			WaitForClusterDeletion: new(true),
 		}
 		if err := r.PlatformCluster.Client().Create(ctx, cr); err != nil {
 			rr.ReconcileError = errutils.WithReason(fmt.Errorf("error creating ClusterRequest '%s/%s': %w", cr.Namespace, cr.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
@@ -282,6 +302,25 @@ func (r *ManagedControlPlaneReconciler) handleCreateOrUpdate(ctx context.Context
 		}
 	} else {
 		log.Debug("ClusterRequest found", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace, "configuredPurpose", purpose, "purposeInClusterRequest", cr.Spec.Purpose)
+
+		// check if the metadata labels need to be updated
+		// this should not really happen, unless the CP's namespace could not be fetched during the initial creation
+		// The spec of the ClusterRequest is basically immutable, updating it is not possible.
+		update := false
+		for k, expectedValue := range metadataLabels {
+			if cr.Labels[k] != expectedValue {
+				update = true
+				cr.Labels[k] = expectedValue
+			}
+		}
+		if update {
+			log.Info("Updating ClusterRequest to add missing or outdated metadata labels", "clusterRequestName", cr.Name, "clusterRequestNamespace", cr.Namespace)
+			if err := r.PlatformCluster.Client().Update(ctx, cr); err != nil {
+				rr.ReconcileError = errutils.WithReason(fmt.Errorf("error updating ClusterRequest '%s/%s' to add missing or outdated metadata labels: %w", cr.Namespace, cr.Name, err), cconst.ReasonPlatformClusterInteractionProblem)
+				createCon(corev2alpha1.ConditionClusterRequestReady, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+				return rr
+			}
+		}
 	}
 
 	// check if the ClusterRequest is ready
@@ -365,7 +404,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 			*agg.Key = append(*agg.Key, service)
 			agg.Value += len(resources)
 			return agg
-		}, pairs.New(ptr.To([]string{}), 0))
+		}, pairs.New(new([]string{}), 0))
 		log.Info("Waiting for service resources to be deleted", "services", strings.Join(*serviceResourceCount.Key, ", "), "remainingResourcesCount", serviceResourceCount.Value)
 		msg := strings.Builder{}
 		msg.WriteString("Waiting for the following service resources to be deleted: ")

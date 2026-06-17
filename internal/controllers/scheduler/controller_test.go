@@ -22,6 +22,7 @@ import (
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
+	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
@@ -594,6 +595,47 @@ var _ = Describe("Scheduler", func() {
 		Expect(newCluster.Name).To(Equal(req.Status.Cluster.Name))
 		Expect(newCluster.Namespace).To(Equal(clusterNamespace))
 		Expect(newCluster.Name).To(Equal(cluster.Name), "Recreated cluster should have the same name")
+	})
+
+	It("should propagate metadata annotations/labels from ClusterRequests to exclusive Clusters but not shared Clusters", func() {
+		env, _ := defaultTestSetup("testdata", "test-06")
+
+		// exclusive cluster should inherit the metadata annotations/labels
+		reqEx := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("exclusive", "foo"), reqEx)).To(Succeed())
+		Expect(reqEx.Status.Cluster).To(BeNil())
+
+		env.ShouldReconcile(testutils.RequestFromObject(reqEx))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(reqEx), reqEx)).To(Succeed())
+		Expect(reqEx.Status.Cluster).ToNot(BeNil())
+		clusterEx := &clustersv1alpha1.Cluster{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(reqEx.Status.Cluster.Name, reqEx.Status.Cluster.Namespace), clusterEx)).To(Succeed())
+		Expect(clusterEx.Annotations).To(HaveKeyWithValue(apiconst.MetadataAnnotationLabelPrefix+"annotation", "foo"))
+		Expect(clusterEx.Annotations).To(HaveKeyWithValue(apiconst.MetadataAnnotationLabelPrefix+"annotation2", "foobar"))
+		Expect(clusterEx.Annotations).ToNot(HaveKey("foo.bar.baz/propagate"))
+		Expect(clusterEx.Labels).To(HaveKeyWithValue(apiconst.MetadataAnnotationLabelPrefix+"label", "bar"))
+		Expect(clusterEx.Labels).To(HaveKeyWithValue(apiconst.MetadataAnnotationLabelPrefix+"label2", "baz"))
+		Expect(clusterEx.Labels).ToNot(HaveKey("foo.bar.baz/propagate"))
+
+		// shared cluster should not inherit the metadata annotations/labels
+		reqSh := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("shared", "foo"), reqSh)).To(Succeed())
+		Expect(reqSh.Status.Cluster).To(BeNil())
+
+		env.ShouldReconcile(testutils.RequestFromObject(reqSh))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(reqSh), reqSh)).To(Succeed())
+		Expect(reqSh.Status.Cluster).ToNot(BeNil())
+		clusterSh := &clustersv1alpha1.Cluster{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(reqSh.Status.Cluster.Name, reqSh.Status.Cluster.Namespace), clusterSh)).To(Succeed())
+		Expect(clusterSh.Annotations).ToNot(HaveKey(ContainSubstring(apiconst.MetadataAnnotationLabelPrefix)))
+		Expect(clusterSh.Labels).ToNot(HaveKey(ContainSubstring(apiconst.MetadataAnnotationLabelPrefix)))
+
+		// updating the labels on the request should update them on the exclusive cluster
+		reqEx.Labels[apiconst.MetadataAnnotationLabelPrefix+"new"] = "newvalue"
+		Expect(env.Client().Update(env.Ctx, reqEx)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(reqEx))
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(reqEx.Status.Cluster.Name, reqEx.Status.Cluster.Namespace), clusterEx)).To(Succeed())
+		Expect(clusterEx.Labels).To(HaveKeyWithValue(apiconst.MetadataAnnotationLabelPrefix+"new", "newvalue"))
 	})
 
 })
