@@ -43,10 +43,14 @@ type Reconciler interface {
 	WithMCPPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler
 	// WithMCPRoleRefs sets the RoleRefs for the MCP AccessRequest.
 	WithMCPRoleRefs(roleRefs []commonapi.RoleRef) Reconciler
+	// WithWorkloadTokenConfigGenerator
+	WithMCPTokenAccessGenerator(f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)) Reconciler
 	// WithWorkloadPermissions sets the permissions for the Workload AccessRequest.
 	WithWorkloadPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler
 	// WithWorkloadRoleRefs sets the RoleRefs for the Workload AccessRequest.
 	WithWorkloadRoleRefs(roleRefs []commonapi.RoleRef) Reconciler
+	// WithWorkloadTokenAccessGenerator
+	WithWorkloadTokenAccessGenerator(f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)) Reconciler
 	// WithMCPScheme sets the scheme for the MCP Kubernetes client.
 	WithMCPScheme(scheme *runtime.Scheme) Reconciler
 	// WithWorkloadScheme sets the scheme for the Workload Kubernetes client.
@@ -58,15 +62,15 @@ type Reconciler interface {
 	// MCPCluster creates a Cluster for the MCP AccessRequest.
 	// This function will only be successful if the MCP AccessRequest is granted and Reconcile returned without an error
 	// and a reconcile.Result with no RequeueAfter value.
-	MCPCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error)
+	MCPCluster(ctx context.Context, request reconcile.Request, additionalData ...any) (*clusters.Cluster, error)
 	// MCPAccessRequest returns the AccessRequest for the MCP cluster.
-	MCPAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error)
+	MCPAccessRequest(ctx context.Context, request reconcile.Request, additionalData ...any) (*clustersv1alpha1.AccessRequest, error)
 	// WorkloadCluster creates a Cluster for the Workload AccessRequest.
 	// This function will only be successful if the Workload AccessRequest is granted and Reconcile returned without an error
 	// and a reconcile.Result with no RequeueAfter value.
-	WorkloadCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error)
+	WorkloadCluster(ctx context.Context, request reconcile.Request, additionalData ...any) (*clusters.Cluster, error)
 	// WorkloadAccessRequest returns the AccessRequest for the Workload cluster.
-	WorkloadAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error)
+	WorkloadAccessRequest(ctx context.Context, request reconcile.Request, additionalData ...any) (*clustersv1alpha1.AccessRequest, error)
 
 	// Reconcile creates the ClusterRequests and AccessRequests for the MCP and Workload clusters based on the reconciled object.
 	// This function should be called during all reconciliations of the reconciled object.
@@ -75,7 +79,7 @@ type Reconciler interface {
 	// It returns a reconcile.Result and an error if the reconciliation failed.
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
-	Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error)
+	Reconcile(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error)
 	// ReconcileDelete deletes the AccessRequests and ClusterRequests for the MCP and Workload clusters based on the reconciled object.
 	// This function should be called during the deletion of the reconciled object.
 	// ctx is the context for the reconciliation.
@@ -83,18 +87,20 @@ type Reconciler interface {
 	// It returns a reconcile.Result and an error if the reconciliation failed.
 	// The reconcile.Result may contain a RequeueAfter value to indicate that the reconciliation should be retried after a certain duration.
 	// The duration is set by the WithRetryInterval method.
-	ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error)
+	ReconcileDelete(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error)
 }
 
 type reconcilerImpl struct {
-	internal            advanced.ClusterAccessReconciler
-	controllerName      string
-	mcpPermissions      []clustersv1alpha1.PermissionsRequest
-	mcpRoleRefs         []commonapi.RoleRef
-	workloadPermissions []clustersv1alpha1.PermissionsRequest
-	workloadRoleRefs    []commonapi.RoleRef
-	mcpScheme           *runtime.Scheme
-	workloadScheme      *runtime.Scheme
+	internal                     advanced.ClusterAccessReconciler
+	controllerName               string
+	mcpPermissions               []clustersv1alpha1.PermissionsRequest
+	mcpRoleRefs                  []commonapi.RoleRef
+	workloadPermissions          []clustersv1alpha1.PermissionsRequest
+	workloadRoleRefs             []commonapi.RoleRef
+	mcpScheme                    *runtime.Scheme
+	workloadScheme               *runtime.Scheme
+	mcpTokenAccessGenerator      func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)
+	workloadTokenAccessGenerator func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)
 }
 
 // NewClusterAccessReconciler creates a new ClusterAccessReconciler with the given parameters.
@@ -121,13 +127,7 @@ func NewClusterAccessReconciler(platformClusterClient client.Client, controllerN
 }
 
 func (r *reconcilerImpl) registerMCP() *reconcilerImpl {
-	token := &clustersv1alpha1.TokenConfig{
-		Permissions: make([]clustersv1alpha1.PermissionsRequest, len(r.mcpPermissions)),
-		RoleRefs:    make([]commonapi.RoleRef, len(r.mcpRoleRefs)),
-	}
-	copy(token.Permissions, r.mcpPermissions)
-	copy(token.RoleRefs, r.mcpRoleRefs)
-	r.internal.Register(advanced.ExistingClusterRequest(idMCP, suffixMCP, func(req reconcile.Request, _ ...any) (*commonapi.ObjectReference, error) {
+	builder := advanced.ExistingClusterRequest(idMCP, suffixMCP, func(req reconcile.Request, _ ...any) (*commonapi.ObjectReference, error) {
 		namespace, err := libutils.StableMCPNamespace(req.Name, req.Namespace)
 		if err != nil {
 			return nil, err
@@ -138,26 +138,44 @@ func (r *reconcilerImpl) registerMCP() *reconcilerImpl {
 		}, nil
 	}).
 		WithNamespaceGenerator(advanced.DefaultNamespaceGeneratorForMCP).
-		WithTokenAccess(token).
-		WithScheme(r.mcpScheme).
-		Build())
+		WithScheme(r.mcpScheme)
+
+	if r.mcpTokenAccessGenerator != nil {
+		builder = builder.WithTokenAccessGenerator(r.mcpTokenAccessGenerator)
+	} else {
+		token := &clustersv1alpha1.TokenConfig{
+			Permissions: make([]clustersv1alpha1.PermissionsRequest, len(r.mcpPermissions)),
+			RoleRefs:    make([]commonapi.RoleRef, len(r.mcpRoleRefs)),
+		}
+		copy(token.Permissions, r.mcpPermissions)
+		copy(token.RoleRefs, r.mcpRoleRefs)
+		builder.WithTokenAccess(token)
+	}
+
+	r.internal.Register(builder.Build())
 	return r
 }
 
 func (r *reconcilerImpl) registerWorkload() *reconcilerImpl {
-	token := &clustersv1alpha1.TokenConfig{
-		Permissions: make([]clustersv1alpha1.PermissionsRequest, len(r.workloadPermissions)),
-		RoleRefs:    make([]commonapi.RoleRef, len(r.workloadRoleRefs)),
-	}
-	copy(token.Permissions, r.workloadPermissions)
-	copy(token.RoleRefs, r.workloadRoleRefs)
-	r.internal.Register(advanced.NewClusterRequest(idWorkload, suffixWorkload, advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
+	builder := advanced.NewClusterRequest(idWorkload, suffixWorkload, advanced.StaticClusterRequestSpecGenerator(&clustersv1alpha1.ClusterRequestSpec{
 		Purpose: clustersv1alpha1.PURPOSE_WORKLOAD,
 	})).
 		WithNamespaceGenerator(advanced.DefaultNamespaceGeneratorForMCP).
-		WithTokenAccess(token).
-		WithScheme(r.workloadScheme).
-		Build())
+		WithScheme(r.workloadScheme)
+
+	if r.workloadTokenAccessGenerator != nil {
+		builder.WithTokenAccessGenerator(r.workloadTokenAccessGenerator)
+	} else {
+		token := &clustersv1alpha1.TokenConfig{
+			Permissions: make([]clustersv1alpha1.PermissionsRequest, len(r.workloadPermissions)),
+			RoleRefs:    make([]commonapi.RoleRef, len(r.workloadRoleRefs)),
+		}
+		copy(token.Permissions, r.workloadPermissions)
+		copy(token.RoleRefs, r.workloadRoleRefs)
+		builder.WithTokenAccess(token)
+	}
+
+	r.internal.Register(builder.Build())
 	return r
 }
 
@@ -196,33 +214,43 @@ func (r *reconcilerImpl) WithWorkloadScheme(scheme *runtime.Scheme) Reconciler {
 	return r.registerWorkload()
 }
 
+func (r *reconcilerImpl) WithMCPTokenAccessGenerator(generator func(reconcile.Request, ...any) (*clustersv1alpha1.TokenConfig, error)) Reconciler {
+	r.mcpTokenAccessGenerator = generator
+	return r.registerMCP()
+}
+
+func (r *reconcilerImpl) WithWorkloadTokenAccessGenerator(generator func(reconcile.Request, ...any) (*clustersv1alpha1.TokenConfig, error)) Reconciler {
+	r.workloadTokenAccessGenerator = generator
+	return r.registerWorkload()
+}
+
 func (r *reconcilerImpl) SkipWorkloadCluster() Reconciler {
 	r.internal.Unregister(idWorkload)
 	return r
 }
 
-func (r *reconcilerImpl) MCPCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
-	return r.internal.Access(ctx, request, idMCP)
+func (r *reconcilerImpl) MCPCluster(ctx context.Context, request reconcile.Request, additionalData ...any) (*clusters.Cluster, error) {
+	return r.internal.Access(ctx, request, idMCP, additionalData)
 }
 
-func (r *reconcilerImpl) MCPAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error) {
-	return r.internal.AccessRequest(ctx, request, idMCP)
+func (r *reconcilerImpl) MCPAccessRequest(ctx context.Context, request reconcile.Request, additionalData ...any) (*clustersv1alpha1.AccessRequest, error) {
+	return r.internal.AccessRequest(ctx, request, idMCP, additionalData)
 }
 
-func (r *reconcilerImpl) WorkloadCluster(ctx context.Context, request reconcile.Request) (*clusters.Cluster, error) {
-	return r.internal.Access(ctx, request, idWorkload)
+func (r *reconcilerImpl) WorkloadCluster(ctx context.Context, request reconcile.Request, additionalData ...any) (*clusters.Cluster, error) {
+	return r.internal.Access(ctx, request, idWorkload, additionalData)
 }
 
-func (r *reconcilerImpl) WorkloadAccessRequest(ctx context.Context, request reconcile.Request) (*clustersv1alpha1.AccessRequest, error) {
-	return r.internal.AccessRequest(ctx, request, idWorkload)
+func (r *reconcilerImpl) WorkloadAccessRequest(ctx context.Context, request reconcile.Request, additionalData ...any) (*clustersv1alpha1.AccessRequest, error) {
+	return r.internal.AccessRequest(ctx, request, idWorkload, additionalData)
 }
 
-func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	return r.internal.Reconcile(ctx, request)
+func (r *reconcilerImpl) Reconcile(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error) {
+	return r.internal.Reconcile(ctx, request, additionalData)
 }
 
-func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
-	return r.internal.ReconcileDelete(ctx, request)
+func (r *reconcilerImpl) ReconcileDelete(ctx context.Context, request reconcile.Request, additionalData ...any) (reconcile.Result, error) {
+	return r.internal.ReconcileDelete(ctx, request, additionalData)
 }
 
 // Manager is an interface for managing cluster access.
