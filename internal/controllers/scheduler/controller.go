@@ -10,6 +10,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -664,20 +665,14 @@ func (r *ClusterScheduler) initializeNewCluster(ctx context.Context, cr *cluster
 	cluster.SetAnnotations(cDef.Template.Annotations)
 	if cDef.Template.Spec.Tenancy == clustersv1alpha1.TENANCY_EXCLUSIVE {
 		// propagate metadata annotations/labels for exclusive clusters
-		if cluster.Labels == nil {
-			cluster.Labels = make(map[string]string, len(cr.Labels))
+		for k, v := range cr.Annotations {
+			if strings.HasPrefix(k, apiconst.MetadataAnnotationLabelPrefix) {
+				metav1.SetMetaDataAnnotation(&cluster.ObjectMeta, k, v)
+			}
 		}
 		for k, v := range cr.Labels {
 			if strings.HasPrefix(k, apiconst.MetadataAnnotationLabelPrefix) {
-				cluster.Labels[k] = v
-			}
-		}
-		if cluster.Annotations == nil {
-			cluster.Annotations = make(map[string]string, len(cr.Annotations))
-		}
-		for k, v := range cr.Annotations {
-			if strings.HasPrefix(k, apiconst.MetadataAnnotationLabelPrefix) {
-				cluster.Annotations[k] = v
+				metav1.SetMetaDataLabel(&cluster.ObjectMeta, k, v)
 			}
 		}
 	}
