@@ -36,12 +36,14 @@ func TestUtils(t *testing.T) {
 	RunSpecs(t, "ClusterAccess Test Suite")
 }
 
-func buildTestEnvironmentReconcile(testdataDir string, skipWorkloadCluster bool, objectsWitStatus ...client.Object) *testutils.Environment {
+func buildTestEnvironmentReconcile(testdataDir string, skipWorkloadCluster bool, objectsWitStatus ...client.Object) (*testutils.Environment, clusteraccess.Reconciler) {
 	scheme := runtime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(clustersv1alpha1.AddToScheme(scheme))
 
-	return testutils.NewEnvironmentBuilder().
+	var capturedReconciler clusteraccess.Reconciler
+
+	env := testutils.NewEnvironmentBuilder().
 		WithFakeClient(scheme).
 		WithInitObjectPath("testdata", testdataDir).
 		WithReconcilerConstructor(func(c client.Client) reconcile.Reconciler {
@@ -76,10 +78,13 @@ func buildTestEnvironmentReconcile(testdataDir string, skipWorkloadCluster bool,
 			if skipWorkloadCluster {
 				r.SkipWorkloadCluster()
 			}
+			capturedReconciler = r
 			return &reconcileAdapter{r: r}
 		}).
 		WithDynamicObjectsWithStatus(objectsWitStatus...).
 		Build()
+
+	return env, capturedReconciler
 }
 
 type deleteReconciler struct {
@@ -171,7 +176,7 @@ var _ = Describe("ClusterAccessReconciler", func() {
 				},
 			}
 
-			env := buildTestEnvironmentReconcile("test-01", false, accessRequestMCP, clusterRequestWorkload, accessRequestWorkload)
+			env, reconciler := buildTestEnvironmentReconcile("test-01", false, accessRequestMCP, clusterRequestWorkload, accessRequestWorkload)
 
 			// The order in which the registered accesses are handled is not deterministic, which makes the testing logic slightly complicated here.
 			Eventually(func(g Gomega) {
@@ -237,10 +242,6 @@ var _ = Describe("ClusterAccessReconciler", func() {
 				g.Expect(reconcileResult.RequeueAfter).To(BeZero(), "reconcile should finish without requeue eventually")
 			}).Should(Succeed())
 
-			reconcilerAdapter, ok := env.Reconciler().(*reconcileAdapter)
-			Expect(ok).To(BeTrue(), "reconcilerImpl should be wrapped in reconcilerAdapter")
-			reconciler := reconcilerAdapter.r
-
 			mcpCluster, err := reconciler.MCPCluster(env.Ctx, request)
 			Expect(err).ToNot(HaveOccurred(), "should not return an error when getting MCP cluster")
 			Expect(mcpCluster).ToNot(BeNil(), "should return a valid MCP cluster")
@@ -267,7 +268,7 @@ var _ = Describe("ClusterAccessReconciler", func() {
 				},
 			}
 
-			env := buildTestEnvironmentReconcile("test-01", true, accessRequestMCP)
+			env, reconciler := buildTestEnvironmentReconcile("test-01", true, accessRequestMCP)
 
 			reconcileResult = env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 			Expect(reconcileResult.RequeueAfter).ToNot(BeZero(), "reconcile should requeue after a delay")
@@ -294,10 +295,6 @@ var _ = Describe("ClusterAccessReconciler", func() {
 
 			// reconcile again to process the granted access request
 			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
-
-			reconcilerAdapter, ok := env.Reconciler().(*reconcileAdapter)
-			Expect(ok).To(BeTrue(), "reconcilerImpl should be wrapped in reconcilerAdapter")
-			reconciler := reconcilerAdapter.r
 
 			mcpCluster, err := reconciler.MCPCluster(env.Ctx, request)
 			Expect(err).ToNot(HaveOccurred(), "should not return an error when getting MCP cluster")
