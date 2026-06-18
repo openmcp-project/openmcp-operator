@@ -43,13 +43,13 @@ type Reconciler interface {
 	WithMCPPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler
 	// WithMCPRoleRefs sets the RoleRefs for the MCP AccessRequest.
 	WithMCPRoleRefs(roleRefs []commonapi.RoleRef) Reconciler
-	// WithWorkloadTokenConfigGenerator
+	// WithWorkloadTokenConfigGenerator sets the token access generator for the MCP AccessRequest.
 	WithMCPTokenAccessGenerator(f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)) Reconciler
 	// WithWorkloadPermissions sets the permissions for the Workload AccessRequest.
 	WithWorkloadPermissions(permissions []clustersv1alpha1.PermissionsRequest) Reconciler
 	// WithWorkloadRoleRefs sets the RoleRefs for the Workload AccessRequest.
 	WithWorkloadRoleRefs(roleRefs []commonapi.RoleRef) Reconciler
-	// WithWorkloadTokenAccessGenerator
+	// WithWorkloadTokenAccessGenerator sets the token access generator for the Workload AccessRequest.
 	WithWorkloadTokenAccessGenerator(f func(req reconcile.Request, additionalData ...any) (*clustersv1alpha1.TokenConfig, error)) Reconciler
 	// WithMCPScheme sets the scheme for the MCP Kubernetes client.
 	WithMCPScheme(scheme *runtime.Scheme) Reconciler
