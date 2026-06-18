@@ -76,7 +76,7 @@ func buildTestEnvironmentReconcile(testdataDir string, skipWorkloadCluster bool,
 			if skipWorkloadCluster {
 				r.SkipWorkloadCluster()
 			}
-			return r
+			return &reconcileAdapter{r: r}
 		}).
 		WithDynamicObjectsWithStatus(objectsWitStatus...).
 		Build()
@@ -88,6 +88,14 @@ type deleteReconciler struct {
 
 func (dr *deleteReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	return dr.r.ReconcileDelete(ctx, req)
+}
+
+type reconcileAdapter struct {
+	r clusteraccess.Reconciler
+}
+
+func (ra *reconcileAdapter) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	return ra.r.Reconcile(ctx, req)
 }
 
 func buildTestEnvironmentDelete(testdataDir string, skipWorkloadCluster bool, objectsWitStatus ...client.Object) *testutils.Environment {
@@ -229,8 +237,9 @@ var _ = Describe("ClusterAccessReconciler", func() {
 				g.Expect(reconcileResult.RequeueAfter).To(BeZero(), "reconcile should finish without requeue eventually")
 			}).Should(Succeed())
 
-			reconciler, err := testutils.ReconcilerAs[clusteraccess.Reconciler](env)
-			Expect(err).ToNot(HaveOccurred(), "reconcilerImpl should be of type ClusterAccessReconciler")
+			reconcilerAdapter, ok := env.Reconciler().(*reconcileAdapter)
+			Expect(ok).To(BeTrue(), "reconcilerImpl should be wrapped in reconcilerAdapter")
+			reconciler := reconcilerAdapter.r
 
 			mcpCluster, err := reconciler.MCPCluster(env.Ctx, request)
 			Expect(err).ToNot(HaveOccurred(), "should not return an error when getting MCP cluster")
@@ -286,8 +295,9 @@ var _ = Describe("ClusterAccessReconciler", func() {
 			// reconcile again to process the granted access request
 			env.ShouldReconcile(request, "reconcilerImpl should not return an error")
 
-			reconciler, err := testutils.ReconcilerAs[clusteraccess.Reconciler](env)
-			Expect(err).ToNot(HaveOccurred(), "reconcilerImpl should be of type ClusterAccessReconciler")
+			reconcilerAdapter, ok := env.Reconciler().(*reconcileAdapter)
+			Expect(ok).To(BeTrue(), "reconcilerImpl should be wrapped in reconcilerAdapter")
+			reconciler := reconcilerAdapter.r
 
 			mcpCluster, err := reconciler.MCPCluster(env.Ctx, request)
 			Expect(err).ToNot(HaveOccurred(), "should not return an error when getting MCP cluster")
