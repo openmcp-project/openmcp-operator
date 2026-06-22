@@ -13,7 +13,7 @@ require (
 	dario.cat/mergo v1.0.2
 	github.com/fluxcd/pkg/apis/kustomize v1.19.0
 	github.com/fluxcd/pkg/apis/meta v1.30.0
-	github.com/onsi/ginkgo/v2 v2.31.0
+	github.com/onsi/ginkgo/v2 v2.32.0
 	github.com/onsi/gomega v1.42.0
 	github.com/openmcp-project/controller-utils v0.30.0
 	github.com/openmcp-project/openmcp-operator/api v1.1.0
