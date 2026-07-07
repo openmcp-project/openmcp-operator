@@ -490,6 +490,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               endpoints:
                 description: Endpoints is a list of exposed Cluster endpoints.
                 items:
