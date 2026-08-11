@@ -3,40 +3,17 @@
   "extends": [
     "github>openmcp-project/.github:renovate-config"
   ],
-  "git-submodules": {
-    "enabled": true
-  },
-  "minimumReleaseAge": "0 days",
-  "gitIgnoredAuthors": [
-    "github-actions[bot]@users.noreply.github.com"
-  ],
   "packageRules": [
     {
-      "description": "Automerge submodule update",
-      "automerge": true,
+      "description": "Group fluxcd updates in a single PR",
+      "matchDatasources": [
+        "go"
+      ],
+      "groupName": "fluxcd dependencies",
+      "groupSlug": "fluxcd-dependencies",
       "matchPackageNames": [
-        "hack/common"
+        "/^github\\.com/fluxcd/"
       ]
-    },
-    {
-      "description": "Update and automerge all components from openmcp-project immediately",
-      "matchPackageNames": [
-        "github.com/openmcp-project/*"
-      ],
-      "rebaseWhen": "auto",
-      "minimumReleaseAge": "0 days",
-      "automerge": true,
-      "enabled": true
-    },
-    {
-      "description": "Group all github.com/fluxcd go packages into one PR",
-      "matchManagers": [
-        "gomod"
-      ],
-      "matchPackageNames": [
-        "github.com/fluxcd/**"
-      ],
-      "groupName": "fluxcd packages"
     }
   ]
 }
