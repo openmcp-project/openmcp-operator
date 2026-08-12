@@ -2,10 +2,11 @@ package common
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apimachinery "k8s.io/apimachinery/pkg/types"
 )
 
-// ClusterScoped can be passed into a LocalObjectReference's NamespacedName method to indicate that the object is cluster-scoped.
+// ClusterScoped can be passed into a ObjectReference's NamespacedName method to indicate that the object is cluster-scoped.
 const ClusterScoped = ""
 
 // ObjectReference is a reference to an object in any namespace.
@@ -14,6 +15,15 @@ type ObjectReference struct {
 	Name string `json:"name"`
 	// Namespace is the namespace of the object.
 	Namespace string `json:"namespace"`
+}
+
+// ObjectReferenceWithOptionalNamespace is a reference to an object in any namespace, where the namespace is optional.
+type ObjectReferenceWithOptionalNamespace struct {
+	// Name is the name of the object.
+	Name string `json:"name"`
+	// Namespace is the namespace of the object.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // LocalObjectReference is a reference to an object in the same namespace as the resource referencing it.
@@ -52,4 +62,10 @@ func (r *LocalObjectReference) NamespacedName(namespace string) apimachinery.Nam
 		Name:      r.Name,
 		Namespace: namespace,
 	}
+}
+
+// TypedObjectReference is a reference to an object - with our without namespace - including its GVK.
+type TypedObjectReference struct {
+	ObjectReferenceWithOptionalNamespace `json:",inline"`
+	metav1.GroupVersionKind              `json:",inline"`
 }
