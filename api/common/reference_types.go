@@ -2,10 +2,12 @@ package common
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apimachinery "k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// ClusterScoped can be passed into a LocalObjectReference's NamespacedName method to indicate that the object is cluster-scoped.
+// ClusterScoped can be passed into a ObjectReference's NamespacedName method to indicate that the object is cluster-scoped.
 const ClusterScoped = ""
 
 // ObjectReference is a reference to an object in any namespace.
@@ -14,6 +16,15 @@ type ObjectReference struct {
 	Name string `json:"name"`
 	// Namespace is the namespace of the object.
 	Namespace string `json:"namespace"`
+}
+
+// ObjectReferenceWithOptionalNamespace is a reference to an object in any namespace, where the namespace is optional.
+type ObjectReferenceWithOptionalNamespace struct {
+	// Name is the name of the object.
+	Name string `json:"name"`
+	// Namespace is the namespace of the object.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // LocalObjectReference is a reference to an object in the same namespace as the resource referencing it.
@@ -51,5 +62,48 @@ func (r *LocalObjectReference) NamespacedName(namespace string) apimachinery.Nam
 	return apimachinery.NamespacedName{
 		Name:      r.Name,
 		Namespace: namespace,
+	}
+}
+
+// NamespacedName returns the NamespacedName of the reference.
+// This is a convenience method to convert the reference to a NamespacedName, which can be passed into k8s client methods.
+func (r *ObjectReferenceWithOptionalNamespace) NamespacedName() apimachinery.NamespacedName {
+	return apimachinery.NamespacedName{
+		Name:      r.Name,
+		Namespace: r.Namespace,
+	}
+}
+
+// Returns <name> if the namespace is empty, otherwise <namespace>/<name>.
+func (r *ObjectReferenceWithOptionalNamespace) String() string {
+	if r.Namespace == "" {
+		return r.Name
+	}
+	return r.Namespace + "/" + r.Name
+}
+
+// TypedObjectReference is a reference to an object - with or without namespace - including its GVK.
+type TypedObjectReference struct {
+	ObjectReferenceWithOptionalNamespace `json:",inline"`
+	metav1.GroupVersionKind              `json:",inline"`
+}
+
+// ReferenceFromObject returns an ObjectReference for the given object.
+func ReferenceFromObject(obj metav1.Object) ObjectReference {
+	return ObjectReference{
+		Name:      obj.GetName(),
+		Namespace: obj.GetNamespace(),
+	}
+}
+
+// TypedReferenceFromObject returns a TypedObjectReference for the given object.
+// The object's GVK must be populated, otherwise the returned TypedObjectReference will have an empty GVK.
+func TypedReferenceFromObject(obj client.Object) TypedObjectReference {
+	return TypedObjectReference{
+		ObjectReferenceWithOptionalNamespace: ObjectReferenceWithOptionalNamespace{
+			Name:      obj.GetName(),
+			Namespace: obj.GetNamespace(),
+		},
+		GroupVersionKind: metav1.GroupVersionKind(obj.GetObjectKind().GroupVersionKind()),
 	}
 }
