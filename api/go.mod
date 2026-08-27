@@ -7,10 +7,10 @@ require (
 	github.com/fluxcd/pkg/apis/kustomize v1.20.0
 	github.com/fluxcd/source-controller/api v1.9.4
 	github.com/openmcp-project/controller-utils v0.33.0
-	k8s.io/api v0.36.3
-	k8s.io/apiextensions-apiserver v0.36.3
-	k8s.io/apimachinery v0.36.3
-	k8s.io/client-go v0.36.3
+	k8s.io/api v0.36.4
+	k8s.io/apiextensions-apiserver v0.36.4
+	k8s.io/apimachinery v0.36.4
+	k8s.io/client-go v0.36.4
 	sigs.k8s.io/controller-runtime v0.24.1
 )
 
