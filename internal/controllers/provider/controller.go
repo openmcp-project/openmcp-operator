@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/openmcp-project/controller-utils/pkg/controller"
 	"github.com/openmcp-project/controller-utils/pkg/logging"
@@ -202,7 +203,7 @@ func (r *ProviderReconciler) handleDeleteOperation(ctx context.Context, provider
 		return false, reconcile.Result{}, err
 	} else if !deleted {
 		conversionErr := status.intoProviderStatus(provider)
-		return false, reconcile.Result{Requeue: true}, conversionErr
+		return false, reconcile.Result{RequeueAfter: time.Second * 1}, conversionErr
 	}
 
 	if err = r.removeFinalizer(ctx, provider); err != nil {
