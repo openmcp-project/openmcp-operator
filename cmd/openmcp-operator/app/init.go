@@ -28,14 +28,18 @@ import (
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/helm"
 )
 
-const OpenMCPOperatorName = "openmcp-operator"
+const (
+	OpenMCPOperatorName = "openmcp-operator"
+	initCommand         = "init"
+	runCommand          = "run"
+)
 
 func NewInitCommand(po *options.PersistentOptions) *cobra.Command {
 	opts := &InitOptions{
 		PersistentOptions: po,
 	}
 	cmd := &cobra.Command{
-		Use:   "init",
+		Use:   initCommand,
 		Short: "Initialize the openMCP Operator",
 		Run: func(cmd *cobra.Command, args []string) {
 			opts.PrintRawOptions(cmd)
@@ -215,8 +219,8 @@ func (o *InitOptions) Run(ctx context.Context) error {
 			})
 			ps.Spec.ExtraVolumes = volumes
 			ps.Spec.ExtraVolumeMounts = volumeMounts
-			ps.Spec.InitCommand = []string{"mcp", "init"}
-			ps.Spec.RunCommand = []string{"mcp", "run"}
+			ps.Spec.InitCommand = []string{"mcp", initCommand}
+			ps.Spec.RunCommand = []string{"mcp", runCommand}
 			for _, cp := range configPaths {
 				ps.Spec.InitCommand = append(ps.Spec.InitCommand, "--config="+cp)
 				ps.Spec.RunCommand = append(ps.Spec.RunCommand, "--config="+cp)
@@ -270,8 +274,8 @@ func (o *InitOptions) Run(ctx context.Context) error {
 					Name: ref.Name,
 				}
 			})
-			ps.Spec.InitCommand = []string{"helm", "init"}
-			ps.Spec.RunCommand = []string{"helm", "run"}
+			ps.Spec.InitCommand = []string{"helm", initCommand}
+			ps.Spec.RunCommand = []string{"helm", runCommand}
 			ps.Spec.Verbosity = verbosity
 			ps.Spec.RunReplicas = *o.Config.HelmDeployer.PlatformService.Replicas
 			ps.Spec.TopologySpreadConstraints = o.Config.HelmDeployer.PlatformService.TopologySpreadConstraints
