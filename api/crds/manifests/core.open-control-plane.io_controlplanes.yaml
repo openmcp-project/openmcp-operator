@@ -106,21 +106,21 @@ spec:
                                     properties:
                                       apiGroup:
                                         description: |-
-                                          APIGroup holds the API group of the referenced subject.
+                                          apiGroup holds the API group of the referenced subject.
                                           Defaults to "" for ServiceAccount subjects.
                                           Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
                                         type: string
                                       kind:
                                         description: |-
-                                          Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
+                                          kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
                                           If the Authorizer does not recognized the kind value, the Authorizer should report an error.
                                         type: string
                                       name:
-                                        description: Name of the object being referenced.
+                                        description: name of the object being referenced.
                                         type: string
                                       namespace:
                                         description: |-
-                                          Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
+                                          namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
                                           the Authorizer should report an error.
                                         type: string
                                     required:
@@ -235,21 +235,21 @@ spec:
                                       properties:
                                         apiGroup:
                                           description: |-
-                                            APIGroup holds the API group of the referenced subject.
+                                            apiGroup holds the API group of the referenced subject.
                                             Defaults to "" for ServiceAccount subjects.
                                             Defaults to "rbac.authorization.k8s.io" for User and Group subjects.
                                           type: string
                                         kind:
                                           description: |-
-                                            Kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
+                                            kind of object being referenced. Values defined by this API group are "User", "Group", and "ServiceAccount".
                                             If the Authorizer does not recognized the kind value, the Authorizer should report an error.
                                           type: string
                                         name:
-                                          description: Name of the object being referenced.
+                                          description: name of the object being referenced.
                                           type: string
                                         namespace:
                                           description: |-
-                                            Namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
+                                            namespace of the referenced object.  If the object kind is non-namespace, such as "User" or "Group", and this value is not empty
                                             the Authorizer should report an error.
                                           type: string
                                       required:
@@ -325,7 +325,7 @@ spec:
                                   properties:
                                     apiGroups:
                                       description: |-
-                                        APIGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
+                                        apiGroups is the name of the APIGroup that contains the resources.  If multiple API groups are specified, any action requested against one of
                                         the enumerated resources in any API group will be allowed. "" represents the core API group and "*" represents all API groups.
                                       items:
                                         type: string
@@ -333,7 +333,7 @@ spec:
                                       x-kubernetes-list-type: atomic
                                     nonResourceURLs:
                                       description: |-
-                                        NonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
+                                        nonResourceURLs is a set of partial urls that a user should have access to.  *s are allowed, but only as the full, final step in the path
                                         Since non-resource URLs are not namespaced, this field is only applicable for ClusterRoles referenced from a ClusterRoleBinding.
                                         Rules can either apply to API resources (such as "pods" or "secrets") or non-resource URL paths (such as "/api"),  but not both.
                                       items:
@@ -341,7 +341,7 @@ spec:
                                       type: array
                                       x-kubernetes-list-type: atomic
                                     resourceNames:
-                                      description: ResourceNames is an optional white
+                                      description: resourceNames is an optional white
                                         list of names that the rule applies to.  An
                                         empty set means that everything is allowed.
                                       items:
@@ -349,14 +349,14 @@ spec:
                                       type: array
                                       x-kubernetes-list-type: atomic
                                     resources:
-                                      description: Resources is a list of resources
+                                      description: resources is a list of resources
                                         this rule applies to. '*' represents all resources.
                                       items:
                                         type: string
                                       type: array
                                       x-kubernetes-list-type: atomic
                                     verbs:
-                                      description: Verbs is a list of Verbs that apply
+                                      description: verbs is a list of Verbs that apply
                                         to ALL the ResourceKinds contained in this
                                         rule. '*' represents all verbs.
                                       items:
