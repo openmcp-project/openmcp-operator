@@ -120,6 +120,14 @@ func (m *deploymentMutator) Mutate(d *appsv1.Deployment) error {
 		},
 	}
 
+	if m.values.TracingEnabled() {
+		if d.Spec.Template.Annotations == nil {
+			d.Spec.Template.Annotations = make(map[string]string)
+		}
+		d.Spec.Template.Annotations[constants.OpenTelemetryInstrumentationAnnotation] = "controller-tracing"
+		d.Spec.Template.Annotations[constants.OpenTelemetryTargetExecutableAnnotation] = m.values.TracingTargetExecutable()
+	}
+
 	if len(m.values.deploymentSpec.TopologySpreadConstraints) > 0 {
 		for i := range d.Spec.Template.Spec.TopologySpreadConstraints {
 			labelSelector := &metav1.LabelSelector{
