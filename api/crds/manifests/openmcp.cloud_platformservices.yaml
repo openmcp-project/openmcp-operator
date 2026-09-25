@@ -2428,6 +2428,21 @@ spec:
                 x-kubernetes-list-map-keys:
                 - topologyKey
                 x-kubernetes-list-type: map
+              tracing:
+                description: Tracing configures OpenTelemetry Go auto-instrumentation
+                  for the platform service.
+                properties:
+                  enabled:
+                    default: true
+                    description: Enabled controls OpenTelemetry Go auto-instrumentation.
+                      Defaults to true.
+                    type: boolean
+                  execPath:
+                    description: |-
+                      ExecPath is the absolute path of the Go binary in the provider image.
+                      If omitted, it defaults to /platform-service-<PlatformService name>.
+                    type: string
+                type: object
               verbosity:
                 default: INFO
                 description: Verbosity is the verbosity level of the provider.

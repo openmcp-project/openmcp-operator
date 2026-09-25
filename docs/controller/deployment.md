@@ -60,6 +60,9 @@ spec:
       value: <environment-variable-value>
   verbosity: <DEBUG|INFO|ERROR>
   runReplicas: 3
+  tracing:
+    enabled: true
+    execPath: /platform-service-example
   topologySpreadConstraints:
     - maxSkew: 1
       topologyKey: topology.kubernetes.io/zone
@@ -75,5 +78,7 @@ spec:
 - The `verbosity` field specifies the logging level. Supported values are DEBUG, INFO, and ERROR. The default is INFO.
 - The `runReplicas` field specifies the number of replicas for the deployment of the provider. The default is `1`.
   If set to greater than `1`, the `--leader-elect=true` argument is automatically added to the provider's command line to enable leader election among the replicas.
-- The `topologySpreadConstraints` field specifies a list of topology spread constraints for the deployment of the provider. For more information, see the [Kubernetes documentation](https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/).
+- For `PlatformService` resources, `tracing.enabled` opts into OpenTelemetry Go auto-instrumentation and defaults to `true`. The generated pod requests the namespace-local `controller-tracing` Instrumentation. `tracing.execPath` sets its target binary; when omitted it follows `/platform-service-<PlatformService name>`.
+  The `Instrumentation` resource owns mTLS configuration: its referenced Secret is mounted into injected pods by Kubernetes.
+- The `topologySpreadConstraints` field specifies a list of topology spread constraints for the deployment of the provider. For more information, see the [Kubernetes documentation](https://kubernetes.io/docs/concepts/workloads/pod-topology-spread-constraints/).
   The label selectors for the topology spread constraints are automatically set to match the pods of the deployment.
