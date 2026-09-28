@@ -61,6 +61,11 @@ const (
 	// MetricsPathAnnotation defines the metrics path annotation
 	MetricsPathAnnotation = MetricsPrometheusAnnotation + "/path"
 
+	// OpenTelemetryInstrumentationAnnotation requests Go auto-instrumentation.
+	OpenTelemetryInstrumentationAnnotation = "instrumentation.opentelemetry.io/inject-go"
+	// OpenTelemetryTargetExecutableAnnotation identifies the Go binary to instrument.
+	OpenTelemetryTargetExecutableAnnotation = "instrumentation.opentelemetry.io/otel-go-auto-target-exe"
+
 	// MetadataAnnotationLabelPrefix is a prefix for metadata annotations/labels.
 	// Annotations and labels with this prefix are propagated between resources in some cases, e.g. from ClusterRequests to the corresponding Cluster resources (for exclusive clusters only).
 	MetadataAnnotationLabelPrefix = "metadata." + OpenControlPlaneGroup + "/"

@@ -27,6 +27,28 @@ import (
 // PlatformServiceSpec defines the desired state of PlatformService.
 type PlatformServiceSpec struct {
 	DeploymentSpec `json:",inline"`
+
+	// Tracing configures OpenTelemetry Go auto-instrumentation for the platform service.
+	// +optional
+	Tracing *TracingConfiguration `json:"tracing,omitempty"`
+}
+
+// TracingConfiguration configures OpenTelemetry Go auto-instrumentation.
+type TracingConfiguration struct {
+	// Enabled controls OpenTelemetry Go auto-instrumentation. Defaults to true.
+	// +optional
+	// +kubebuilder:default=true
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// ExecPath is the absolute path of the Go binary in the provider image.
+	// If omitted, it defaults to /platform-service-<PlatformService name>.
+	// +optional
+	ExecPath string `json:"execPath,omitempty"`
+}
+
+// IsEnabled returns whether tracing is enabled. Omitted configuration defaults to enabled.
+func (c *TracingConfiguration) IsEnabled() bool {
+	return c == nil || c.Enabled == nil || *c.Enabled
 }
 
 // PlatformServiceStatus defines the observed state of PlatformService.

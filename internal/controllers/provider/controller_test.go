@@ -104,6 +104,18 @@ var _ = Describe("Deployment Controller", func() {
 			Expect(deploy.Spec.Template.Spec.Containers[0].Env[0].Name).To(Equal("NAME"), "Deployment container environment variable name should match the provider spec")
 			Expect(deploy.Spec.Template.Spec.Containers[0].Env[0].Value).To(Equal("test-name"), "Deployment container environment variable value should match the provider spec")
 			Expect(deploy.Spec.Replicas).To(Equal(&deploymentSpec.RunReplicas), "Deployment replicas should match the provider spec")
+			if gvk == v1alpha1.PlatformServiceGKV() {
+				if req.Name == "platform-service-test-07" {
+					Expect(deploy.Spec.Template.Annotations).NotTo(HaveKey(constants.OpenTelemetryInstrumentationAnnotation))
+				} else {
+					execPath := "/platform-service-" + req.Name
+					if req.Name == "platform-service-test-03" {
+						execPath = "/custom-platform-service"
+					}
+					Expect(deploy.Spec.Template.Annotations).To(HaveKeyWithValue(constants.OpenTelemetryInstrumentationAnnotation, "controller-tracing"))
+					Expect(deploy.Spec.Template.Annotations).To(HaveKeyWithValue(constants.OpenTelemetryTargetExecutableAnnotation, execPath))
+				}
+			}
 
 			if deploymentSpec.RunReplicas > 1 {
 				Expect(deploy.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--leader-elect=true"), "Deployment container args should contain the leader-elect flag")
@@ -186,6 +198,12 @@ var _ = Describe("Deployment Controller", func() {
 		It("should reconcile a platform service", func() {
 			env := buildTestEnvironment("test-03", v1alpha1.PlatformServiceGKV())
 			req := testutils.RequestFromStrings("platform-service-test-03")
+			reconcileProvider(env, req, v1alpha1.PlatformServiceGKV())
+		})
+
+		It("should reconcile a platform service with tracing disabled", func() {
+			env := buildTestEnvironment("test-07", v1alpha1.PlatformServiceGKV())
+			req := testutils.RequestFromStrings("platform-service-test-07")
 			reconcileProvider(env, req, v1alpha1.PlatformServiceGKV())
 		})
 

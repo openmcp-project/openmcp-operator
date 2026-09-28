@@ -6,6 +6,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/openmcp-project/openmcp-operator/api/constants"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
@@ -17,13 +18,20 @@ const (
 )
 
 func NewValues(provider *unstructured.Unstructured, deploymentSpec *v1alpha1.DeploymentSpec, environment, namespace string) *Values {
-	return &Values{
+	values := &Values{
 		provider:       provider,
 		deploymentSpec: deploymentSpec,
 		environment:    environment,
 		namespace:      namespace,
 		providerPrefix: getProviderPrefix(provider),
 	}
+	if provider.GroupVersionKind().Kind == v1alpha1.PlatformServiceGKV().Kind {
+		platformService := &v1alpha1.PlatformService{}
+		if runtime.DefaultUnstructuredConverter.FromUnstructured(provider.Object, platformService) == nil {
+			values.tracing = platformService.Spec.Tracing
+		}
+	}
+	return values
 }
 
 type Values struct {
@@ -33,6 +41,7 @@ type Values struct {
 	namespace            string
 	providerPrefix       string
 	webhookTLSSecretName string
+	tracing              *v1alpha1.TracingConfiguration
 }
 
 func (v *Values) Environment() string {
@@ -108,6 +117,17 @@ func (v *Values) LabelsController() map[string]string {
 
 func (v *Values) Verbosity() string {
 	return v.deploymentSpec.Verbosity
+}
+
+func (v *Values) TracingEnabled() bool {
+	return v.provider.GroupVersionKind().Kind == v1alpha1.PlatformServiceGKV().Kind && v.tracing.IsEnabled()
+}
+
+func (v *Values) TracingTargetExecutable() string {
+	if v.tracing != nil && v.tracing.ExecPath != "" {
+		return v.tracing.ExecPath
+	}
+	return "/platform-service-" + v.provider.GetName()
 }
 
 // EnvironmentVariables returns the environment variables set in the provider resource, enriched by the following:
