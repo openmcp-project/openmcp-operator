@@ -20,6 +20,7 @@ import (
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
+	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess/transport"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
 
@@ -83,6 +84,8 @@ func accessFromAccessRequest(ctx context.Context, platformClusterClient client.C
 		if err != nil {
 			return nil, fmt.Errorf("failed to create rest config from kubeconfig bytes: %w", err)
 		}
+
+		config.WrapTransport = transport.WrapFunc(id)
 
 		c = clusters.New(id).WithRESTConfig(config)
 
