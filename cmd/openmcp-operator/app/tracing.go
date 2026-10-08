@@ -1,3 +1,5 @@
+// tracing.go initialises the global OTel TracerProvider for the operator.
+
 package app
 
 import (
