@@ -261,6 +261,13 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	setupLog.Info("Environment", "value", o.Environment)
 	ctx = logging.NewContext(ctx, setupLog)
 
+	shutdownTracing, tracingErr := setupTracing(ctx, "openmcp-operator", "")
+	if tracingErr != nil {
+		setupLog.Info("Tracing not available", "reason", tracingErr.Error())
+	} else {
+		defer func() { _ = shutdownTracing(ctx) }()
+	}
+
 	webhookServer := webhook.NewServer(webhook.Options{
 		TLSOpts: o.WebhookTLSOpts,
 	})

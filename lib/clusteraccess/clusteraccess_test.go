@@ -492,6 +492,13 @@ var _ = Describe("ClusterAccessManager", func() {
 
 		access, err := manager.Access(ctx, clusterName, scheme)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(access.RESTConfig()).To(Equal(cluster.RESTConfig()))
+		// WrapTransport is a function — two calls produce different closure addresses but
+		// identical behaviour; compare the fields that carry identity (Host, token, TLS).
+		wantCfg := cluster.RESTConfig()
+		gotCfg := access.RESTConfig()
+		Expect(gotCfg.Host).To(Equal(wantCfg.Host))
+		Expect(gotCfg.BearerToken).To(Equal(wantCfg.BearerToken))
+		Expect(gotCfg.TLSClientConfig).To(Equal(wantCfg.TLSClientConfig))
+		Expect(gotCfg.WrapTransport).ToNot(BeNil(), "tracing WrapTransport should be set")
 	})
 })
