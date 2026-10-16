@@ -17,7 +17,7 @@ require (
 	github.com/fluxcd/source-controller/api v1.9.6
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.44.0
-	github.com/openmcp-project/controller-utils v0.33.2
+	github.com/openmcp-project/controller-utils v0.33.3-0.20261016101738-a500435b2fad
 	github.com/openmcp-project/openmcp-operator/api v1.4.2
 	github.com/openmcp-project/openmcp-operator/lib v1.4.2
 	github.com/spf13/cobra v1.10.2
