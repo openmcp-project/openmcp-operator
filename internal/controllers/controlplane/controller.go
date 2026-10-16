@@ -392,8 +392,30 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	}
 	createCon := ctrlutils.GenerateCreateConditionFunc(&rr)
 
+	// check for force deletion
+	forceDelete := false
+	if val, ok := mcp.Annotations[apiconst.ForceDeleteAnnotation]; ok {
+		if val == "true" {
+			forceDelete = true
+		} else {
+			d, err := time.ParseDuration(val)
+			if err != nil {
+				log.Error(err, "Invalid value for force-delete annotation, should be either 'true' or a duration", "annotation", apiconst.ForceDeleteAnnotation, "value", val)
+			} else {
+				forceDeleteAt := mcp.DeletionTimestamp.Add(d)
+				now := time.Now()
+				if now.Equal(forceDeleteAt) || now.Before(forceDeleteAt) {
+					forceDelete = true
+				} else {
+					// ensure that we reconcile when the force delete time is reached
+					rr.Result.RequeueAfter = time.Until(forceDeleteAt)
+				}
+			}
+		}
+	}
+
 	// delete services
-	remainingResources, rerr := r.deleteDependingServices(ctx, mcp)
+	remainingResources, rerr := r.deleteDependingServices(ctx, mcp, forceDelete)
 	if rerr != nil {
 		rr.ReconcileError = rerr
 		createCon(corev2alpha1.ConditionAllServicesDeleted, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())

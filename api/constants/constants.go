@@ -69,4 +69,7 @@ const (
 	// MetadataAnnotationLabelPrefix is a prefix for metadata annotations/labels.
 	// Annotations and labels with this prefix are propagated between resources in some cases, e.g. from ClusterRequests to the corresponding Cluster resources (for exclusive clusters only).
 	MetadataAnnotationLabelPrefix = "metadata." + OpenControlPlaneGroup + "/"
+
+	// ForceDeleteAnnotation can be used to enforce the deletion of a ControlPlane.
+	ForceDeleteAnnotation = OpenControlPlaneGroup + "/force-delete"
 )
