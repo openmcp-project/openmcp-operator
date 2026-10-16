@@ -153,6 +153,7 @@ func (r *ManagedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager) error
 				ctrlutils.DeletionTimestampChangedPredicate{},
 				ctrlutils.GotAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueReconcile),
 				ctrlutils.LostAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore),
+				ctrlutils.AnnotationValueChangedPredicate(apiconst.ForceDeleteAnnotation),
 			),
 			predicate.Not(
 				ctrlutils.HasAnnotationPredicate(apiconst.OperationAnnotation, apiconst.OperationAnnotationValueIgnore),
