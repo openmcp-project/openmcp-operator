@@ -1,0 +1,12 @@
+apiVersion: core.open-control-plane.io/v2alpha1
+kind: ControlPlane
+metadata:
+  name: mcp-after
+  namespace: test
+  deletionTimestamp: "2026-01-01T00:00:00Z"
+  finalizers:
+  - core.openmcp.cloud/mcp
+  - request.clusters.openmcp.cloud/mcp-after
+  annotations:
+    open-control-plane.io/force-delete: 5m
+spec: {}
