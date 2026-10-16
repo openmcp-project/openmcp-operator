@@ -1039,4 +1039,210 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		Expect(updatedRequeueDuration).ToNot(Equal(initialRequeueDuration), "Requeue duration should change after ConfigMap update")
 	})
 
+	It("should remove service resource finalizers and complete deletion when force-delete annotation is set", func() {
+		env, cfg := defaultTestSetup("testdata", "test-04")
+
+		mcp := &corev2alpha1.ControlPlane{}
+		mcp.SetName("mcp-01")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("=== READY ===")
+
+		// first reconcile: adds finalizers, creates namespace and ClusterRequest, waits for ClusterRequest
+		By("first MCP reconciliation")
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Finalizers).To(ContainElement(corev2alpha1.MCPFinalizer))
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		By("fake: ClusterRequest and Cluster readiness")
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{cfg.MCPClusterPurpose}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{
+			{
+				Type:               "Ready",
+				Status:             metav1.ConditionTrue,
+				Reason:             "TestReason",
+				Message:            "Cluster is ready",
+				LastTransitionTime: metav1.Now(),
+				ObservedGeneration: 1,
+			},
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{
+			Name:      cluster.Name,
+			Namespace: cluster.Namespace,
+		}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		// second reconcile: MCP becomes ready (no AccessRequests needed since spec has no IAM config)
+		By("second MCP reconciliation — MCP reaches ready state")
+		res := env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(res.RequeueAfter).To(BeNumerically("~", int64(cfg.ReconcileMCPEveryXDays)*24*int64(time.Hour), int64(time.Second)))
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionClusterRequestReady).
+				WithStatus(metav1.ConditionTrue)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionAllAccessReady).
+				WithStatus(metav1.ConditionTrue)),
+		))
+
+		By("=== DELETE ===")
+
+		serviceResource := &corev1.ConfigMap{}
+		serviceResource.SetName(mcp.Name)
+		serviceResource.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(Succeed())
+		Expect(serviceResource.Finalizers).To(ContainElement("dummy"))
+
+		By("triggering deletion of the ControlPlane")
+		Expect(env.Client(onboarding).Delete(env.Ctx, mcp)).To(Succeed())
+
+		// first delete reconcile: service resource gets a deletion timestamp but is stuck on its finalizer
+		By("first reconciliation after delete — stuck on service resource finalizer")
+		res = env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(res.RequeueAfter).To(BeNumerically(">", 0))
+		Expect(res.RequeueAfter).To(BeNumerically("<", 1*time.Minute))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(Succeed())
+		Expect(serviceResource.GetDeletionTimestamp().IsZero()).To(BeFalse())
+		Expect(serviceResource.Finalizers).To(ContainElement("dummy"))
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionAllServicesDeleted).
+				WithStatus(metav1.ConditionFalse).
+				WithReason(cconst.ReasonWaitingForServiceDeletion)),
+		))
+
+		By("adding the force-delete annotation to the ControlPlane")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		if mcp.Annotations == nil {
+			mcp.Annotations = map[string]string{}
+		}
+		mcp.Annotations[apiconst.ForceDeleteAnnotation] = "true"
+		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
+
+		// second delete reconcile: force-delete patches the service resource finalizer off;
+		// the fake client immediately garbage-collects the resource once finalizers are cleared,
+		// but the controller still observed it as present during this reconcile and requeues
+		By("second reconciliation after delete — service resource finalizer removed")
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+
+		// remaining delete reconciles: controller proceeds through ClusterRequest and namespace deletion;
+		// each phase needs one reconcile to trigger deletion and another to confirm it is gone;
+		// there are no external finalizers so no manual intervention is needed
+		By("remaining reconciles to drive MCP to full deletion")
+		for range 5 {
+			if err := env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp); err != nil {
+				Expect(err).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+				break
+			}
+			env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		}
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+	})
+
+	It("should not trigger force-deletion before deletion timestamp + annotated duration has passed", func() {
+		env, cfg := defaultTestSetup("testdata", "test-05")
+
+		// bring mcp-before to ready state so it has finalizers
+		mcp := &corev2alpha1.ControlPlane{}
+		mcp.SetName("mcp-before")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{cfg.MCPClusterPurpose}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{{
+			Type: "Ready", Status: metav1.ConditionTrue, Reason: "TestReason",
+			Message: "Cluster is ready", LastTransitionTime: metav1.Now(), ObservedGeneration: 1,
+		}}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{Name: cluster.Name, Namespace: cluster.Namespace}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		// delete the MCP — deletion timestamp will be close to time.Now(), well within the 5m window
+		Expect(env.Client(onboarding).Delete(env.Ctx, mcp)).To(Succeed())
+
+		// add the force-delete annotation with a 5m duration before the first delete reconcile
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		if mcp.Annotations == nil {
+			mcp.Annotations = map[string]string{}
+		}
+		mcp.Annotations[apiconst.ForceDeleteAnnotation] = "5m"
+		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
+
+		serviceResource := &corev1.ConfigMap{}
+		serviceResource.SetName(mcp.Name)
+		serviceResource.SetNamespace(mcp.Namespace)
+
+		// reconcile: the 5m window has not elapsed (deletion timestamp ≈ now), so force-delete must not trigger;
+		// the service resource should be marked for deletion but still retain its finalizer
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(Succeed())
+		Expect(serviceResource.GetDeletionTimestamp().IsZero()).To(BeFalse())
+		Expect(serviceResource.Finalizers).To(ContainElement("dummy"))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionAllServicesDeleted).
+				WithStatus(metav1.ConditionFalse).
+				WithReason(cconst.ReasonWaitingForServiceDeletion)),
+		))
+	})
+
+	It("should trigger force-deletion after deletion timestamp + annotated duration has passed", func() {
+		env, _ := defaultTestSetup("testdata", "test-05")
+
+		// mcp-after is pre-loaded with a deletion timestamp from 2026-01-01, well beyond the 5m window
+		mcp := &corev2alpha1.ControlPlane{}
+		mcp.SetName("mcp-after")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.GetDeletionTimestamp().IsZero()).To(BeFalse())
+
+		serviceResource := &corev1.ConfigMap{}
+		serviceResource.SetName(mcp.Name)
+		serviceResource.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(Succeed())
+		Expect(serviceResource.Finalizers).To(ContainElement("dummy"))
+
+		// reconcile: the 5m window has long elapsed, so force-delete must trigger and strip the finalizer
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+	})
+
 })

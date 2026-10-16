@@ -405,7 +405,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 			} else {
 				forceDeleteAt := mcp.DeletionTimestamp.Add(d)
 				now := time.Now()
-				if now.Equal(forceDeleteAt) || now.Before(forceDeleteAt) {
+				if now.Equal(forceDeleteAt) || now.After(forceDeleteAt) {
 					forceDelete = true
 				} else {
 					// ensure that we reconcile when the force delete time is reached
