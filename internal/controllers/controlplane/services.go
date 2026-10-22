@@ -19,7 +19,7 @@ import (
 // deleteDependingServices lists all service providers and checks for all of their registered service resources whether there exists one for the given MCP. If so, it triggers their deletion.
 // It returns a set of service provider names for which still resources exist (should be in deletion by the time this function returns) and the total number of resources that are still left.
 // Deletion of the MCP should wait until the set is empty and the count is zero.
-func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Context, mcp *corev2alpha1.ControlPlane) (map[string][]*unstructured.Unstructured, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Context, mcp *corev2alpha1.ControlPlane, forceDelete bool) (map[string][]*unstructured.Unstructured, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// delete depending service resources, if any
@@ -76,6 +76,14 @@ func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Cont
 		}
 		remainingServiceResources := []*unstructured.Unstructured{}
 		for _, res := range serviceResources {
+			if forceDelete {
+				log.Info("Removing finalizers from service resource for enforced deletion", "resourceKind", res.GetKind(), "resourceAPIVersion", res.GetAPIVersion(), "provider", providerName)
+				resOld := res.DeepCopy()
+				res.SetFinalizers(nil)
+				if err := r.OnboardingCluster.Client().Patch(ctx, res, client.MergeFrom(resOld)); err != nil {
+					errs.Append(errutils.WithReason(fmt.Errorf("error removing finalizers from service resource [%s.%s] '%s/%s' for ServiceProvider '%s': %w", res.GetKind(), res.GetAPIVersion(), res.GetNamespace(), res.GetName(), providerName, err), cconst.ReasonOnboardingClusterInteractionProblem))
+				}
+			}
 			if !res.GetDeletionTimestamp().IsZero() {
 				log.Debug("Service resource already marked for deletion", "resourceKind", res.GetKind(), "resourceAPIVersion", res.GetAPIVersion(), "provider", providerName)
 				remainingServiceResources = append(remainingServiceResources, res)
