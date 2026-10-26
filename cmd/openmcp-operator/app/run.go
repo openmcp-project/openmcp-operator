@@ -377,33 +377,8 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	}
 
 	// setup version-validating webhook (optional, default disabled; enable with --enable-version-webhook)
-	if o.EnableVersionWebhook {
-		setupLog.Info("Version-validating webhook enabled — requesting access to onboarding cluster")
-		onboardingScheme := install.InstallOperatorAPIsOnboarding(runtime.NewScheme())
-		cam := clusteraccess.NewClusterAccessManager(o.PlatformCluster.Client(), provider.ControllerName, podNamespace)
-		cam.WithLogger(&setupLog).
-			WithInterval(10 * time.Second).
-			WithTimeout(30 * time.Minute)
-		onboardingCluster, err := cam.CreateAndWaitForCluster(ctx, clustersv1alpha1.PURPOSE_ONBOARDING, clustersv1alpha1.PURPOSE_ONBOARDING,
-			onboardingScheme, []clustersv1alpha1.PermissionsRequest{
-				{
-					Rules: []rbacv1.PolicyRule{
-						{
-							APIGroups: []string{"core.openmcp.cloud", "open-control-plane.io"},
-							Resources: []string{"managedcomponents", "managedservices"},
-							Verbs:     []string{"get", "list", "watch"},
-						},
-					},
-				},
-			})
-		if err != nil {
-			return fmt.Errorf("unable to obtain onboarding cluster access for version webhook: %w", err)
-		}
-		if err := providerwh.Setup(mgr, onboardingCluster, onboardingScheme, o.ProviderGVKList, setupLog); err != nil {
-			return fmt.Errorf("unable to setup version-validating webhook: %w", err)
-		}
-	} else {
-		setupLog.Info("Version-validating webhook is disabled (use --enable-version-webhook to enable)")
+	if err := o.setupVersionWebhook(ctx, mgr, podNamespace); err != nil {
+		return err
 	}
 
 	if o.MetricsCertWatcher != nil {
@@ -432,5 +407,37 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("problem running manager: %w", err)
 	}
 
+	return nil
+}
+
+func (o *RunOptions) setupVersionWebhook(ctx context.Context, mgr ctrl.Manager, podNamespace string) error {
+	if !o.EnableVersionWebhook {
+		setupLog.Info("Version-validating webhook is disabled (use --enable-version-webhook to enable)")
+		return nil
+	}
+	setupLog.Info("Version-validating webhook enabled — requesting access to onboarding cluster")
+	onboardingScheme := install.InstallOperatorAPIsOnboarding(runtime.NewScheme())
+	cam := clusteraccess.NewClusterAccessManager(o.PlatformCluster.Client(), provider.ControllerName, podNamespace)
+	cam.WithLogger(&setupLog).
+		WithInterval(10 * time.Second).
+		WithTimeout(30 * time.Minute)
+	onboardingCluster, err := cam.CreateAndWaitForCluster(ctx, clustersv1alpha1.PURPOSE_ONBOARDING, clustersv1alpha1.PURPOSE_ONBOARDING,
+		onboardingScheme, []clustersv1alpha1.PermissionsRequest{
+			{
+				Rules: []rbacv1.PolicyRule{
+					{
+						APIGroups: []string{"core.openmcp.cloud", "open-control-plane.io"},
+						Resources: []string{"managedcomponents", "managedservices"},
+						Verbs:     []string{"get", "list", "watch"},
+					},
+				},
+			},
+		})
+	if err != nil {
+		return fmt.Errorf("unable to obtain onboarding cluster access for version webhook: %w", err)
+	}
+	if err := providerwh.Setup(mgr, onboardingCluster, onboardingScheme, o.ProviderGVKList, setupLog); err != nil {
+		return fmt.Errorf("unable to setup version-validating webhook: %w", err)
+	}
 	return nil
 }

@@ -18,7 +18,6 @@ package webhook
 
 import (
 	"context"
-	"strings"
 	"sync"
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
@@ -372,15 +371,4 @@ func gvkStrings(gvks []schema.GroupVersionKind) []string {
 		s[i] = g.String()
 	}
 	return s
-}
-
-// normaliseName strips a "provider-" prefix only when the catalog has no exact match
-// but does have the prefixed form. Used for Crossplane sub-provider lookups where
-// the MCP may store "helm" and the catalog stores "provider-helm".
-// This is a pure utility — not called at runtime (normalization happens inline in the webhook).
-func normaliseName(name string) string {
-	if !strings.HasPrefix(name, "provider-") {
-		return "provider-" + name
-	}
-	return name
 }

@@ -96,7 +96,7 @@ func (v *VersionValidatingWebhook) ValidateDelete(_ context.Context, _ *unstruct
 	return nil, nil
 }
 
-func (v *VersionValidatingWebhook) validate(ctx context.Context, obj *unstructured.Unstructured) (admission.Warnings, error) {
+func (v *VersionValidatingWebhook) validate(_ context.Context, obj *unstructured.Unstructured) (admission.Warnings, error) {
 	gvk := obj.GroupVersionKind()
 	log := v.log.WithValues("kind", gvk.Kind, "name", obj.GetName(), "namespace", obj.GetNamespace())
 
@@ -151,7 +151,7 @@ func (v *VersionValidatingWebhook) validateService(log logging.Logger, obj *unst
 	}
 
 	// Crossplane-specific: spec.providers[] and spec.functions[] sub-versions.
-	if strings.EqualFold(gvk.Kind, "Crossplane") {
+	if strings.EqualFold(gvk.Kind, crossplaneKind) {
 		errs = append(errs, v.validateCrossplaneSubResources(log, obj)...)
 	}
 
@@ -187,9 +187,12 @@ func (v *VersionValidatingWebhook) validateCrossplaneSubResources(log logging.Lo
 
 // --- CO v1 ManagedControlPlane validation ---
 
+const crossplaneKind = "Crossplane"      // CO v2 GVK Kind
+const crossplaneComponent = "crossplane" // spec.components key and ManagedComponent catalog name
+
 // v1ComponentCatalogName maps spec.components field names to ManagedComponent catalog names.
 var v1ComponentCatalogName = map[string]string{
-	"crossplane":              "crossplane",
+	crossplaneComponent:       crossplaneComponent,
 	"flux":                    "flux",
 	"kyverno":                 "kyverno",
 	"externalSecretsOperator": "external-secrets",
@@ -223,7 +226,7 @@ func (v *VersionValidatingWebhook) validateMCP(log logging.Logger, obj *unstruct
 		}
 
 		// Crossplane: also validate spec.components.crossplane.providers[].version.
-		if field == "crossplane" {
+		if field == crossplaneComponent {
 			errs = append(errs, v.validateV1CrossplaneProviders(log, compMap)...)
 		}
 	}
