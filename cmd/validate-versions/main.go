@@ -40,9 +40,10 @@ import (
 	"strings"
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
-	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider/webhook"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider/webhook"
 )
 
 func main() {

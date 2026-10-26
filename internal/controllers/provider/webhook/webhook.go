@@ -57,8 +57,8 @@ import (
 //   - If the version is not in the catalog the request is rejected with a message
 //     listing the available versions.
 type VersionValidatingWebhook struct {
-	cache        *CatalogCache
-	log          logging.Logger
+	cache *CatalogCache
+	log   logging.Logger
 	// providerGVKs is the exact set of GVKs that validate via spec.image
 	// (ClusterProvider, PlatformService, ServiceProvider).
 	providerGVKs map[schema.GroupVersionKind]struct{}
