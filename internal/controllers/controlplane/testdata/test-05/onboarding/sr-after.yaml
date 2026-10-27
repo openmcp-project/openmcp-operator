@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-after
+  namespace: test
+  deletionTimestamp: "2026-01-01T00:00:00Z"
+  finalizers:
+  - dummy

@@ -102,3 +102,31 @@ During setup, the CP controller deploys a `ValidatingAdmissionPolicy` for the af
   - This is meant to prevent customers (who have access to this label) from hijacking cluster purposes that are not meant for CP clusters.
 
 This validation is currently not configurable in any way.
+
+### Force Deletion
+
+Sometimes it happens that a `ControlPlane` gets stuck in deletion due to not all services being able to successfully delete their corresponding instances. This check is meant to prevent leaking external resources, e.g. DNS records, which are managed by the service instances and not properly cleaned up if the instances are not waited for. However, there are situations in which the end-user that owns the `ControlPlane` knows that there are no external resources and/or just wants the `ControlPlane` to be gone.
+
+The force-delete annotation `open-control-plane.io/force-delete` can be used to enforce finalizer deletion on service instances, leading to their immediate deletion. It can be used in two variants, which are explained below.
+
+> [!CAUTION]
+> By removing the finalizers from the service instance resources, proper cleanup of the services is disrupted. This can lead to leaked external resources.
+
+#### Direct
+
+```yaml
+open-control-plane.io/force-delete: "true"
+```
+With value `true`, the force deletion is triggered immedately when the `ControlPlane` is deleted.
+
+#### Timed
+
+```yaml
+open-control-plane.io/force-delete: 1h
+```
+With a duration as value, the force deletion is triggered this amount of time after the `ControlPlane` deletion got triggered. As an example, if the `ControlPlane` has a deletion timestamp showing 3pm and a force-delete annotation with value `1h`, the service instance finalizers will be removed at 4pm.
+
+If the annotation is added to an already deleted `ControlPlane`, with a duration that has already elapsed since the `ControlPlane`'s deletion, the effect is the same as being added with value `true` and the force deletion is triggered immediately.
+
+> [!NOTE]
+> The duration must be parsable by [golang's `ParseDuration`](https://pkg.go.dev/time#ParseDuration).
