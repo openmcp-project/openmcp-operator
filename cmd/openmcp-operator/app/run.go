@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/openmcp-project/controller-utils/pkg/logging"
 	"github.com/spf13/cobra"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -26,13 +28,16 @@ import (
 
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 
+	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/api/install"
 	"github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
+	providerwh "github.com/openmcp-project/openmcp-operator/internal/controllers/provider/webhook"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
+	"github.com/openmcp-project/openmcp-operator/lib/clusteraccess"
 )
 
 var setupLog logging.Logger
@@ -85,6 +90,9 @@ func (o *RunOptions) AddFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&o.EnableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers")
 
 	cmd.Flags().StringSliceVar(&o.Controllers, "controllers", allControllers, "List of active controllers. Separate with comma or specify flag multiple times to activate multiple controllers.")
+	// Version-validating webhook: optional, default disabled.
+	// The ValidatingWebhookConfiguration is managed externally (Helm/kustomize).
+	cmd.Flags().BoolVar(&o.EnableVersionWebhook, "enable-version-webhook", false, "Enable the version-validating admission webhook. Requires access to the onboarding cluster via the AccessRequest machinery.")
 }
 
 type RawRunOptions struct {
@@ -103,7 +111,8 @@ type RawRunOptions struct {
 	EnableHTTP2          bool   `json:"enable-http2"`
 
 	// custom raw options
-	Controllers []string `json:"controllers"`
+	Controllers          []string `json:"controllers"`
+	EnableVersionWebhook bool     `json:"enable-version-webhook"`
 }
 
 type RunOptions struct {
@@ -367,6 +376,11 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		}
 	}
 
+	// setup version-validating webhook (optional, default disabled; enable with --enable-version-webhook)
+	if err := o.setupVersionWebhook(ctx, mgr, podNamespace); err != nil {
+		return err
+	}
+
 	if o.MetricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")
 		if err := mgr.Add(o.MetricsCertWatcher); err != nil {
@@ -393,5 +407,37 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("problem running manager: %w", err)
 	}
 
+	return nil
+}
+
+func (o *RunOptions) setupVersionWebhook(ctx context.Context, mgr ctrl.Manager, podNamespace string) error {
+	if !o.EnableVersionWebhook {
+		setupLog.Info("Version-validating webhook is disabled (use --enable-version-webhook to enable)")
+		return nil
+	}
+	setupLog.Info("Version-validating webhook enabled — requesting access to onboarding cluster")
+	onboardingScheme := install.InstallOperatorAPIsOnboarding(runtime.NewScheme())
+	cam := clusteraccess.NewClusterAccessManager(o.PlatformCluster.Client(), provider.ControllerName, podNamespace)
+	cam.WithLogger(&setupLog).
+		WithInterval(10 * time.Second).
+		WithTimeout(30 * time.Minute)
+	onboardingCluster, err := cam.CreateAndWaitForCluster(ctx, clustersv1alpha1.PURPOSE_ONBOARDING, clustersv1alpha1.PURPOSE_ONBOARDING,
+		onboardingScheme, []clustersv1alpha1.PermissionsRequest{
+			{
+				Rules: []rbacv1.PolicyRule{
+					{
+						APIGroups: []string{"core.openmcp.cloud", "open-control-plane.io"},
+						Resources: []string{"managedcomponents", "managedservices"},
+						Verbs:     []string{"get", "list", "watch"},
+					},
+				},
+			},
+		})
+	if err != nil {
+		return fmt.Errorf("unable to obtain onboarding cluster access for version webhook: %w", err)
+	}
+	if err := providerwh.Setup(mgr, onboardingCluster, onboardingScheme, o.ProviderGVKList, setupLog); err != nil {
+		return fmt.Errorf("unable to setup version-validating webhook: %w", err)
+	}
 	return nil
 }
