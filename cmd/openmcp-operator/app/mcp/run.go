@@ -61,6 +61,18 @@ func NewRunCommand(po *options.PersistentOptions) *cobra.Command {
 }
 
 func (o *RunOptions) AddFlags(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&o.KCPEndpointSlice, "kcp-endpoint-slice", "", "KCP workspace mode: name of the APIExportEndpointSlice serving the tenant workspaces. Empty disables the mode.")
+	cmd.Flags().StringVar(&o.KCPKubeconfig, "kcp-kubeconfig", "", "KCP workspace mode: kubeconfig path for the workspace holding the APIExportEndpointSlice.")
+	cmd.Flags().DurationVar(&o.KCPWorkspaceReconcileInterval, "kcp-workspace-reconcile-interval", 5*time.Second, "KCP workspace mode: interval for workspace runtime reconciliation.")
+	cmd.Flags().DurationVar(&o.KCPWorkspaceCleanupDelay, "kcp-workspace-cleanup-delay", time.Minute, "KCP workspace mode: delay before workspace runtime removal after disengagement.")
+	cmd.Flags().DurationVar(&o.KCPWorkspaceTokenLifetime, "kcp-workspace-token-lifetime", time.Hour, "KCP workspace mode: lifetime of account workspace credentials.")
+	cmd.Flags().StringVar(&o.KCPServiceProviders, "kcp-service-providers", "", "KCP workspace mode: JSON configuration of per-workspace service providers.")
+	cmd.Flags().StringVar(&o.KCPBindingName, "kcp-binding-name", "", "KCP workspace mode: preferred APIBinding name. The operator otherwise discovers the binding from the endpoint slice export.")
+	cmd.Flags().StringVar(&o.KCPDisconnectGuardAddress, "kcp-disconnect-guard-address", "", "KCP workspace mode: HTTPS listen address for the APIBinding deletion guard.")
+	cmd.Flags().StringVar(&o.KCPDisconnectGuardURL, "kcp-disconnect-guard-url", "", "KCP workspace mode: public HTTPS URL of the APIBinding deletion guard.")
+	cmd.Flags().StringVar(&o.KCPDisconnectGuardCert, "kcp-disconnect-guard-cert", "", "KCP workspace mode: guard TLS certificate file.")
+	cmd.Flags().StringVar(&o.KCPDisconnectGuardKey, "kcp-disconnect-guard-key", "", "KCP workspace mode: guard TLS private key file.")
+	cmd.Flags().StringVar(&o.KCPDisconnectGuardCA, "kcp-disconnect-guard-ca", "", "KCP workspace mode: guard CA bundle file.")
 	// kubebuilder default flags
 	cmd.Flags().StringVar(&o.MetricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	cmd.Flags().StringVar(&o.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -77,6 +89,16 @@ func (o *RunOptions) AddFlags(cmd *cobra.Command) {
 }
 
 type RawRunOptions struct {
+	KCPDisconnectGuardAddress string `json:"kcp-disconnect-guard-address"`
+	KCPDisconnectGuardURL     string `json:"kcp-disconnect-guard-url"`
+	KCPDisconnectGuardCert    string `json:"kcp-disconnect-guard-cert"`
+	KCPDisconnectGuardKey     string `json:"kcp-disconnect-guard-key"`
+	KCPDisconnectGuardCA      string `json:"kcp-disconnect-guard-ca"`
+
+	KCPWorkspaceReconcileInterval time.Duration `json:"kcp-workspace-reconcile-interval"`
+	KCPWorkspaceCleanupDelay      time.Duration `json:"kcp-workspace-cleanup-delay"`
+	KCPWorkspaceTokenLifetime     time.Duration `json:"kcp-workspace-token-lifetime"`
+	KCPBindingName                string        `json:"kcp-binding-name"`
 	// kubebuilder default flags
 	MetricsAddr          string `json:"metrics-bind-address"`
 	MetricsCertPath      string `json:"metrics-cert-path"`
@@ -93,6 +115,16 @@ type RawRunOptions struct {
 }
 
 type RunOptions struct {
+	KCPServiceProviders   string              `json:"kcp-service-providers"`
+	KCPWorkspaceProviders []workspaceProvider `json:"-"`
+	// KCPEndpointSlice enables KCP workspace mode: the
+	// name of the APIExportEndpointSlice whose virtual workspace serves the
+	// bound workspaces. Empty = classic single-onboarding-cluster mode.
+	KCPEndpointSlice string
+	// KCPKubeconfig is the kubeconfig path for the kcp workspace holding the
+	// APIExportEndpointSlice (KCP workspace mode only).
+	KCPKubeconfig string
+
 	*options.PersistentOptions
 	RawRunOptions
 
@@ -127,6 +159,38 @@ func (o *RunOptions) Complete(ctx context.Context) error {
 	}
 	if o.ProviderName == "" {
 		return fmt.Errorf("provider-name must not be empty")
+	}
+	if o.KCPEndpointSlice != "" {
+		if o.KCPKubeconfig == "" {
+			return fmt.Errorf("kcp-kubeconfig must not be empty in KCP workspace mode")
+		}
+		providers, err := loadWorkspaceProviders(o.KCPServiceProviders)
+		if err != nil {
+			return err
+		}
+		o.KCPWorkspaceProviders = providers
+		guard := []string{o.KCPDisconnectGuardAddress, o.KCPDisconnectGuardURL, o.KCPDisconnectGuardCert, o.KCPDisconnectGuardKey}
+		configured := 0
+		for _, value := range guard {
+			if value != "" {
+				configured++
+			}
+		}
+		if configured != 0 && configured != len(guard) {
+			return fmt.Errorf("the disconnect guard address, URL, certificate, and key must be set together")
+		}
+		if configured > 0 && len(o.KCPWorkspaceProviders) == 0 {
+			return fmt.Errorf("kcp-service-providers must configure at least one service provider when the disconnect guard is enabled")
+		}
+		if o.KCPWorkspaceReconcileInterval <= 0 {
+			return fmt.Errorf("kcp-workspace-reconcile-interval must be positive")
+		}
+		if o.KCPWorkspaceCleanupDelay < 0 {
+			return fmt.Errorf("kcp-workspace-cleanup-delay must not be negative")
+		}
+		if o.KCPWorkspaceTokenLifetime < 10*time.Minute || o.KCPWorkspaceTokenLifetime > 24*time.Hour {
+			return fmt.Errorf("kcp-workspace-token-lifetime must be between 10m and 24h")
+		}
 	}
 	setupLog = o.Log.WithName("setup")
 	ctrl.SetLogger(o.Log.Logr())
@@ -231,6 +295,10 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	setupLog.Info("Environment", "value", o.Environment)
 	setupLog.Info("Provider name", "value", o.ProviderName)
 	ctx = logging.NewContext(ctx, setupLog)
+
+	if o.KCPEndpointSlice != "" {
+		return o.runMulticluster(ctx, setupLog)
+	}
 
 	// get access to the onboarding cluster
 	setupLog.Info("Getting access to the onboarding cluster")
