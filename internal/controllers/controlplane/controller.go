@@ -13,11 +13,13 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -44,7 +46,12 @@ import (
 
 const ControllerName = "ManagedControlPlane"
 
-func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboardingCluster *clusters.Cluster, eventRecorder events.EventRecorder, configGetter config.ManagedControlPlaneConfigGetter, configMapName string) (*ManagedControlPlaneReconciler, error) {
+type OnboardingCluster interface {
+	Client() client.Client
+	Scheme() *runtime.Scheme
+}
+
+func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboardingCluster OnboardingCluster, eventRecorder events.EventRecorder, configGetter config.ManagedControlPlaneConfigGetter, configMapName string) (*ManagedControlPlaneReconciler, error) {
 	if configGetter == nil {
 		return nil, fmt.Errorf("managed control plane config getter must not be nil")
 	}
@@ -60,11 +67,24 @@ func NewManagedControlPlaneReconciler(platformCluster *clusters.Cluster, onboard
 
 type ManagedControlPlaneReconciler struct {
 	PlatformCluster   *clusters.Cluster
-	OnboardingCluster *clusters.Cluster
+	OnboardingCluster OnboardingCluster
 	GetConfigFunc     config.ManagedControlPlaneConfigGetter
 	ConfigMapName     string
 	eventRecorder     events.EventRecorder
 	sr                *smartrequeue.Store
+}
+
+type onboardingClusterAdapter struct{ cluster.Cluster }
+
+func (c onboardingClusterAdapter) Client() client.Client   { return c.GetClient() }
+func (c onboardingClusterAdapter) Scheme() *runtime.Scheme { return c.GetScheme() }
+
+// ForCluster returns a request-local reconciler for the engaged workspace.
+func (r *ManagedControlPlaneReconciler) ForCluster(cl cluster.Cluster) *ManagedControlPlaneReconciler {
+	rc := *r
+	rc.OnboardingCluster = onboardingClusterAdapter{Cluster: cl}
+	rc.eventRecorder = cl.GetEventRecorder(ControllerName)
+	return &rc
 }
 
 var _ reconcile.Reconciler = &ManagedControlPlaneReconciler{}
