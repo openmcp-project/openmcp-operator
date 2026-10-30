@@ -30,14 +30,6 @@ import (
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/controlplane"
 )
 
-type workspaceOnboardingCluster struct {
-	client client.Client
-	scheme *runtime.Scheme
-}
-
-func (c workspaceOnboardingCluster) Client() client.Client   { return c.client }
-func (c workspaceOnboardingCluster) Scheme() *runtime.Scheme { return c.scheme }
-
 // runMulticluster runs the ControlPlane controller in KCP workspace mode.
 // Instead of watching a single onboarding cluster, the
 // controller consumes the APIExport virtual workspace named by
@@ -129,7 +121,7 @@ func (o *RunOptions) runMulticluster(ctx context.Context, setupLog logging.Logge
 	mcpRec, err := controlplane.NewManagedControlPlaneReconciler(
 		o.PlatformCluster,
 		nil, // onboarding cluster is resolved per request in this mode
-		mcMgr.GetLocalManager().GetEventRecorder(controlplane.ControllerName),
+		nil, // the recorder is resolved with the workspace client
 		mcpConfigGetter,
 		o.ConfigMapName,
 	)
@@ -146,8 +138,7 @@ func (o *RunOptions) runMulticluster(ctx context.Context, setupLog logging.Logge
 				return ctrl.Result{}, err
 			}
 			// Bind a shallow copy of the reconciler to the engaged workspace.
-			rc := *mcpRec
-			rc.OnboardingCluster = workspaceOnboardingCluster{client: cl.GetClient(), scheme: cl.GetScheme()}
+			rc := mcpRec.ForCluster(cl)
 			return rc.Reconcile(ctx, req.Request)
 		}))
 	if err != nil {
