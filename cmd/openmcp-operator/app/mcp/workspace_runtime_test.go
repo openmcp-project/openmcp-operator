@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +22,7 @@ import (
 	clientgotesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	clientfake "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
 
 	controllerclusters "github.com/openmcp-project/controller-utils/pkg/clusters"
@@ -329,5 +332,86 @@ func TestConsumerCredentialsUseNativeWorkspace(t *testing.T) {
 	}
 	if virtual.Host != "https://virtual.example/services/clusters/tenant" || virtual.BearerToken != "provider-token" {
 		t.Fatal("provider configuration was changed")
+	}
+}
+
+func TestWorkspaceClusterRequestDeletionRetriesWithoutCluster(t *testing.T) {
+	ctx := context.Background()
+	r, platform, _ := testRuntime(t)
+	const namespace = "runtime"
+	request := &clustersv1alpha1.ClusterRequest{ObjectMeta: metav1.ObjectMeta{Name: "request", Namespace: namespace, UID: "request-uid", Labels: managedLabels(), Finalizers: []string{workspaceRequestFinalizer}}, Spec: clustersv1alpha1.ClusterRequestSpec{Purpose: clustersv1alpha1.PURPOSE_MCP}}
+	cluster := &clustersv1alpha1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: workspaceClusterName, Namespace: namespace, Finalizers: []string{request.FinalizerForCluster()}}}
+	for _, obj := range []client.Object{request, cluster} {
+		if err := platform.Create(ctx, obj); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := platform.Delete(ctx, request); err != nil {
+		t.Fatal(err)
+	}
+	failed := false
+	r.platform = controllerclusters.NewTestClusterFromClient("platform", interceptor.NewClient(platform.(client.WithWatch), interceptor.Funcs{Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+		if _, ok := obj.(*clustersv1alpha1.ClusterRequest); ok && !failed {
+			failed = true
+			return errors.New("request update failed")
+		}
+		return c.Update(ctx, obj, opts...)
+	}}))
+	if err := r.reconcileClusterRequests(ctx, namespace); err == nil || !failed {
+		t.Fatalf("expected failed request update, got %v", err)
+	}
+	if err := platform.Get(ctx, client.ObjectKeyFromObject(cluster), cluster); err != nil {
+		t.Fatal(err)
+	}
+	if len(cluster.Finalizers) != 0 {
+		t.Fatal("Cluster cleanup did not finish")
+	}
+	if err := platform.Delete(ctx, cluster); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.reconcileClusterRequests(ctx, namespace); err != nil {
+		t.Fatal(err)
+	}
+	if err := platform.Get(ctx, client.ObjectKeyFromObject(request), request); !apierrors.IsNotFound(err) {
+		t.Fatalf("request finalizer remains: %v", err)
+	}
+}
+
+func TestWorkspaceClusterRequestReadErrorsRemainVisible(t *testing.T) {
+	for _, terminating := range []bool{false, true} {
+		t.Run(fmt.Sprint(terminating), func(t *testing.T) {
+			ctx := context.Background()
+			r, platform, _ := testRuntime(t)
+			request := &clustersv1alpha1.ClusterRequest{ObjectMeta: metav1.ObjectMeta{Name: "request", Namespace: "runtime", UID: "request-uid", Labels: managedLabels(), Finalizers: []string{workspaceRequestFinalizer}}, Spec: clustersv1alpha1.ClusterRequestSpec{Purpose: clustersv1alpha1.PURPOSE_MCP}}
+			if err := platform.Create(ctx, request); err != nil {
+				t.Fatal(err)
+			}
+			if terminating {
+				if err := platform.Delete(ctx, request); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !terminating {
+				if err := r.reconcileClusterRequests(ctx, "runtime"); !apierrors.IsNotFound(err) {
+					t.Fatalf("expected Cluster NotFound, got %v", err)
+				}
+			}
+			denied := apierrors.NewForbidden(clustersv1alpha1.GroupVersion.WithResource("clusters").GroupResource(), workspaceClusterName, errors.New("denied"))
+			r.platform = controllerclusters.NewTestClusterFromClient("platform", interceptor.NewClient(platform.(client.WithWatch), interceptor.Funcs{Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*clustersv1alpha1.Cluster); ok {
+					return denied
+				}
+				return c.Get(ctx, key, obj, opts...)
+			}}))
+			if err := r.reconcileClusterRequests(ctx, "runtime"); !apierrors.IsForbidden(err) {
+				t.Fatalf("expected Forbidden, got %v", err)
+			}
+			if err := platform.Get(ctx, client.ObjectKeyFromObject(request), request); err != nil {
+				t.Fatal(err)
+			}
+			if len(request.Finalizers) != 1 {
+				t.Fatal("failed read changed request finalizers")
+			}
+		})
 	}
 }

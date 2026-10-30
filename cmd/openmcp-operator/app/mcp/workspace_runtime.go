@@ -257,7 +257,10 @@ func (r *workspaceRuntime) reconcileClusterRequests(ctx context.Context, namespa
 		}
 		workspaceCluster := &clustersv1alpha1.Cluster{}
 		if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: workspaceClusterName}, workspaceCluster); err != nil {
-			return err
+			// A retry can follow successful Cluster cleanup and a failed request update.
+			if !apierrors.IsNotFound(err) || cr.DeletionTimestamp.IsZero() {
+				return err
+			}
 		}
 		if !cr.DeletionTimestamp.IsZero() {
 			if controllerutil.RemoveFinalizer(workspaceCluster, cr.FinalizerForCluster()) {
