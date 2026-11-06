@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -34,7 +36,7 @@ func runGC(c client.Client, cfg *config.GarbageCollectorConfig) *testPeriodic {
 
 func enabledCfg() *config.GarbageCollectorConfig {
 	return &config.GarbageCollectorConfig{
-		Interval: time.Hour,
+		Interval: metav1.Duration{Duration: time.Hour},
 		AccessRequestNoCluster: config.AccessRequestNoClusterConfig{
 			Enabled: true,
 		},
@@ -64,7 +66,7 @@ var _ = Describe("GarbageCollector: AccessRequestNoCluster", func() {
 	It("should use the module-specific interval when set", func() {
 		env := testutils.NewEnvironmentBuilder().WithFakeClient(scheme).WithInitObjectPath("testdata", "test-01").Build()
 		cfg := enabledCfg()
-		cfg.AccessRequestNoCluster.Interval = 30 * time.Minute
+		cfg.AccessRequestNoCluster.Interval = metav1.Duration{Duration: 30 * time.Minute}
 		p := runGC(env.Client(), cfg)
 		Expect(p.interval).To(Equal(30 * time.Minute))
 	})

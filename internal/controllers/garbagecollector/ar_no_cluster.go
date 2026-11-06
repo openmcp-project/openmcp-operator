@@ -43,10 +43,10 @@ func GenerateGarbageCollectAccessRequestsWithoutCluster(platformCluster *cluster
 			// We cannot call Disable() on the periodic, because we would need an external trigger to re-enable it, which we don't have at the moment.
 		}
 		// update interval
-		if cfg.AccessRequestNoCluster.Interval > 0 {
-			p.SetInterval(cfg.AccessRequestNoCluster.Interval)
+		if cfg.AccessRequestNoCluster.Interval.Duration > 0 {
+			p.SetInterval(cfg.AccessRequestNoCluster.Interval.Duration)
 		} else {
-			p.SetInterval(cfg.Interval)
+			p.SetInterval(cfg.Interval.Duration)
 		}
 
 		log.Info("Starting garbage collection")
