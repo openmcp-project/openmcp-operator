@@ -35,6 +35,7 @@ const (
 	ConditionAllAccessReady            = "AllAccessReady"
 	ConditionAllServicesDeleted        = "AllServicesDeleted"
 	ConditionAllClusterRequestsDeleted = "AllClusterRequestsDeleted"
+	ConditionForceDeletion             = "ForceDeletion"
 )
 
 const (
