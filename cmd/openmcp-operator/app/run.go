@@ -385,6 +385,7 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	if err := mgr.Add(gcArNoCluster); err != nil {
 		return fmt.Errorf("error adding garbage collector for AccessRequests without Cluster to manager: %w", err)
 	}
+	gcArNoCluster.Trigger(false) // required to have an immediate run and have the garbage collector pick up the config
 
 	if o.MetricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")
