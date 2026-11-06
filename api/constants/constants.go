@@ -72,4 +72,9 @@ const (
 
 	// ForceDeleteAnnotation can be used to enforce the deletion of a ControlPlane.
 	ForceDeleteAnnotation = OpenControlPlaneGroup + "/force-delete"
+
+	// GarbageCollectorAnnotation is used to mark resources for garbage collection and to block garbage collection.
+	GarbageCollectorAnnotation = OpenControlPlaneGroup + "/garbage-collector"
+	// GarbageCollectorAnnotationValueIgnore indicates that the resource should be ignored by the garbage collector.
+	GarbageCollectorAnnotationValueIgnore = "ignore"
 )
