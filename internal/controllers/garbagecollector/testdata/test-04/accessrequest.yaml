@@ -1,0 +1,79 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: ar-ignore-annotation
+  namespace: bar
+  annotations:
+    open-control-plane.io/garbage-collector: ignore
+spec:
+  clusterRef:
+    name: gone-cluster
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"
+---
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: ar-future-timestamp
+  namespace: bar
+  annotations:
+    open-control-plane.io/garbage-collector: "2099-01-01T00:00:00Z"
+spec:
+  clusterRef:
+    name: gone-cluster
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"
+---
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: ar-past-timestamp
+  namespace: bar
+  annotations:
+    open-control-plane.io/garbage-collector: "2000-01-01T00:00:00Z"
+spec:
+  clusterRef:
+    name: gone-cluster
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"
+---
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: ar-invalid-annotation
+  namespace: bar
+  annotations:
+    open-control-plane.io/garbage-collector: "not-a-valid-value"
+spec:
+  clusterRef:
+    name: gone-cluster
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"
