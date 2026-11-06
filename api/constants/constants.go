@@ -75,4 +75,9 @@ const (
 
 	// ServiceKindLabel is used by service providers on the CRDs for their service resources.
 	ServiceKindLabel = "services." + OpenControlPlaneGroup + "/kind"
+
+	// GarbageCollectorAnnotation is used to mark resources for garbage collection and to block garbage collection.
+	GarbageCollectorAnnotation = OpenControlPlaneGroup + "/garbage-collector"
+	// GarbageCollectorAnnotationValueIgnore indicates that the resource should be ignored by the garbage collector.
+	GarbageCollectorAnnotationValueIgnore = "ignore"
 )

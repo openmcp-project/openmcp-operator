@@ -31,6 +31,7 @@ import (
 	"github.com/openmcp-project/openmcp-operator/cmd/openmcp-operator/app/options"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/accessrequest"
+	"github.com/openmcp-project/openmcp-operator/internal/controllers/garbagecollector"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/provider"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
 )
@@ -308,12 +309,8 @@ func (o *RunOptions) Run(ctx context.Context) error {
 				if err != nil {
 					return nil, fmt.Errorf("failed to load config from ConfigMap: %w", err)
 				}
-				if providerConfig == nil {
-					schedulerConfig := &config.SchedulerConfig{}
-					if err := schedulerConfig.Default(nil); err != nil {
-						return nil, fmt.Errorf("failed to default scheduler config: %w", err)
-					}
-					return schedulerConfig, nil
+				if err := providerConfig.DefaultValidateComplete(); err != nil {
+					return nil, fmt.Errorf("error defaulting/validating/completing config: %w", err)
 				}
 				return providerConfig.Scheduler, nil
 			}
@@ -331,9 +328,6 @@ func (o *RunOptions) Run(ctx context.Context) error {
 	if slices.Contains(o.Controllers, strings.ToLower(accessrequest.ControllerName)) {
 		// fallback config getter
 		arConfigGetter := func(ctx context.Context) (*config.AccessRequestConfig, error) {
-			if o.Config.AccessRequest == nil {
-				o.Config.AccessRequest = &config.AccessRequestConfig{}
-			}
 			return o.Config.AccessRequest, nil
 		}
 		// dynamic config getter
@@ -343,8 +337,8 @@ func (o *RunOptions) Run(ctx context.Context) error {
 				if err != nil {
 					return nil, fmt.Errorf("failed to load config from ConfigMap: %w", err)
 				}
-				if providerConfig == nil || providerConfig.AccessRequest == nil {
-					return &config.AccessRequestConfig{}, nil
+				if err := providerConfig.DefaultValidateComplete(); err != nil {
+					return nil, fmt.Errorf("error defaulting/validating/completing config: %w", err)
 				}
 				return providerConfig.AccessRequest, nil
 			}
@@ -365,6 +359,31 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		if err = provider.NewDeploymentController().SetupWithManager(&setupLog, mgr, o.ProviderGVKList, o.Environment); err != nil {
 			return fmt.Errorf("unable to setup deployment controllers: %w", err)
 		}
+	}
+
+	// setup garbage collectors
+	gcConfigGetter := func(ctx context.Context) (*config.GarbageCollectorConfig, error) {
+		return o.Config.GarbageCollector, nil
+	}
+	// dynamic config getter
+	if o.ConfigMapName != "" {
+		gcConfigGetter = func(ctx context.Context) (*config.GarbageCollectorConfig, error) {
+			providerConfig, err := config.LoadFromConfigMap(ctx, o.PlatformCluster.Retry(), o.ConfigMapName, podNamespace)
+			if err != nil {
+				return nil, fmt.Errorf("failed to load config from ConfigMap: %w", err)
+			}
+			if err := providerConfig.DefaultValidateComplete(); err != nil {
+				return nil, fmt.Errorf("error defaulting/validating/completing config: %w", err)
+			}
+			return providerConfig.GarbageCollector, nil
+		}
+	}
+	gcArNoCluster, err := garbagecollector.NewAccessRequestNoClusterGarbageCollector(o.PlatformCluster, o.Log, gcConfigGetter)
+	if err != nil {
+		return fmt.Errorf("error creating garbage collector for AccessRequests without Cluster: %w", err)
+	}
+	if err := mgr.Add(gcArNoCluster); err != nil {
+		return fmt.Errorf("error adding garbage collector for AccessRequests without Cluster to manager: %w", err)
 	}
 
 	if o.MetricsCertWatcher != nil {

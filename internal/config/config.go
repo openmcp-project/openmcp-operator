@@ -39,11 +39,15 @@ type Config struct {
 
 	// HelmDeployer is the configuration for the Helm deployer controller.
 	HelmDeployer *HelmDeployerConfig `json:"helmDeployer,omitempty" instantiate:"true"`
+
+	// GarbageCollector is the configuration for the garbage collector controller.
+	GarbageCollector *GarbageCollectorConfig `json:"garbageCollector,omitempty" instantiate:"true"`
 }
 
 type SchedulerConfigGetter func(ctx context.Context) (*SchedulerConfig, error)
 type AccessRequestConfigGetter func(ctx context.Context) (*AccessRequestConfig, error)
 type ManagedControlPlaneConfigGetter func(ctx context.Context) (*ManagedControlPlaneConfig, error)
+type GarbageCollectorConfigGetter func(ctx context.Context) (*GarbageCollectorConfig, error)
 
 // Dump is used for logging and debugging purposes.
 func (c *Config) Dump(out io.Writer) error {
@@ -140,6 +144,19 @@ func LoadFromConfigMap(ctx context.Context, c client.Client, name, namespace str
 	}
 
 	return LoadFromBytes(rawConfigs...)
+}
+
+func (c *Config) DefaultValidateComplete() error {
+	if err := c.Default(); err != nil {
+		return err
+	}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	if err := c.Complete(); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Defaultable interface {
@@ -249,4 +266,25 @@ func (c *Config) perform(action actionType) error {
 		}
 	}
 	return errs
+}
+
+// PerformDefaultingValidationCompletion performs defaulting, validation, and completion on the given configuration object,
+// as far as the type supports these operations.
+func PerformDefaultingValidationCompletion(cfg any, fldPath *field.Path) error {
+	if tmp, ok := cfg.(Defaultable); ok {
+		if err := tmp.Default(fldPath); err != nil {
+			return err
+		}
+	}
+	if tmp, ok := cfg.(Validatable); ok {
+		if err := tmp.Validate(fldPath); err != nil {
+			return err
+		}
+	}
+	if tmp, ok := cfg.(Completable); ok {
+		if err := tmp.Complete(fldPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
