@@ -1,0 +1,35 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: ar-with-clusterrequest
+  namespace: bar
+spec:
+  requestRef:
+    name: my-clusterrequest
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"
+---
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: ar-without-clusterrequest
+  namespace: bar
+spec:
+  requestRef:
+    name: gone-clusterrequest
+    namespace: foo
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"
