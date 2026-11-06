@@ -595,6 +595,10 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithStatus(metav1.ConditionFalse).
 				WithReason(cconst.ReasonWaitingForServiceDeletion)),
 		))
+		Expect(mcp.Status.Conditions).ToNot(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion)),
+		))
 		for _, oidc := range oidcProviders {
 			By("verifying AccessRequest does not have a deletion timestamp for oidc provider: " + oidc.Name)
 			ar := &clustersv1alpha1.AccessRequest{}
@@ -1127,6 +1131,10 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithStatus(metav1.ConditionFalse).
 				WithReason(cconst.ReasonWaitingForServiceDeletion)),
 		))
+		Expect(mcp.Status.Conditions).ToNot(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion)),
+		))
 
 		By("adding the force-delete annotation to the ControlPlane")
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
@@ -1142,6 +1150,13 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		By("second reconciliation after delete — service resource finalizer removed")
 		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion).
+				WithStatus(metav1.ConditionTrue).
+				WithMessage("Force deletion activated")),
+		))
 
 		// remaining delete reconciles: controller proceeds through ClusterRequest and namespace deletion;
 		// each phase needs one reconcile to trigger deletion and another to confirm it is gone;
@@ -1221,6 +1236,9 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 				WithType(corev2alpha1.ConditionAllServicesDeleted).
 				WithStatus(metav1.ConditionFalse).
 				WithReason(cconst.ReasonWaitingForServiceDeletion)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion).
+				WithStatus(metav1.ConditionTrue)),
 		))
 	})
 
@@ -1243,6 +1261,13 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		// reconcile: the 5m window has long elapsed, so force-delete must trigger and strip the finalizer
 		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
 		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(MatchError(apierrors.IsNotFound, "IsNotFound"))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion).
+				WithStatus(metav1.ConditionTrue).
+				WithMessage("Force deletion activated")),
+		))
 	})
 
 })

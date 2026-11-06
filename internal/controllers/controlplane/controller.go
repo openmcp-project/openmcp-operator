@@ -395,24 +395,36 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 
 	// check for force deletion
 	forceDelete := false
+	forceDeleteConditionSet := false
 	if val, ok := mcp.Annotations[apiconst.ForceDeleteAnnotation]; ok {
 		if val == "true" {
 			forceDelete = true
+			forceDeleteConditionSet = true
+			createCon(corev2alpha1.ConditionForceDeletion, metav1.ConditionTrue, "", "Force deletion activated")
 		} else {
 			d, err := time.ParseDuration(val)
 			if err != nil {
 				log.Error(err, "Invalid value for force-delete annotation, should be either 'true' or a duration", "annotation", apiconst.ForceDeleteAnnotation, "value", val)
+				forceDeleteConditionSet = true
+				createCon(corev2alpha1.ConditionForceDeletion, metav1.ConditionFalse, cconst.ReasonConfigurationProblem, fmt.Sprintf("Invalid value for force-delete annotation, should be either 'true' or a duration, got '%s'", val))
 			} else {
 				forceDeleteAt := mcp.DeletionTimestamp.Add(d)
 				now := time.Now()
+				forceDeleteConditionSet = true
 				if now.Equal(forceDeleteAt) || now.After(forceDeleteAt) {
 					forceDelete = true
+					createCon(corev2alpha1.ConditionForceDeletion, metav1.ConditionTrue, "", "Force deletion activated")
 				} else {
 					// ensure that we reconcile when the force delete time is reached
 					rr.Result.RequeueAfter = time.Until(forceDeleteAt)
+					createCon(corev2alpha1.ConditionForceDeletion, metav1.ConditionTrue, "", fmt.Sprintf("Force deletion scheduled at %s", forceDeleteAt))
 				}
 			}
 		}
+	}
+	if !forceDeleteConditionSet {
+		// If no condition for force-deletion has been set, remove it
+		rr.ConditionsToRemove = append(rr.ConditionsToRemove, corev2alpha1.ConditionForceDeletion)
 	}
 
 	// delete services
