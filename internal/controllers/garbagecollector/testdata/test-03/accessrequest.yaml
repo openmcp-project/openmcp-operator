@@ -1,0 +1,14 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: AccessRequest
+metadata:
+  name: ar-no-ref
+  namespace: bar
+spec:
+  permissions:
+  - rules:
+    - apiGroups:
+      - "*"
+      resources:
+      - "*"
+      verbs:
+      - "*"
