@@ -72,4 +72,7 @@ const (
 
 	// ForceDeleteAnnotation can be used to enforce the deletion of a ControlPlane.
 	ForceDeleteAnnotation = OpenControlPlaneGroup + "/force-delete"
+
+	// ServiceKindLabel is used by service providers on the CRDs for their service resources.
+	ServiceKindLabel = "services." + OpenControlPlaneGroup + "/kind"
 )
