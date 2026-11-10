@@ -110,17 +110,9 @@ func (o *PersistentOptions) resolveConfig(ctx context.Context) (*config.Config, 
 	}
 
 	// Validate and complete the config
-	if err := cfg.Default(); err != nil {
+	if err := cfg.DefaultValidateComplete(); err != nil {
 		_ = cfg.Dump(os.Stderr)
-		return nil, fmt.Errorf("error defaulting config: %w", err)
-	}
-	if err := cfg.Validate(); err != nil {
-		_ = cfg.Dump(os.Stderr)
-		return nil, fmt.Errorf("error validating config: %w", err)
-	}
-	if err := cfg.Complete(); err != nil {
-		_ = cfg.Dump(os.Stderr)
-		return nil, fmt.Errorf("error completing config: %w", err)
+		return nil, fmt.Errorf("error defaulting/validating/completing config: %w", err)
 	}
 
 	return cfg, nil
