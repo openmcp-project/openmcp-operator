@@ -462,9 +462,11 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 			forceDeletionBlockedFor.Insert("*") // indicate that force deletion is blocked for all service providers
 			log.Debug("Force deletion blocked due to ClusterRequests where no owner could be identified", "unownedCRs", sets.List(unownedCRs))
 			createCon(corev2alpha1.ConditionForceDeletionBlocked, metav1.ConditionTrue, corev2alpha1.ReasonForceDeletionBlocked, fmt.Sprintf("Force deletion blocked due to ClusterRequests where no owner could be identified: %v", sets.List(unownedCRs)))
-		} else {
+		} else if forceDeletionBlockedFor.Len() > 0 {
 			log.Debug("Force deletion is blocked for some service providers", "blockedServiceProviders", sets.List(forceDeletionBlockedFor))
 			createCon(corev2alpha1.ConditionForceDeletionBlocked, metav1.ConditionTrue, corev2alpha1.ReasonForceDeletionPartiallyBlocked, fmt.Sprintf("Force deletion is blocked for the following service providers: %v", sets.List(forceDeletionBlockedFor)))
+		} else {
+			rr.ConditionsToRemove = append(rr.ConditionsToRemove, corev2alpha1.ConditionForceDeletionBlocked)
 		}
 	} else {
 		rr.ConditionsToRemove = append(rr.ConditionsToRemove, corev2alpha1.ConditionForceDeletionBlocked)
