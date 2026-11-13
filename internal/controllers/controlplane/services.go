@@ -6,6 +6,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	errutils "github.com/openmcp-project/controller-utils/pkg/errors"
@@ -19,7 +20,7 @@ import (
 // deleteDependingServices lists all service providers and checks for all of their registered service resources whether there exists one for the given MCP. If so, it triggers their deletion.
 // It returns a set of service provider names for which still resources exist (should be in deletion by the time this function returns) and the total number of resources that are still left.
 // Deletion of the MCP should wait until the set is empty and the count is zero.
-func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Context, mcp *corev2alpha1.ControlPlane, forceDelete bool) (map[string][]*unstructured.Unstructured, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Context, mcp *corev2alpha1.ControlPlane, forceDelete bool, forceDeletionBlockedFor sets.Set[string]) (map[string][]*unstructured.Unstructured, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// delete depending service resources, if any
@@ -69,6 +70,9 @@ func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Cont
 	// delete service resources
 	errs = errutils.NewReasonableErrorList()
 	remainingResources := map[string][]*unstructured.Unstructured{}
+	if forceDeletionBlockedFor.Has("*") {
+		log.Info("Force deletion is blocked for all service providers for this ControlPlane")
+	}
 	for providerName, serviceResources := range resources {
 		if len(serviceResources) == 0 {
 			log.Debug("No remaining service resources found for ServiceProvider", "providerName", providerName)
@@ -76,12 +80,17 @@ func (r *ManagedControlPlaneReconciler) deleteDependingServices(ctx context.Cont
 		}
 		remainingServiceResources := []*unstructured.Unstructured{}
 		for _, res := range serviceResources {
-			if forceDelete {
-				log.Info("Removing finalizers from service resource for enforced deletion", "resourceKind", res.GetKind(), "resourceAPIVersion", res.GetAPIVersion(), "provider", providerName)
-				resOld := res.DeepCopy()
-				res.SetFinalizers(nil)
-				if err := r.OnboardingCluster.Client().Patch(ctx, res, client.MergeFrom(resOld)); err != nil {
-					errs.Append(errutils.WithReason(fmt.Errorf("error removing finalizers from service resource [%s.%s] '%s/%s' for ServiceProvider '%s': %w", res.GetKind(), res.GetAPIVersion(), res.GetNamespace(), res.GetName(), providerName, err), cconst.ReasonOnboardingClusterInteractionProblem))
+			if forceDelete && !forceDeletionBlockedFor.Has("*") {
+				if forceDeletionBlockedFor.Has(providerName) {
+					log.Info("Force deletion is blocked for this service provider for this ControlPlane", "provider", providerName)
+				} else {
+					// remove finalizers
+					log.Info("Removing finalizers from service resource for enforced deletion", "resourceKind", res.GetKind(), "resourceAPIVersion", res.GetAPIVersion(), "provider", providerName)
+					resOld := res.DeepCopy()
+					res.SetFinalizers(nil)
+					if err := r.OnboardingCluster.Client().Patch(ctx, res, client.MergeFrom(resOld)); err != nil {
+						errs.Append(errutils.WithReason(fmt.Errorf("error removing finalizers from service resource [%s.%s] '%s/%s' for ServiceProvider '%s': %w", res.GetKind(), res.GetAPIVersion(), res.GetNamespace(), res.GetName(), providerName, err), cconst.ReasonOnboardingClusterInteractionProblem))
+					}
 				}
 			}
 			if !res.GetDeletionTimestamp().IsZero() {

@@ -38,6 +38,7 @@ import (
 	commonapi "github.com/openmcp-project/openmcp-operator/api/common"
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
+	providerv1alpha1 "github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
 )
@@ -427,8 +428,50 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 		rr.ConditionsToRemove = append(rr.ConditionsToRemove, corev2alpha1.ConditionForceDeletion)
 	}
 
+	platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+	if err != nil {
+		rr.ReconcileError = errutils.WithReason(err, cconst.ReasonInternalError)
+		createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+		return rr
+	}
+
+	forceDeletionBlockedFor := sets.New[string]() // names of service providers whose resources must not be force-deleted
+	if forceDelete {
+		log.Debug("Force deletion enabled, identifying ClusterRequest owners")
+		crsWithOwners, err := r.identifyClusterRequestOwningServiceProviders(ctx, platformNamespace, func(cr *clustersv1alpha1.ClusterRequest) bool {
+			// only consider ClusterRequests for some kind of workload cluster
+			return strings.Contains(cr.Spec.Purpose, clustersv1alpha1.PURPOSE_WORKLOAD)
+		})
+		if err != nil {
+			rr.ReconcileError = errutils.Errorf("error identifying ClusterRequest owners: %w", err)
+			createCon(corev2alpha1.ConditionForceDeletionBlocked, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
+			return rr
+		}
+
+		// check if any ClusterRequests could not be assigned to an owner
+		// in that case, the force deletion is blocked completely
+		unownedCRs := sets.New[string]()
+		for crName, owningSP := range crsWithOwners {
+			if owningSP == nil {
+				unownedCRs.Insert(crName)
+			} else {
+				forceDeletionBlockedFor.Insert(owningSP.Name)
+			}
+		}
+		if unownedCRs.Len() > 0 {
+			forceDeletionBlockedFor.Insert("*") // indicate that force deletion is blocked for all service providers
+			log.Debug("Force deletion blocked due to ClusterRequests where no owner could be identified", "unownedCRs", sets.List(unownedCRs))
+			createCon(corev2alpha1.ConditionForceDeletionBlocked, metav1.ConditionTrue, corev2alpha1.ReasonForceDeletionBlocked, fmt.Sprintf("Force deletion blocked due to ClusterRequests where no owner could be identified: %v", sets.List(unownedCRs)))
+		} else {
+			log.Debug("Force deletion is blocked for some service providers", "blockedServiceProviders", sets.List(forceDeletionBlockedFor))
+			createCon(corev2alpha1.ConditionForceDeletionBlocked, metav1.ConditionTrue, corev2alpha1.ReasonForceDeletionPartiallyBlocked, fmt.Sprintf("Force deletion is blocked for the following service providers: %v", sets.List(forceDeletionBlockedFor)))
+		}
+	} else {
+		rr.ConditionsToRemove = append(rr.ConditionsToRemove, corev2alpha1.ConditionForceDeletionBlocked)
+	}
+
 	// delete services
-	remainingResources, rerr := r.deleteDependingServices(ctx, mcp, forceDelete)
+	remainingResources, rerr := r.deleteDependingServices(ctx, mcp, forceDelete, forceDeletionBlockedFor)
 	if rerr != nil {
 		rr.ReconcileError = rerr
 		createCon(corev2alpha1.ConditionAllServicesDeleted, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
@@ -456,12 +499,6 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	log.Debug("All service resources deleted")
 
 	// delete AccessRequests and related secrets
-	platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
-	if err != nil {
-		rr.ReconcileError = errutils.WithReason(err, cconst.ReasonInternalError)
-		createCon(corev2alpha1.ConditionMeta, metav1.ConditionFalse, rr.ReconcileError.Reason(), rr.ReconcileError.Error())
-		return rr
-	}
 	accessReady, removeConditions, rerr := r.manageAccessRequests(ctx, mcp, platformNamespace, nil, createCon)
 	rr.ConditionsToRemove = removeConditions.UnsortedList()
 	if rerr != nil {
@@ -591,4 +628,103 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	}
 
 	return rr
+}
+
+// identifyClusterRequestOwningServiceProviders checks all ClusterRequests within the ControlPlane's namespace on the platform cluster and tries to identify their owning ServiceProviders.
+// It returns a mapping from ClusterRequest names to owning ServiceProviders.
+// Ignores ClusterRequests which fulfill any of the following constraints:
+// - not owned by a ServiceProvider
+// - does not pass the given filter
+// - does not belong to the ControlPlane in question (only ClusterRequests from the ControlPlane's namespace are considered)
+//
+// This should be easy due to the management labels, but unfortunately, the labels are used inconsistently across different providers, making programmatic evaluation difficult.
+func (r *ManagedControlPlaneReconciler) identifyClusterRequestOwningServiceProviders(ctx context.Context, platformNamespace string, filter func(*clustersv1alpha1.ClusterRequest) bool) (map[string]*providerv1alpha1.ServiceProvider, errutils.ReasonableError) {
+	log := logging.FromContextOrPanic(ctx)
+
+	// list all ServiceProviders, PlatformServices, and ClusterProviders to determine possible owners
+	serviceProviders := map[string]*providerv1alpha1.ServiceProvider{}
+	serviceProviderList := &providerv1alpha1.ServiceProviderList{}
+	if err := r.PlatformCluster.Client().List(ctx, serviceProviderList); err != nil {
+		return nil, errutils.WithReason(fmt.Errorf("error listing ServiceProviders: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+	}
+	for _, sp := range serviceProviderList.Items {
+		serviceProviders[sp.Name] = &sp
+	}
+	log.Debug("Listing PlatformServices and ClusterProviders to identify ClusterRequest owners")
+	platformServiceList := &providerv1alpha1.PlatformServiceList{}
+	if err := r.PlatformCluster.Client().List(ctx, platformServiceList); err != nil {
+		return nil, errutils.WithReason(fmt.Errorf("error listing PlatformServices: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+	}
+	excluded := sets.New[string]()
+	for _, ps := range platformServiceList.Items {
+		excluded.Insert(ps.Name)
+	}
+	clusterProviderList := &providerv1alpha1.ClusterProviderList{}
+	if err := r.PlatformCluster.Client().List(ctx, clusterProviderList); err != nil {
+		return nil, errutils.WithReason(fmt.Errorf("error listing ClusterProviders: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+	}
+	for _, cp := range clusterProviderList.Items {
+		excluded.Insert(cp.Name)
+	}
+
+	// list ClusterRequests in the ControlPlane's namespace on the platform cluster
+	clusterRequestList := &clustersv1alpha1.ClusterRequestList{}
+	if err := r.PlatformCluster.Client().List(ctx, clusterRequestList, client.InNamespace(platformNamespace)); err != nil {
+		return nil, errutils.WithReason(fmt.Errorf("error listing ClusterRequests: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+	}
+
+	owners := map[string]*providerv1alpha1.ServiceProvider{}
+	for _, cr := range clusterRequestList.Items {
+		clog := log.WithValues("crName", cr.Name, "crNamespace", cr.Namespace)
+		if filter != nil && !filter(&cr) {
+			continue
+		}
+
+		managedBy, ok := ctrlutils.GetLabel(&cr, apiconst.ManagedByLabel)
+		if !ok {
+			clog.Debug("found ClusterRequest without management label")
+			owners[cr.Name] = nil
+			continue
+		}
+
+		if excluded.Has(managedBy) {
+			clog.Debug("ClusterRequest belongs to PlatformService or ClusterProvider", "managedBy", managedBy)
+			continue
+		}
+
+		sp, ok := serviceProviders[managedBy]
+		if ok {
+			// managedBy label value matches service provider name
+			owners[cr.Name] = sp
+			continue
+		}
+
+		// since the managedBy label does not always contain the service provider's name, we try broader matching
+		candidates := sets.New[string]()
+		for _, sp := range serviceProviders {
+			// first, check if the managedBy label contains the service provider's name as a substring
+			if strings.Contains(managedBy, sp.Name) {
+				candidates.Insert(sp.Name)
+			}
+
+			// second, if the service provider exposes resources, check the first segment of the resource's api group
+			for _, gvk := range sp.Status.Resources {
+				segments := strings.SplitN(gvk.Group, ".", 2)
+				if len(segments) > 0 && strings.Contains(managedBy, segments[0]) {
+					candidates.Insert(sp.Name)
+				}
+			}
+		}
+
+		if candidates.Len() != 1 {
+			clog.Debug("unable to unambiguously determine service provider for ClusterRequest", "managedBy", managedBy, "candidates", sets.List(candidates))
+			owners[cr.Name] = nil
+			continue
+		}
+
+		// at this point, we assume to have found the owning service provider
+		owners[cr.Name] = serviceProviders[candidates.UnsortedList()[0]]
+	}
+
+	return owners, nil
 }
