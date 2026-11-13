@@ -438,7 +438,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	forceDeletionBlockedFor := sets.New[string]() // names of service providers whose resources must not be force-deleted
 	if forceDelete {
 		log.Debug("Force deletion enabled, identifying ClusterRequest owners")
-		crsWithOwners, err := r.identifyClusterRequestOwningServiceProviders(ctx, platformNamespace, func(cr *clustersv1alpha1.ClusterRequest) bool {
+		crsWithOwners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNamespace, func(cr *clustersv1alpha1.ClusterRequest) bool {
 			// only consider ClusterRequests for some kind of workload cluster
 			return strings.Contains(cr.Spec.Purpose, clustersv1alpha1.PURPOSE_WORKLOAD)
 		})
@@ -632,7 +632,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 	return rr
 }
 
-// identifyClusterRequestOwningServiceProviders checks all ClusterRequests within the ControlPlane's namespace on the platform cluster and tries to identify their owning ServiceProviders.
+// IdentifyClusterRequestOwningServiceProviders checks all ClusterRequests within the ControlPlane's namespace on the platform cluster and tries to identify their owning ServiceProviders.
 // It returns a mapping from ClusterRequest names to owning ServiceProviders.
 // Ignores ClusterRequests which fulfill any of the following constraints:
 // - not owned by a ServiceProvider
@@ -640,7 +640,7 @@ func (r *ManagedControlPlaneReconciler) handleDelete(ctx context.Context, mcp *c
 // - does not belong to the ControlPlane in question (only ClusterRequests from the ControlPlane's namespace are considered)
 //
 // This should be easy due to the management labels, but unfortunately, the labels are used inconsistently across different providers, making programmatic evaluation difficult.
-func (r *ManagedControlPlaneReconciler) identifyClusterRequestOwningServiceProviders(ctx context.Context, platformNamespace string, filter func(*clustersv1alpha1.ClusterRequest) bool) (map[string]*providerv1alpha1.ServiceProvider, errutils.ReasonableError) {
+func (r *ManagedControlPlaneReconciler) IdentifyClusterRequestOwningServiceProviders(ctx context.Context, platformNamespace string, filter func(*clustersv1alpha1.ClusterRequest) bool) (map[string]*providerv1alpha1.ServiceProvider, errutils.ReasonableError) {
 	log := logging.FromContextOrPanic(ctx)
 
 	// list all ServiceProviders, PlatformServices, and ClusterProviders to determine possible owners
