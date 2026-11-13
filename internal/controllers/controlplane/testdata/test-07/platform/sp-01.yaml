@@ -1,0 +1,30 @@
+# sp-01 manages ConfigMaps
+apiVersion: openmcp.cloud/v1alpha1
+kind: ServiceProvider
+metadata:
+  name: sp-01
+spec: {}
+status:
+  resources:
+  - group: ""
+    version: v1
+    kind: ConfigMap
+---
+# sp-02 manages Secrets
+apiVersion: openmcp.cloud/v1alpha1
+kind: ServiceProvider
+metadata:
+  name: sp-02
+spec: {}
+status:
+  resources:
+  - group: ""
+    version: v1
+    kind: Secret
+---
+# ps-01 is a PlatformService — workload ClusterRequests owned by it must be ignored when determining force-deletion blocks
+apiVersion: openmcp.cloud/v1alpha1
+kind: PlatformService
+metadata:
+  name: ps-01
+spec: {}

@@ -1270,4 +1270,180 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		))
 	})
 
+	It("should block force-deletion entirely when a workload ClusterRequest has no identifiable owner", func() {
+		env, cfg := defaultTestSetup("testdata", "test-06")
+
+		mcp := &corev2alpha1.ControlPlane{}
+		mcp.SetName("mcp-01")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("=== READY ===")
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{cfg.MCPClusterPurpose}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{{
+			Type: "Ready", Status: metav1.ConditionTrue, Reason: "TestReason",
+			Message: "Cluster is ready", LastTransitionTime: metav1.Now(), ObservedGeneration: 1,
+		}}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{Name: cluster.Name, Namespace: cluster.Namespace}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("adding a workload ClusterRequest without a managed-by label (unidentifiable owner)")
+		workloadCR := &clustersv1alpha1.ClusterRequest{}
+		workloadCR.SetName("workload-cr-01")
+		workloadCR.SetNamespace(platformNamespace)
+		workloadCR.Spec.Purpose = clustersv1alpha1.PURPOSE_WORKLOAD
+		Expect(env.Client(platform).Create(env.Ctx, workloadCR)).To(Succeed())
+
+		By("=== DELETE ===")
+
+		serviceResource := &corev1.ConfigMap{}
+		serviceResource.SetName(mcp.Name)
+		serviceResource.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(Succeed())
+		Expect(serviceResource.Finalizers).To(ContainElement("dummy"))
+
+		Expect(env.Client(onboarding).Delete(env.Ctx, mcp)).To(Succeed())
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		mcp.Annotations = map[string]string{apiconst.ForceDeleteAnnotation: "true"}
+		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
+
+		By("reconciling with force-delete active — should be fully blocked by the ownerless workload ClusterRequest")
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(Succeed())
+		Expect(serviceResource.Finalizers).To(ContainElement("dummy"), "finalizer must not be stripped when force-deletion is fully blocked")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion).
+				WithStatus(metav1.ConditionTrue)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletionBlocked).
+				WithStatus(metav1.ConditionTrue).
+				WithReason(corev2alpha1.ReasonForceDeletionBlocked)),
+		))
+	})
+
+	It("should partially block force-deletion for service providers with owned workload ClusterRequests", func() {
+		env, cfg := defaultTestSetup("testdata", "test-07")
+
+		mcp := &corev2alpha1.ControlPlane{}
+		mcp.SetName("mcp-01")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("=== READY ===")
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{cfg.MCPClusterPurpose}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{{
+			Type: "Ready", Status: metav1.ConditionTrue, Reason: "TestReason",
+			Message: "Cluster is ready", LastTransitionTime: metav1.Now(), ObservedGeneration: 1,
+		}}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{Name: cluster.Name, Namespace: cluster.Namespace}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("adding a workload ClusterRequest owned by sp-01 (blocks sp-01's service resource from force-deletion)")
+		workloadCR := &clustersv1alpha1.ClusterRequest{}
+		workloadCR.SetName("workload-cr-sp01")
+		workloadCR.SetNamespace(platformNamespace)
+		workloadCR.Spec.Purpose = fmt.Sprintf("my-other-%s", clustersv1alpha1.PURPOSE_WORKLOAD)
+		workloadCR.SetLabels(map[string]string{apiconst.ManagedByLabel: "sp-01"})
+		Expect(env.Client(platform).Create(env.Ctx, workloadCR)).To(Succeed())
+
+		By("adding a workload ClusterRequest owned by ps-01 (a PlatformService — must be excluded from blocking)")
+		workloadCRPS := &clustersv1alpha1.ClusterRequest{}
+		workloadCRPS.SetName("workload-cr-ps01")
+		workloadCRPS.SetNamespace(platformNamespace)
+		workloadCRPS.Spec.Purpose = clustersv1alpha1.PURPOSE_WORKLOAD
+		workloadCRPS.SetLabels(map[string]string{apiconst.ManagedByLabel: "ps-01"})
+		Expect(env.Client(platform).Create(env.Ctx, workloadCRPS)).To(Succeed())
+
+		By("=== DELETE ===")
+
+		configMapSR := &corev1.ConfigMap{}
+		configMapSR.SetName(mcp.Name)
+		configMapSR.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(configMapSR), configMapSR)).To(Succeed())
+		Expect(configMapSR.Finalizers).To(ContainElement("dummy"))
+
+		secretSR := &corev1.Secret{}
+		secretSR.SetName(mcp.Name)
+		secretSR.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(secretSR), secretSR)).To(Succeed())
+		Expect(secretSR.Finalizers).To(ContainElement("dummy"))
+
+		Expect(env.Client(onboarding).Delete(env.Ctx, mcp)).To(Succeed())
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		mcp.Annotations = map[string]string{apiconst.ForceDeleteAnnotation: "true"}
+		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
+
+		By("reconciling with force-delete active — sp-01's ConfigMap must retain its finalizer, sp-02's Secret must have it stripped")
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(configMapSR), configMapSR)).To(Succeed())
+		Expect(configMapSR.Finalizers).To(ContainElement("dummy"), "sp-01's service resource finalizer must not be stripped")
+
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(secretSR), secretSR)).To(MatchError(apierrors.IsNotFound, "IsNotFound"), "sp-02's service resource finalizer must be stripped, causing immediate GC")
+
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion).
+				WithStatus(metav1.ConditionTrue)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletionBlocked).
+				WithStatus(metav1.ConditionTrue).
+				WithReason(corev2alpha1.ReasonForceDeletionPartiallyBlocked)),
+		))
+		var blockedCond metav1.Condition
+		for _, c := range mcp.Status.Conditions {
+			if c.Type == corev2alpha1.ConditionForceDeletionBlocked {
+				blockedCond = c
+				break
+			}
+		}
+		Expect(blockedCond.Message).To(ContainSubstring("sp-01"), "sp-01 must appear in the blocked condition message")
+		Expect(blockedCond.Message).ToNot(ContainSubstring("ps-01"), "ps-01 (PlatformService) must not appear in the blocked condition message")
+	})
+
 })

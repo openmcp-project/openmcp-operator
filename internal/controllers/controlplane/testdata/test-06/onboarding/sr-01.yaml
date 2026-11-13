@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-01
+  namespace: test
+  finalizers:
+  - dummy
