@@ -1,0 +1,17 @@
+# service resource for sp-01 (ConfigMap) - named after the MCP
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mcp-01
+  namespace: test
+  finalizers:
+  - dummy
+---
+# service resource for sp-02 (Secret) - named after the MCP
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mcp-01
+  namespace: test
+  finalizers:
+  - dummy

@@ -18,11 +18,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/openmcp-project/controller-utils/pkg/clusters"
 	ctrlutils "github.com/openmcp-project/controller-utils/pkg/controller"
+	"github.com/openmcp-project/controller-utils/pkg/logging"
 	testutils "github.com/openmcp-project/controller-utils/pkg/testing"
 
 	clustersv1alpha1 "github.com/openmcp-project/openmcp-operator/api/clusters/v1alpha1"
@@ -31,6 +33,7 @@ import (
 	apiconst "github.com/openmcp-project/openmcp-operator/api/constants"
 	corev2alpha1 "github.com/openmcp-project/openmcp-operator/api/core/v2alpha1"
 	"github.com/openmcp-project/openmcp-operator/api/install"
+	providerv1alpha1 "github.com/openmcp-project/openmcp-operator/api/provider/v1alpha1"
 	"github.com/openmcp-project/openmcp-operator/internal/config"
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/controlplane"
 	libutils "github.com/openmcp-project/openmcp-operator/lib/utils"
@@ -1270,4 +1273,356 @@ var _ = Describe("ManagedControlPlane Controller", func() {
 		))
 	})
 
+	It("should block force-deletion entirely when a workload ClusterRequest has no identifiable owner", func() {
+		env, cfg := defaultTestSetup("testdata", "test-06")
+
+		mcp := &corev2alpha1.ControlPlane{}
+		mcp.SetName("mcp-01")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("=== READY ===")
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{cfg.MCPClusterPurpose}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{{
+			Type: "Ready", Status: metav1.ConditionTrue, Reason: "TestReason",
+			Message: "Cluster is ready", LastTransitionTime: metav1.Now(), ObservedGeneration: 1,
+		}}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{Name: cluster.Name, Namespace: cluster.Namespace}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("adding a workload ClusterRequest without a managed-by label (unidentifiable owner)")
+		workloadCR := &clustersv1alpha1.ClusterRequest{}
+		workloadCR.SetName("workload-cr-01")
+		workloadCR.SetNamespace(platformNamespace)
+		workloadCR.Spec.Purpose = clustersv1alpha1.PURPOSE_WORKLOAD
+		Expect(env.Client(platform).Create(env.Ctx, workloadCR)).To(Succeed())
+
+		By("=== DELETE ===")
+
+		serviceResource := &corev1.ConfigMap{}
+		serviceResource.SetName(mcp.Name)
+		serviceResource.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(Succeed())
+		Expect(serviceResource.Finalizers).To(ContainElement("dummy"))
+
+		Expect(env.Client(onboarding).Delete(env.Ctx, mcp)).To(Succeed())
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		mcp.Annotations = map[string]string{apiconst.ForceDeleteAnnotation: "true"}
+		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
+
+		By("reconciling with force-delete active — should be fully blocked by the ownerless workload ClusterRequest")
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(serviceResource), serviceResource)).To(Succeed())
+		Expect(serviceResource.Finalizers).To(ContainElement("dummy"), "finalizer must not be stripped when force-deletion is fully blocked")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion).
+				WithStatus(metav1.ConditionTrue)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletionBlocked).
+				WithStatus(metav1.ConditionTrue).
+				WithReason(corev2alpha1.ReasonForceDeletionBlocked)),
+		))
+	})
+
+	It("should partially block force-deletion for service providers with owned workload ClusterRequests", func() {
+		env, cfg := defaultTestSetup("testdata", "test-07")
+
+		mcp := &corev2alpha1.ControlPlane{}
+		mcp.SetName("mcp-01")
+		mcp.SetNamespace("test")
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("=== READY ===")
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		platformNamespace, err := libutils.StableMCPNamespace(mcp.Name, mcp.Namespace)
+		Expect(err).ToNot(HaveOccurred())
+
+		cr := &clustersv1alpha1.ClusterRequest{}
+		cr.SetName(mcp.Name)
+		cr.SetNamespace(platformNamespace)
+		Expect(env.Client(platform).Get(env.Ctx, client.ObjectKeyFromObject(cr), cr)).To(Succeed())
+
+		cluster := &clustersv1alpha1.Cluster{}
+		cluster.SetName("cluster-01")
+		cluster.SetNamespace(platformNamespace)
+		cluster.Spec.Purposes = []string{cfg.MCPClusterPurpose}
+		Expect(env.Client(platform).Create(env.Ctx, cluster)).To(Succeed())
+		cluster.Status.Conditions = []metav1.Condition{{
+			Type: "Ready", Status: metav1.ConditionTrue, Reason: "TestReason",
+			Message: "Cluster is ready", LastTransitionTime: metav1.Now(), ObservedGeneration: 1,
+		}}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cluster)).To(Succeed())
+		cr.Status.Phase = clustersv1alpha1.REQUEST_GRANTED
+		cr.Status.Cluster = &commonapi.ObjectReference{Name: cluster.Name, Namespace: cluster.Namespace}
+		Expect(env.Client(platform).Status().Update(env.Ctx, cr)).To(Succeed())
+
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+
+		By("adding a workload ClusterRequest owned by sp-01 (blocks sp-01's service resource from force-deletion)")
+		workloadCR := &clustersv1alpha1.ClusterRequest{}
+		workloadCR.SetName("workload-cr-sp01")
+		workloadCR.SetNamespace(platformNamespace)
+		workloadCR.Spec.Purpose = fmt.Sprintf("my-other-%s", clustersv1alpha1.PURPOSE_WORKLOAD)
+		workloadCR.SetLabels(map[string]string{apiconst.ManagedByLabel: "sp-01"})
+		Expect(env.Client(platform).Create(env.Ctx, workloadCR)).To(Succeed())
+
+		By("adding a workload ClusterRequest owned by ps-01 (a PlatformService — must be excluded from blocking)")
+		workloadCRPS := &clustersv1alpha1.ClusterRequest{}
+		workloadCRPS.SetName("workload-cr-ps01")
+		workloadCRPS.SetNamespace(platformNamespace)
+		workloadCRPS.Spec.Purpose = clustersv1alpha1.PURPOSE_WORKLOAD
+		workloadCRPS.SetLabels(map[string]string{apiconst.ManagedByLabel: "ps-01"})
+		Expect(env.Client(platform).Create(env.Ctx, workloadCRPS)).To(Succeed())
+
+		By("=== DELETE ===")
+
+		configMapSR := &corev1.ConfigMap{}
+		configMapSR.SetName(mcp.Name)
+		configMapSR.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(configMapSR), configMapSR)).To(Succeed())
+		Expect(configMapSR.Finalizers).To(ContainElement("dummy"))
+
+		secretSR := &corev1.Secret{}
+		secretSR.SetName(mcp.Name)
+		secretSR.SetNamespace(mcp.Namespace)
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(secretSR), secretSR)).To(Succeed())
+		Expect(secretSR.Finalizers).To(ContainElement("dummy"))
+
+		Expect(env.Client(onboarding).Delete(env.Ctx, mcp)).To(Succeed())
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		mcp.Annotations = map[string]string{apiconst.ForceDeleteAnnotation: "true"}
+		Expect(env.Client(onboarding).Update(env.Ctx, mcp)).To(Succeed())
+
+		By("reconciling with force-delete active — sp-01's ConfigMap must retain its finalizer, sp-02's Secret must have it stripped")
+		env.ShouldReconcile(mcpRec, testutils.RequestFromObject(mcp))
+
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(configMapSR), configMapSR)).To(Succeed())
+		Expect(configMapSR.Finalizers).To(ContainElement("dummy"), "sp-01's service resource finalizer must not be stripped")
+
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(secretSR), secretSR)).To(MatchError(apierrors.IsNotFound, "IsNotFound"), "sp-02's service resource finalizer must be stripped, causing immediate GC")
+
+		Expect(env.Client(onboarding).Get(env.Ctx, client.ObjectKeyFromObject(mcp), mcp)).To(Succeed())
+		Expect(mcp.Status.Conditions).To(ContainElements(
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletion).
+				WithStatus(metav1.ConditionTrue)),
+			MatchCondition(TestCondition().
+				WithType(corev2alpha1.ConditionForceDeletionBlocked).
+				WithStatus(metav1.ConditionTrue).
+				WithReason(corev2alpha1.ReasonForceDeletionPartiallyBlocked)),
+		))
+		var blockedCond metav1.Condition
+		for _, c := range mcp.Status.Conditions {
+			if c.Type == corev2alpha1.ConditionForceDeletionBlocked {
+				blockedCond = c
+				break
+			}
+		}
+		Expect(blockedCond.Message).To(ContainSubstring("sp-01"), "sp-01 must appear in the blocked condition message")
+		Expect(blockedCond.Message).ToNot(ContainSubstring("ps-01"), "ps-01 (PlatformService) must not appear in the blocked condition message")
+	})
+
+})
+
+// newReconcilerWithPlatformClient builds a minimal ManagedControlPlaneReconciler backed by the given platform client.
+// Only PlatformCluster is set; OnboardingCluster is left nil since IdentifyClusterRequestOwningServiceProviders does not use it.
+func newReconcilerWithPlatformClient(platformClient client.Client) *controlplane.ManagedControlPlaneReconciler {
+	r := &controlplane.ManagedControlPlaneReconciler{}
+	r.PlatformCluster = clusters.NewTestClusterFromClient(platform, platformClient)
+	return r
+}
+
+// newPlatformClient creates a fake platform client pre-populated with the given objects.
+func newPlatformClient(objs ...client.Object) client.Client {
+	scheme := install.InstallOperatorAPIsPlatform(runtime.NewScheme())
+	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+}
+
+var _ = Describe("IdentifyClusterRequestOwningServiceProviders", func() {
+	var (
+		ctx             = logging.NewContextWithDiscard(context.Background())
+		platformNS      = "mcp-test-ns"
+		workloadPurpose = clustersv1alpha1.PURPOSE_WORKLOAD
+		workloadFilter  = func(cr *clustersv1alpha1.ClusterRequest) bool {
+			return strings.Contains(cr.Spec.Purpose, workloadPurpose)
+		}
+	)
+
+	sp := func(name string, groups ...string) *providerv1alpha1.ServiceProvider {
+		s := &providerv1alpha1.ServiceProvider{}
+		s.SetName(name)
+		for _, g := range groups {
+			s.Status.Resources = append(s.Status.Resources, metav1.GroupVersionKind{Group: g, Version: "v1alpha1", Kind: "Fake"})
+		}
+		return s
+	}
+	ps := func(name string) *providerv1alpha1.PlatformService {
+		p := &providerv1alpha1.PlatformService{}
+		p.SetName(name)
+		return p
+	}
+	cp := func(name string) *providerv1alpha1.ClusterProvider {
+		c := &providerv1alpha1.ClusterProvider{}
+		c.SetName(name)
+		return c
+	}
+	cr := func(name, purpose, managedBy string) *clustersv1alpha1.ClusterRequest {
+		c := &clustersv1alpha1.ClusterRequest{}
+		c.SetName(name)
+		c.SetNamespace(platformNS)
+		c.Spec.Purpose = purpose
+		if managedBy != "" {
+			c.SetLabels(map[string]string{apiconst.ManagedByLabel: managedBy})
+		}
+		return c
+	}
+
+	It("returns nil owner for a CR without a managed-by label", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01"),
+			cr("cr-01", workloadPurpose, ""),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners).To(HaveKeyWithValue("cr-01", BeNil()))
+	})
+
+	It("excludes CRs that do not pass the filter", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01"),
+			cr("cr-mcp", "mcp", "sp-01"),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners).To(BeEmpty())
+	})
+
+	It("excludes CRs owned by a PlatformService", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01"),
+			ps("ps-01"),
+			cr("cr-01", workloadPurpose, "ps-01"),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners).To(BeEmpty())
+	})
+
+	It("excludes CRs owned by a ClusterProvider", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01"),
+			cp("cp-01"),
+			cr("cr-01", workloadPurpose, "cp-01"),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners).To(BeEmpty())
+	})
+
+	It("matches a CR whose managed-by label equals the ServiceProvider name exactly", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01"),
+			cr("cr-01", workloadPurpose, "sp-01"),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners).To(HaveLen(1))
+		Expect(owners["cr-01"]).ToNot(BeNil())
+		Expect(owners["cr-01"].Name).To(Equal("sp-01"))
+	})
+
+	It("matches a CR whose managed-by label contains the ServiceProvider name as a substring", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01"),
+			cr("cr-01", workloadPurpose, "controller-sp-01-v2"),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners["cr-01"]).ToNot(BeNil())
+		Expect(owners["cr-01"].Name).To(Equal("sp-01"))
+	})
+
+	It("matches a CR whose managed-by label contains the first segment of a ServiceProvider resource group", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01", "mygroup.io"),
+			cr("cr-01", workloadPurpose, "mygroup-controller"),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners["cr-01"]).ToNot(BeNil())
+		Expect(owners["cr-01"].Name).To(Equal("sp-01"))
+	})
+
+	It("returns nil owner when the managed-by label matches multiple ServiceProviders ambiguously", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-foo"),
+			sp("sp-foobar"),
+			cr("cr-01", workloadPurpose, "controller-sp-foobar-v1"),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners).To(HaveKeyWithValue("cr-01", BeNil()))
+	})
+
+	It("excludes CRs from other namespaces", func() {
+		otherNSCR := cr("cr-other", workloadPurpose, "sp-01")
+		otherNSCR.SetNamespace("other-ns")
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01"),
+			otherNSCR,
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners).To(BeEmpty())
+	})
+
+	It("handles multiple CRs with mixed ownership correctly", func() {
+		r := newReconcilerWithPlatformClient(newPlatformClient(
+			sp("sp-01"),
+			sp("sp-02", "mygroup.io"),
+			ps("ps-01"),
+			cp("cp-01"),
+			cr("cr-exact", workloadPurpose, "sp-01"),
+			cr("cr-group", workloadPurpose, "mygroup-controller"),
+			cr("cr-platform", workloadPurpose, "ps-01"),
+			cr("cr-clusterprovider", workloadPurpose, "cp-01"),
+			cr("cr-nolabel", workloadPurpose, ""),
+			cr("cr-filtered", "mcp", "sp-01"),
+		))
+		owners, err := r.IdentifyClusterRequestOwningServiceProviders(ctx, platformNS, workloadFilter)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(owners["cr-exact"].Name).To(Equal("sp-01"))
+		Expect(owners["cr-group"].Name).To(Equal("sp-02"))
+		Expect(owners).ToNot(HaveKey("cr-platform"))
+		Expect(owners).ToNot(HaveKey("cr-clusterprovider"))
+		Expect(owners).To(HaveKeyWithValue("cr-nolabel", BeNil()))
+		Expect(owners).ToNot(HaveKey("cr-filtered"))
+	})
 })

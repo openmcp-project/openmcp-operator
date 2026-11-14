@@ -36,9 +36,15 @@ const (
 	ConditionAllServicesDeleted        = "AllServicesDeleted"
 	ConditionAllClusterRequestsDeleted = "AllClusterRequestsDeleted"
 	ConditionForceDeletion             = "ForceDeletion"
+	ConditionForceDeletionBlocked      = "ForceDeletionBlocked"
 )
 
 const (
 	OIDCNamePrefix  = "oidc_"
 	TokenNamePrefix = "token_"
+)
+
+const (
+	ReasonForceDeletionBlocked          = "ForceDeletionBlocked"
+	ReasonForceDeletionPartiallyBlocked = "ForceDeletionPartiallyBlocked"
 )
