@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -416,6 +417,18 @@ func (r *ClusterScheduler) handleDelete(ctx context.Context, req reconcile.Reque
 	}
 
 	log.Info("Deleting resource")
+
+	// Sanity Check: CRD Deletion
+	// Skip the deletion flow if the ClusterRequest CRD is in deletion and the PlannedCRDDeletionAnnotation is not set to 'true'.
+	crd := &apiextv1.CustomResourceDefinition{}
+	if err := r.PlatformCluster.Client().Get(ctx, client.ObjectKey{Name: "clusterrequests." + clustersv1alpha1.GroupVersion.Group}, crd); err != nil {
+		rr.ReconcileError = errutils.WithReason(fmt.Errorf("error fetching ClusterRequest CRD to check for accidental deletion: %w", err), cconst.ReasonPlatformClusterInteractionProblem)
+		return rr
+	}
+	if !crd.DeletionTimestamp.IsZero() && !ctrlutils.HasAnnotationWithValue(crd, apiconst.PlannedCRDDeletionAnnotation, "true") {
+		log.Info("ClusterRequest CRD is in deletion and does not have the 'planned deletion' annotation, skipping deletion flow")
+		return rr
+	}
 
 	// fetch all clusters and filter for the ones that have a finalizer from this request
 	fin := cr.FinalizerForCluster()

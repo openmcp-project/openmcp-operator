@@ -11,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/gstruct"
 
+	apiextv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -28,7 +29,7 @@ import (
 	"github.com/openmcp-project/openmcp-operator/internal/controllers/scheduler"
 )
 
-var scheme = install.InstallOperatorAPIsPlatform(runtime.NewScheme())
+var scheme = install.InstallCRDAPIs(install.InstallOperatorAPIsPlatform(runtime.NewScheme()))
 
 // defaultTestSetup initializes a new environment for testing the scheduler controller.
 // Expected folder structure is a 'config.yaml' file next to a folder named 'cluster' containing the manifests.
@@ -595,6 +596,86 @@ var _ = Describe("Scheduler", func() {
 		Expect(newCluster.Name).To(Equal(req.Status.Cluster.Name))
 		Expect(newCluster.Namespace).To(Equal(clusterNamespace))
 		Expect(newCluster.Name).To(Equal(cluster.Name), "Recreated cluster should have the same name")
+	})
+
+	It("should skip the ClusterRequest deletion flow if the CRD is in deletion without the planned-deletion annotation", func() {
+		env, _ := defaultTestSetup("testdata", "test-05")
+
+		// set up: reconcile to create a cluster for the request
+		req := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("delete", "foo"), req)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Status.Cluster).ToNot(BeNil())
+
+		cluster := &clustersv1alpha1.Cluster{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(req.Status.Cluster.Name, req.Status.Cluster.Namespace), cluster)).To(Succeed())
+		Expect(cluster.Labels).To(HaveKeyWithValue(clustersv1alpha1.DeleteWithoutRequestsLabel, "true"))
+
+		// put the CRD into deletion (without the planned-deletion annotation)
+		crd := &apiextv1.CustomResourceDefinition{}
+		Expect(env.Client().Get(env.Ctx, client.ObjectKey{Name: "clusterrequests." + clustersv1alpha1.GroupVersion.Group}, crd)).To(Succeed())
+		crd.Finalizers = []string{"protect"}
+		Expect(env.Client().Update(env.Ctx, crd)).To(Succeed())
+		Expect(env.Client().Delete(env.Ctx, crd)).To(Succeed())
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(crd), crd)).To(Succeed())
+		Expect(crd.DeletionTimestamp).ToNot(BeZero())
+		Expect(crd.Annotations).ToNot(HaveKeyWithValue(apiconst.PlannedCRDDeletionAnnotation, "true"))
+
+		// delete the request and reconcile — deletion flow should be skipped
+		Expect(env.Client().Delete(env.Ctx, req)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+
+		// the ClusterRequest finalizer must still be present (not removed)
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Finalizers).To(ContainElement(clustersv1alpha1.ClusterRequestFinalizer))
+
+		// the Cluster must not have a deletion timestamp, even though it has the delete-without-requests label
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cluster), cluster)).To(Succeed())
+		Expect(cluster.DeletionTimestamp).To(BeZero(), "Cluster must not be deleted when CRD deletion flow is skipped")
+	})
+
+	It("should execute the ClusterRequest deletion flow if the CRD is in deletion with the planned-deletion annotation", func() {
+		env, _ := defaultTestSetup("testdata", "test-05")
+
+		// set up: reconcile to create a cluster for the request
+		req := &clustersv1alpha1.ClusterRequest{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey("delete", "foo"), req)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req)).To(Succeed())
+		Expect(req.Status.Cluster).ToNot(BeNil())
+
+		cluster := &clustersv1alpha1.Cluster{}
+		Expect(env.Client().Get(env.Ctx, ctrlutils.ObjectKey(req.Status.Cluster.Name, req.Status.Cluster.Namespace), cluster)).To(Succeed())
+		Expect(cluster.Labels).To(HaveKeyWithValue(clustersv1alpha1.DeleteWithoutRequestsLabel, "true"))
+
+		// put the CRD into deletion with the planned-deletion annotation
+		crd := &apiextv1.CustomResourceDefinition{}
+		Expect(env.Client().Get(env.Ctx, client.ObjectKey{Name: "clusterrequests." + clustersv1alpha1.GroupVersion.Group}, crd)).To(Succeed())
+		crd.Finalizers = []string{"protect"}
+		if crd.Annotations == nil {
+			crd.Annotations = map[string]string{}
+		}
+		crd.Annotations[apiconst.PlannedCRDDeletionAnnotation] = "true"
+		Expect(env.Client().Update(env.Ctx, crd)).To(Succeed())
+		Expect(env.Client().Delete(env.Ctx, crd)).To(Succeed())
+		Expect(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(crd), crd)).To(Succeed())
+		Expect(crd.DeletionTimestamp).ToNot(BeZero())
+		Expect(crd.Annotations).To(HaveKeyWithValue(apiconst.PlannedCRDDeletionAnnotation, "true"))
+
+		// delete the request and reconcile — deletion flow should run
+		Expect(env.Client().Delete(env.Ctx, req)).To(Succeed())
+		env.ShouldReconcile(testutils.RequestFromObject(req))
+
+		// the ClusterRequest finalizer must have been removed (request fully deleted)
+		Eventually(func() bool {
+			return apierrors.IsNotFound(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(req), req))
+		}, 3).Should(BeTrue(), "ClusterRequest should be deleted")
+
+		// the Cluster should also be gone (delete-without-requests label was true)
+		Eventually(func() bool {
+			return apierrors.IsNotFound(env.Client().Get(env.Ctx, client.ObjectKeyFromObject(cluster), cluster))
+		}, 3).Should(BeTrue(), "Cluster should be deleted when planned CRD deletion flow runs")
 	})
 
 	It("should propagate metadata annotations/labels from ClusterRequests to exclusive Clusters but not shared Clusters", func() {
