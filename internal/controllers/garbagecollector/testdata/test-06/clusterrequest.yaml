@@ -1,0 +1,8 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: ClusterRequest
+metadata:
+  name: existing-cr
+  namespace: foo
+  uid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+spec:
+  purpose: test

@@ -1,0 +1,45 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-with-existing-cr
+  namespace: foo
+  finalizers:
+  - "request.clusters.openmcp.cloud/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+spec:
+  profile: default
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  tenancy: Exclusive
+---
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-with-orphaned-cr-finalizer
+  namespace: foo
+  finalizers:
+  - "request.clusters.openmcp.cloud/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+spec:
+  profile: default
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  tenancy: Exclusive
+---
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-with-mixed-cr-finalizers
+  namespace: foo
+  finalizers:
+  - "request.clusters.openmcp.cloud/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+  - "request.clusters.openmcp.cloud/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+spec:
+  profile: default
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  tenancy: Exclusive

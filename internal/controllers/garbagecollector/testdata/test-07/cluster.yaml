@@ -1,0 +1,15 @@
+apiVersion: clusters.openmcp.cloud/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-mixed-finalizers
+  namespace: foo
+  finalizers:
+  - "some-other-finalizer"
+  - "request.clusters.openmcp.cloud/cccccccc-cccc-cccc-cccc-cccccccccccc"
+spec:
+  profile: default
+  kubernetes:
+    version: "1.32"
+  purposes:
+  - test
+  tenancy: Exclusive
