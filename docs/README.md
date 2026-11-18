@@ -6,6 +6,7 @@
 - [AccessRequest Controller](controller/accessrequest.md)
 - [ControlPlane](controller/controlplane.md)
 - [Deployment Controllers](controller/deployment.md)
+- [Garbage Collectors](controller/garbagecollector.md)
 - [HelmDeployer](controller/helmdeployer.md)
 - [Cluster Scheduler](controller/scheduler.md)
 

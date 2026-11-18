@@ -253,6 +253,7 @@ func (o *RunOptions) PrintCompletedOptions(cmd *cobra.Command) {
 	cmd.Println("########## COMPLETED OPTIONS END ##########")
 }
 
+// nolint:gocyclo
 func (o *RunOptions) Run(ctx context.Context) error {
 	if err := o.PlatformCluster.InitializeClient(install.InstallOperatorAPIsPlatform(runtime.NewScheme())); err != nil {
 		return err
@@ -386,6 +387,14 @@ func (o *RunOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("error adding garbage collector for AccessRequests without Cluster to manager: %w", err)
 	}
 	gcArNoCluster.Trigger(false) // required to have an immediate run and have the garbage collector pick up the config
+	gcOrphanedCRFinalizers, err := garbagecollector.NewOrphanedClusterRequestFinalizerGarbageCollector(o.PlatformCluster, o.Log, gcConfigGetter)
+	if err != nil {
+		return fmt.Errorf("error creating garbage collector for orphaned ClusterRequest finalizers: %w", err)
+	}
+	if err := mgr.Add(gcOrphanedCRFinalizers); err != nil {
+		return fmt.Errorf("error adding garbage collector for orphaned ClusterRequest finalizers to manager: %w", err)
+	}
+	gcOrphanedCRFinalizers.Trigger(false) // required to have an immediate run and have the garbage collector pick up the config
 
 	if o.MetricsCertWatcher != nil {
 		setupLog.Info("Adding metrics certificate watcher to manager")
