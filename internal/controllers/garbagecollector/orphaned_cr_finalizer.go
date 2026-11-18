@@ -116,7 +116,7 @@ func GenerateGarbageCollectOrphanedClusterRequestFinalizer(platformCluster *clus
 					clog.Error(err, "Failed to patch Cluster with removed finalizers", "finalizersToRemove", sets.List(finsToRemove))
 					continue
 				}
-				clog.Debug("Successfully removed orphaned ClusterRequest finalizers from Cluster", "removedFinalizers", sets.List(finsToRemove), "remainingFinalizers", newFins)
+				clog.Info("Successfully removed orphaned ClusterRequest finalizers from Cluster", "removedFinalizers", sets.List(finsToRemove), "remainingFinalizers", newFins)
 			} else {
 				clog.Debug("No orphaned ClusterRequest finalizers to remove for Cluster")
 			}
