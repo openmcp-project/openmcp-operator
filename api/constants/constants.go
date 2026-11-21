@@ -80,4 +80,11 @@ const (
 	GarbageCollectorAnnotation = OpenControlPlaneGroup + "/garbage-collector"
 	// GarbageCollectorAnnotationValueIgnore indicates that the resource should be ignored by the garbage collector.
 	GarbageCollectorAnnotationValueIgnore = "ignore"
+
+	// PlannedCRDDeletionAnnotation is used to signal that the deletion of a CRD is planned and its instances should be properly deleted.
+	// We use 'Is the CRD in deletion?' as a sanity check to detect accidental resource deletions, because CRDs are usually not deleted.
+	// This means that controllers might skip their regular deletion flow for a resource if that resource's CRD is in deletion.
+	// This annotation on the CRD means 'this deletion is planned, do not skip the deletion flow for its instances'.
+	// The value has to be 'true' for the annotation to take effect.
+	PlannedCRDDeletionAnnotation = OpenControlPlaneGroup + "/planned-crd-deletion"
 )
