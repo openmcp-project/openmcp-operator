@@ -3,9 +3,9 @@ module github.com/openmcp-project/openmcp-operator/api
 go 1.27.3
 
 require (
-	github.com/fluxcd/helm-controller/api v1.7.1
+	github.com/fluxcd/helm-controller/api v1.7.2
 	github.com/fluxcd/pkg/apis/kustomize v1.23.0
-	github.com/fluxcd/source-controller/api v1.10.1
+	github.com/fluxcd/source-controller/api v1.10.2
 	github.com/openmcp-project/controller-utils v0.34.0
 	k8s.io/api v0.37.2
 	k8s.io/apiextensions-apiserver v0.37.2
