@@ -25,9 +25,22 @@ type GarbageCollectorConfig struct {
 	// AccessRequestNoCluster contains the configuration for the AccessRequestNoCluster garbage collector module.
 	// optional
 	AccessRequestNoCluster AccessRequestNoClusterConfig `json:"accessRequestNoCluster"`
+
+	// OrphanedClusterRequestFinalizer contains the configuration for the OrphanedClusterRequestFinalizer garbage collector module.
+	// optional
+	OrphanedClusterRequestFinalizer OrphanedClusterRequestFinalizer `json:"orphanedClusterRequestFinalizer"`
 }
 
 type AccessRequestNoClusterConfig struct {
+	// Interval can be used to override the default garbage collection interval for this specific module.
+	// optional
+	Interval metav1.Duration `json:"interval,omitempty"`
+	// Enabled specifies whether this specific garbage collector module is enabled.
+	// optional
+	Enabled bool `json:"enabled"`
+}
+
+type OrphanedClusterRequestFinalizer struct {
 	// Interval can be used to override the default garbage collection interval for this specific module.
 	// optional
 	Interval metav1.Duration `json:"interval,omitempty"`
